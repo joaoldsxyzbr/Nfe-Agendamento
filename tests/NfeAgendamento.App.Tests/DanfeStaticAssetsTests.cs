@@ -62,10 +62,10 @@ public sealed class DanfeStaticAssetsTests
     [Fact]
     public void Danfe_products_table_has_item_number_as_first_column()
     {
-        var script = Fixture("app.js");
+        var script = Fixture("danfe-compact.js");
 
         Assert.Contains("<th>Item</th><th>Código produto</th>", script);
-        Assert.Contains("value(det, 'nItem')", script);
+        Assert.Contains("attr(det, 'det', 'nItem')", script);
         Assert.Contains("colspan=\"16\"", script);
     }
 }
