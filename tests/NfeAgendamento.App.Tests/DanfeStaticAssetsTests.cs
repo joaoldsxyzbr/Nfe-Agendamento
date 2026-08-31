@@ -58,4 +58,14 @@ public sealed class DanfeStaticAssetsTests
         Assert.Contains("FIRST_PAGE_PRODUCT_SPACE_MM", script);
         Assert.Contains("paginateProducts = paginateProductsByAvailableSpace", script);
     }
+
+    [Fact]
+    public void Danfe_products_table_has_item_number_as_first_column()
+    {
+        var script = Fixture("app.js");
+
+        Assert.Contains("<th>Item</th><th>Código produto</th>", script);
+        Assert.Contains("value(det, 'nItem')", script);
+        Assert.Contains("colspan=\"16\"", script);
+    }
 }
