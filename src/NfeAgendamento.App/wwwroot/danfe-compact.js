@@ -1,6 +1,5 @@
 // Ajustes de impressão para aproximar a ocupação da A4 ao DANFE de referência.
 const originalBuildTransport = buildTransport;
-const originalBuildProductsTable = buildProductsTable;
 
 function hasTransportData(infNFe) {
   const transp = firstElement(infNFe, 'transp');
@@ -26,7 +25,38 @@ function transportSection(infNFe) {
 buildTransport = transportSection;
 
 buildProductsTable = function compactProductsTable(products) {
-  return originalBuildProductsTable(products).replace('class="products-table"', 'class="products-table danfe-products-fill"');
+  const rows = products.map(det => {
+    const prod = firstElement(det, 'prod');
+    const tax = buildProductTaxData(det);
+    const description = `${escapeHtml(value(prod, 'xProd'))}${tax.taxNote ? `<small class="tax-detail">${escapeHtml(tax.taxNote)}</small>` : ''}`;
+    const itemNumber = attr(det, 'det', 'nItem');
+    return `<tr>
+      <td class="center">${escapeHtml(itemNumber)}</td>
+      <td>${escapeHtml(value(prod, 'cProd'))}</td>
+      <td class="description">${description}</td>
+      <td class="center">${escapeHtml(value(prod, 'NCM'))}</td>
+      <td class="center">${escapeHtml(tax.cst)}</td>
+      <td class="center">${escapeHtml(value(prod, 'CFOP'))}</td>
+      <td class="center">${escapeHtml(value(prod, 'uCom'))}</td>
+      <td class="numeric">${escapeHtml(decimal(value(prod, 'qCom'), 4, 4))}</td>
+      <td class="numeric">${escapeHtml(decimal(value(prod, 'vUnCom'), 4, 4))}</td>
+      <td class="numeric">${escapeHtml(moneyFiscal(value(prod, 'vProd')))}</td>
+      <td class="numeric">${escapeHtml(moneyFiscal(value(prod, 'vDesc')))}</td>
+      <td class="numeric">${escapeHtml(moneyFiscal(tax.vBC))}</td>
+      <td class="numeric">${escapeHtml(moneyFiscal(tax.vICMS))}</td>
+      <td class="numeric">${escapeHtml(moneyFiscal(tax.vIPI))}</td>
+      <td class="numeric">${escapeHtml(decimal(tax.pICMS))}</td>
+      <td class="numeric">${escapeHtml(decimal(tax.pIPI))}</td>
+    </tr>`;
+  }).join('');
+
+  return `
+    <div class="danfe-section-title">Dados dos produtos / serviços</div>
+    <table class="products-table danfe-products-fill">
+      <colgroup><col class="item"><col class="code"><col class="description"><col class="ncm"><col class="cst"><col class="cfop"><col class="unit"><col class="qty"><col class="unit-value"><col class="total-value"><col class="discount"><col class="bc"><col class="icms"><col class="ipi"><col class="rate"><col class="rate"></colgroup>
+      <thead><tr><th>Item</th><th>Código produto</th><th>Descrição do produto / serviço</th><th>NCM/SH</th><th>O/CST</th><th>CFOP</th><th>UN</th><th>Quant.</th><th>Valor unit.</th><th>Valor total</th><th>Valor desc.</th><th>B.Cálc ICMS</th><th>Valor ICMS</th><th>Valor IPI</th><th>Alíq. ICMS</th><th>Alíq. IPI</th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="16">Nenhum produto informado no XML.</td></tr>'}</tbody>
+    </table>`;
 };
 
 const FIRST_PAGE_PRODUCT_SPACE_MM = 108;
