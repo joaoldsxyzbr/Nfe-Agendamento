@@ -1,0 +1,17 @@
+* { box-sizing: border-box; }
+body { margin: 0; font-family: system-ui, sans-serif; background: #f4f6f8; color: #1f2937; }
+.shell { max-width: 760px; margin: 8vh auto; padding: 24px; }
+h1 { margin-bottom: 4px; }
+.muted { color: #6b7280; }
+.card { background: white; border-radius: 12px; padding: 24px; box-shadow: 0 8px 30px rgba(0,0,0,.08); }
+.row { display: flex; justify-content: space-between; gap: 16px; align-items: center; }
+.certificate-row { padding-bottom: 24px; margin-bottom: 24px; border-bottom: 1px solid #e5e7eb; }
+label { display: block; font-weight: 600; margin-bottom: 8px; }
+.lookup-row { display: flex; gap: 10px; }
+input { flex: 1; min-width: 0; padding: 12px; border: 1px solid #d1d5db; border-radius: 8px; font: inherit; }
+button { border: 0; border-radius: 8px; padding: 11px 16px; font: inherit; cursor: pointer; }
+.lookup-row button { font-weight: 600; }
+.status { min-height: 24px; margin: 16px 0 0; }
+.status.error { font-weight: 600; }
+.actions { display: flex; gap: 10px; margin-top: 12px; }
+@media (max-width: 620px) { .lookup-row { flex-direction: column; } .shell { margin: 2vh auto; } }
