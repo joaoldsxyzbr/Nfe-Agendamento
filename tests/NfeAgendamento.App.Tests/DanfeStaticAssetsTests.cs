@@ -47,4 +47,15 @@ public sealed class DanfeStaticAssetsTests
         Assert.Contains("min-height: 277mm", css);
         Assert.Contains("flex: 1", css);
     }
+
+    [Fact]
+    public void Danfe_paginates_products_by_available_vertical_space_instead_of_fixed_item_count()
+    {
+        var script = Fixture("danfe-compact.js");
+
+        Assert.Contains("paginateProductsByAvailableSpace", script);
+        Assert.Contains("estimateProductHeight", script);
+        Assert.Contains("FIRST_PAGE_PRODUCT_SPACE_MM", script);
+        Assert.Contains("paginateProducts = paginateProductsByAvailableSpace", script);
+    }
 }
