@@ -1,3 +1,5 @@
+using Xunit;
+
 namespace NfeAgendamento.App.Tests;
 
 public sealed class DanfeStaticAssetsTests
