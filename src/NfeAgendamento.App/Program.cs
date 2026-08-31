@@ -1,4 +1,3 @@
-using System.Security.Cryptography.X509Certificates;
 using NfeAgendamento.App.Certificates;
 using NfeAgendamento.App.Fiscal;
 using NfeAgendamento.App.Security;
@@ -25,8 +24,7 @@ internal static class Program
             var certificates = sp.GetRequiredService<CertificateService>();
             var current = certificates.GetCurrentSelectionWithCertificate();
             var identity = CertificateIdentityReader.Read(current.Certificate);
-            var transport = new NfeDistributionTransport(current.Certificate, identity.Cnpj, identity.UfAutor);
-            return transport;
+            return new NfeDistributionTransport(current.Certificate, identity.Cnpj, identity.UfAutor);
         });
 
         var app = builder.Build();
@@ -81,11 +79,9 @@ internal static class Program
                 return result.Status switch
                 {
                     NfeLookupStatus.Found => Results.Text(result.Xml!, "application/xml; charset=utf-8"),
-                    NfeLookupStatus.NotFound => Results.NotFound(new { status = "not_found", message = result.Message, cStat = result.CStat }),
-                    NfeLookupStatus.ManifestationRequired => Results.Conflict(new { status = "manifestation_required", message = result.Message, cStat = result.CStat }),
-                    NfeLookupStatus.Blocked => Results.StatusCode(StatusCodes.Status429TooManyRequests) is IResult blocked
-                        ? Results.Json(new { status = "consumo_indevido", message = result.Message, cStat = result.CStat, blockedUntilUtc = result.BlockedUntilUtc }, statusCode: 429)
-                        : blocked,
+                    NfeLookupStatus.NotFound => Results.Json(new { status = "not_found", message = result.Message, cStat = result.CStat }, statusCode: 404),
+                    NfeLookupStatus.ManifestationRequired => Results.Json(new { status = "manifestation_required", message = result.Message, cStat = result.CStat }, statusCode: 409),
+                    NfeLookupStatus.Blocked => Results.Json(new { status = "consumo_indevido", message = result.Message, cStat = result.CStat, blockedUntilUtc = result.BlockedUntilUtc }, statusCode: 429),
                     _ => Results.Json(new { status = "network_error", message = result.Message ?? "Não foi possível concluir a consulta." }, statusCode: 502)
                 };
             }
@@ -95,7 +91,7 @@ internal static class Program
             }
             catch (InvalidOperationException ex)
             {
-                return Results.Conflict(new { status = "configuration_error", message = ex.Message });
+                return Results.Json(new { status = "configuration_error", message = ex.Message }, statusCode: 409);
             }
         });
 
@@ -103,7 +99,7 @@ internal static class Program
         {
             await app.StartAsync();
         }
-        catch (Exception ex) when (ex is IOException or InvalidOperationException)
+        catch (IOException)
         {
             MessageBox.Show(
                 "A porta local 17345 já está em uso. Feche a outra instância do NFe Agendamento ou o programa que está usando essa porta.",
