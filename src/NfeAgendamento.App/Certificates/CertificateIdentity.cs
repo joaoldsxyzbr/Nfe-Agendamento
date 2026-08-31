@@ -8,7 +8,7 @@ public sealed record CertificateIdentity(string Cnpj, string UfAutor);
 public static class CertificateIdentityReader
 {
     private static readonly Regex CnpjRegex = new(@"(?<!\d)\d{14}(?!\d)", RegexOptions.Compiled);
-    private static readonly Regex CommonNameCnpjRegex = new(@"(?:^|,)\s*CN\s*=\s*(?:\"[^\"]*?:|[^,]*?:)(\d{14})(?:\"|,|$)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex CommonNameCnpjRegex = new(@"(?:^|,)\s*CN\s*=\s*[^,]*?:(\d{14})", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex StateRegex = new(@"(?:^|[,;])\s*(?:S|ST|State|UF)\s*=\s*([A-Z]{2})(?:[,;]|$)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly IReadOnlyDictionary<string, string> StateCodes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
     {
