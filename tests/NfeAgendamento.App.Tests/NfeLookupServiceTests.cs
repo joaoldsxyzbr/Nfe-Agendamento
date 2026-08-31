@@ -6,7 +6,7 @@ namespace NfeAgendamento.App.Tests;
 
 public sealed class NfeLookupServiceTests
 {
-    private const string ValidKey = "35260812345678000195550010000000011000000016";
+    private const string ValidKey = "35260812345678000195550010000000011000000018";
 
     [Fact]
     public async Task Lookup_returns_cache_without_calling_transport()
