@@ -5,7 +5,7 @@ namespace NfeAgendamento.App;
 public sealed class TrayApplicationContext : ApplicationContext
 {
     public static IReadOnlyList<string> MenuLabels { get; } =
-        ["Abrir sistema", "Configurar certificado", "Verificar atualização", "Sair"];
+        ["Abrir sistema", "Configurar certificado", "Verificar atualização", "Iniciar com o Windows", "Sair"];
 
     private readonly NotifyIcon _trayIcon;
     private readonly string _listenUrl;
@@ -21,17 +21,24 @@ public sealed class TrayApplicationContext : ApplicationContext
         configure.Click += (_, _) => OpenSystem();
         var checkUpdates = new ToolStripMenuItem("Verificar atualização");
         checkUpdates.Click += async (_, _) => await CheckForUpdatesAsync();
+        var startup = new ToolStripMenuItem("Iniciar com o Windows") { CheckOnClick = true, Checked = StartupManager.IsEnabled() };
+        startup.CheckedChanged += (_, _) =>
+        {
+            try { StartupManager.SetEnabled(startup.Checked); }
+            catch { startup.Checked = !startup.Checked; }
+        };
         var exit = new ToolStripMenuItem("Sair");
         exit.Click += (_, _) => ExitThread();
         menu.Items.Add(open);
         menu.Items.Add(configure);
         menu.Items.Add(checkUpdates);
+        menu.Items.Add(startup);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(exit);
 
         _trayIcon = new NotifyIcon
         {
-            Icon = SystemIcons.Application,
+            Icon = Icon.ExtractAssociatedIcon(Environment.ProcessPath ?? string.Empty) ?? SystemIcons.Application,
             Text = "NFe Agendamento",
             ContextMenuStrip = menu,
             Visible = true
