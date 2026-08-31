@@ -18,13 +18,15 @@ internal static class Program
         builder.Services.AddSingleton<CertificateService>();
         builder.Services.AddSingleton<EncryptedXmlCache>();
         builder.Services.AddSingleton<FiscalCooldownStore>();
+        builder.Services.AddSingleton<FiscalOperationGate>();
         builder.Services.AddScoped<NfeLookupService>();
         builder.Services.AddScoped<BatchLookupService>();
         builder.Services.AddScoped<INfeDistributionTransport>(sp =>
         {
             var certificates = sp.GetRequiredService<CertificateService>();
             var current = certificates.GetCurrentSelectionWithCertificate();
-            var identity = CertificateIdentityReader.Read(current.Certificate);
+            var ufAutor = certificates.GetCurrentAuthorityState();
+            var identity = CertificateIdentityReader.Read(current.Certificate, ufAutor);
             return new NfeDistributionTransport(current.Certificate, identity.Cnpj, identity.UfAutor);
         });
 
@@ -97,6 +99,10 @@ internal static class Program
             catch (ArgumentException ex)
             {
                 return Results.BadRequest(new { status = "invalid_batch", message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Json(new { status = "configuration_error", message = ex.Message }, statusCode: 409);
             }
         });
 
