@@ -35,18 +35,20 @@ public sealed class NfeLookupService
     private readonly EncryptedXmlCache _cache;
     private readonly FiscalCooldownStore _cooldown;
     private readonly Func<TimeSpan, CancellationToken, Task> _delay;
-    private readonly SemaphoreSlim _fiscalOperation = new(1, 1);
+    private readonly FiscalOperationGate _gate;
 
     public NfeLookupService(
         INfeDistributionTransport transport,
         EncryptedXmlCache cache,
         FiscalCooldownStore cooldown,
-        Func<TimeSpan, CancellationToken, Task>? delay = null)
+        Func<TimeSpan, CancellationToken, Task>? delay = null,
+        FiscalOperationGate? gate = null)
     {
         _transport = transport ?? throw new ArgumentNullException(nameof(transport));
         _cache = cache ?? throw new ArgumentNullException(nameof(cache));
         _cooldown = cooldown ?? throw new ArgumentNullException(nameof(cooldown));
         _delay = delay ?? Task.Delay;
+        _gate = gate ?? new FiscalOperationGate();
     }
 
     public async Task<NfeLookupResult> LookupAsync(
@@ -60,7 +62,7 @@ public sealed class NfeLookupService
         if (cached is not null)
             return new NfeLookupResult(NfeLookupStatus.Found, cached.Xml, "CACHE", "Documento obtido do cache local.", true);
 
-        await _fiscalOperation.WaitAsync(cancellationToken);
+        await _gate.Semaphore.WaitAsync(cancellationToken);
         try
         {
             cached = await _cache.TryGetAsync(accessKey, cancellationToken);
@@ -131,7 +133,7 @@ public sealed class NfeLookupService
         }
         finally
         {
-            _fiscalOperation.Release();
+            _gate.Semaphore.Release();
         }
     }
 }
