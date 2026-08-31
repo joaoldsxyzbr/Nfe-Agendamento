@@ -6,7 +6,7 @@ namespace NfeAgendamento.App.Fiscal;
 
 public sealed record FiscalCooldownState(DateTimeOffset? BlockedUntilUtc)
 {
-    public static FiscalCooldownState Empty { get; } = new(null);
+    public static FiscalCooldownState Empty { get; } = new((DateTimeOffset?)null);
 }
 
 public sealed class FiscalCooldownStore
