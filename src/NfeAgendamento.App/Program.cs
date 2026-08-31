@@ -1,5 +1,8 @@
+using System.Security.Cryptography.X509Certificates;
 using NfeAgendamento.App.Certificates;
+using NfeAgendamento.App.Fiscal;
 using NfeAgendamento.App.Security;
+using NfeAgendamento.App.Storage;
 
 namespace NfeAgendamento.App;
 
@@ -14,6 +17,17 @@ internal static class Program
         LocalHost.Configure(builder);
         builder.Services.AddSingleton<CsrfTokenService>();
         builder.Services.AddSingleton<CertificateService>();
+        builder.Services.AddSingleton<EncryptedXmlCache>();
+        builder.Services.AddSingleton<FiscalCooldownStore>();
+        builder.Services.AddScoped<NfeLookupService>();
+        builder.Services.AddScoped<INfeDistributionTransport>(sp =>
+        {
+            var certificates = sp.GetRequiredService<CertificateService>();
+            var current = certificates.GetCurrentSelectionWithCertificate();
+            var identity = CertificateIdentityReader.Read(current.Certificate);
+            var transport = new NfeDistributionTransport(current.Certificate, identity.Cnpj, identity.UfAutor);
+            return transport;
+        });
 
         var app = builder.Build();
         app.UseMiddleware<LocalRequestSecurityMiddleware>();
@@ -35,10 +49,13 @@ internal static class Program
         });
 
         app.MapPost("/api/certificate/select", async (
-            CertificateSelectRequest request,
+            CertificateSelectRequest? request,
             CertificateService certificates,
             CancellationToken cancellationToken) =>
         {
+            if (request is null || string.IsNullOrWhiteSpace(request.Thumbprint))
+                return Results.BadRequest(new { status = "invalid_certificate", message = "Selecione um certificado." });
+
             try
             {
                 await certificates.SelectAsync(request.Thumbprint, cancellationToken);
@@ -46,16 +63,71 @@ internal static class Program
             }
             catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
             {
-                return Results.BadRequest(new
-                {
-                    status = "invalid_certificate",
-                    message = ex.Message
-                });
+                return Results.BadRequest(new { status = "invalid_certificate", message = ex.Message });
             }
         });
 
-        await app.RunAsync();
+        app.MapPost("/api/nfe/lookup", async (
+            LookupRequest? request,
+            NfeLookupService lookup,
+            CancellationToken cancellationToken) =>
+        {
+            if (request is null || !AccessKeyValidator.IsValid(request.AccessKey))
+                return Results.BadRequest(new { status = "invalid_key", message = "Informe uma chave NF-e válida com 44 dígitos." });
+
+            try
+            {
+                var result = await lookup.LookupAsync(request.AccessKey, cancellationToken);
+                return result.Status switch
+                {
+                    NfeLookupStatus.Found => Results.Text(result.Xml!, "application/xml; charset=utf-8"),
+                    NfeLookupStatus.NotFound => Results.NotFound(new { status = "not_found", message = result.Message, cStat = result.CStat }),
+                    NfeLookupStatus.ManifestationRequired => Results.Conflict(new { status = "manifestation_required", message = result.Message, cStat = result.CStat }),
+                    NfeLookupStatus.Blocked => Results.StatusCode(StatusCodes.Status429TooManyRequests) is IResult blocked
+                        ? Results.Json(new { status = "consumo_indevido", message = result.Message, cStat = result.CStat, blockedUntilUtc = result.BlockedUntilUtc }, statusCode: 429)
+                        : blocked,
+                    _ => Results.Json(new { status = "network_error", message = result.Message ?? "Não foi possível concluir a consulta." }, statusCode: 502)
+                };
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { status = "invalid_key", message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Conflict(new { status = "configuration_error", message = ex.Message });
+            }
+        });
+
+        try
+        {
+            await app.StartAsync();
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException)
+        {
+            MessageBox.Show(
+                "A porta local 17345 já está em uso. Feche a outra instância do NFe Agendamento ou o programa que está usando essa porta.",
+                "NFe Agendamento",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+            return;
+        }
+
+        OpenBrowser(LocalHost.ListenUrl);
+        await app.WaitForShutdownAsync();
+    }
+
+    private static void OpenBrowser(string url)
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+        }
+        catch
+        {
+        }
     }
 }
 
 internal sealed record CertificateSelectRequest(string Thumbprint);
+internal sealed record LookupRequest(string AccessKey);
