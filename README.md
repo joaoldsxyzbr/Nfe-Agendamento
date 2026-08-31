@@ -26,7 +26,19 @@ A fundação da V1 agora cobre:
 
 ## Fora do marco atual
 
-DANFE completo, instalador/atualizador assinado e piloto nos três PCs continuam como marcos separados.
+O instalador assinado e o piloto nos três PCs continuam como marcos separados.
+
+## Teste real no Windows
+
+1. Baixe o artefato `Nfe-Agendamento-win-x64` na execução mais recente da PR.
+2. Extraia o ZIP em uma pasta local, por exemplo `C:\NfeAgendamento`.
+3. Execute `NfeAgendamento.App.exe`.
+4. Abra `http://127.0.0.1:17345` no mesmo PC.
+5. Selecione o certificado A1 instalado no usuário atual.
+6. Teste uma chave conhecida, o download XML, o DANFE e `Imprimir / Salvar PDF`.
+7. Teste o lote somente com chaves conhecidas e confirme o ZIP.
+
+O pacote não instala serviço, não abre a porta para a rede e não envia certificado ou XML para a nuvem. Para encerrar, use `Sair` no ícone da bandeja.
 
 ## Segurança
 
