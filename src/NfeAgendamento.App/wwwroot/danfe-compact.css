@@ -1,0 +1,46 @@
+/* Ocupa melhor a A4 sem alterar o visual fiscal branco. */
+.danfe-page {
+  min-height: 277mm;
+  display: flex;
+  flex-direction: column;
+  padding: 4mm;
+  font-size: 7.5px;
+  line-height: 1.08;
+}
+
+.receipt-stub { min-height: 48px; margin-bottom: 3px; }
+.receipt-copy { padding: 3px 5px; line-height: 1.2; }
+.receipt-signature { min-height: 18px; }
+.danfe-header { min-height: 92px; }
+.issuer-identification { padding: 4px; }
+.issuer-identification .issuer-title { margin-bottom: 5px; }
+.barcode-area { grid-template-rows: 49px auto 1fr; }
+.barcode-wrap { padding: 4px 8px 1px; }
+.barcode-wrap svg { height: 40px; }
+.operation-grid > div,
+.issuer-registry > div,
+.recipient-grid > div,
+.transport-grid > div,
+.total-grid > div { min-height: 24px; padding: 2px 4px; }
+.payment-item { min-height: 24px; padding: 3px 4px; }
+.total-grid > div { min-height: 28px; }
+.danfe-block + .danfe-block,
+.danfe-section + .danfe-section { margin-top: 1px; }
+.danfe-section-title { margin: 1px 0; }
+.products-table.danfe-products-fill { flex: 1; }
+.products-table.danfe-products-fill tbody tr:last-child td { height: 100%; }
+.products-table th,
+.products-table td { padding: 1.7px 2px; }
+.additional-grid { min-height: 72px; }
+.additional-grid > div { padding: 3px 4px; }
+.additional-grid p { font-size: 6px; line-height: 1.12; }
+.danfe-footer { margin-top: 2px; }
+
+@media print {
+  .danfe-page {
+    min-height: 297mm;
+    height: 297mm;
+    padding: 4mm;
+    overflow: hidden;
+  }
+}
