@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NFe Agendamento</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <div class="brand-mark" aria-hidden="true">NF</div>
+      <div class="hero-copy">
+        <p class="eyebrow">OPERAÇÃO FISCAL · LOCAL</p>
+        <h1>NFe Agendamento</h1>
+        <p class="hero-subtitle">Consulte, visualize e organize suas NF-e com segurança.</p>
+      </div>
+      <div class="connection-pill"><span class="connection-dot"></span> Aplicativo local</div>
+    </header>
+    <section class="workspace-card">
+      <div class="panel certificate-panel">
+        <div class="panel-heading">
+          <span class="panel-icon">01</span>
+          <div>
+            <h2>Certificado digital</h2>
+            <p>Selecione o certificado A1 instalado neste computador.</p>
+          </div>
+        </div>
+        <div class="certificate-row">
+          <div class="field grow">
+            <label for="certificateSelect">Certificado selecionado</label>
+          <select id="certificateSelect">
+            <option value="">Selecione um certificado...</option>
+          </select>
+          <p id="certificateStatus" class="muted"></p>
+          </div>
+          <div class="field uf-field">
+            <label for="ufAutor">UF autora</label>
+            <select id="ufAutor" aria-label="UF autora da empresa">
+              <option value="11">RO</option><option value="12">AC</option><option value="13">AM</option><option value="14">RR</option><option value="15">PA</option><option value="16">AP</option><option value="17">TO</option><option value="21">MA</option><option value="22">PI</option><option value="23">CE</option><option value="24">RN</option><option value="25">PB</option><option value="26">PE</option><option value="27">AL</option><option value="28">SE</option><option value="29">BA</option><option value="31">MG</option><option value="32">ES</option><option value="33">RJ</option><option value="35">SP</option><option value="41">PR</option><option value="42" selected>SC</option><option value="43">RS</option><option value="50">MS</option><option value="51">MT</option><option value="52">GO</option><option value="53">DF</option>
+            </select>
+          </div>
+          <button id="saveCertificate" class="secondary" type="button">Salvar certificado</button>
+        </div>
+      </div>
+
+      <div class="panel lookup-panel">
+        <div class="panel-heading">
+          <span class="panel-icon accent">02</span>
+          <div>
+            <h2>Consulta individual</h2>
+            <p>Informe a chave de acesso completa da NF-e.</p>
+          </div>
+        </div>
+        <div class="field">
+          <label for="accessKey">Chave de acesso</label>
+          <div class="lookup-row">
+            <input id="accessKey" inputmode="numeric" maxlength="44" autocomplete="off" placeholder="Digite os 44 dígitos">
+            <button id="lookup" class="primary" type="button"><span>Consultar NF-e</span><b>→</b></button>
+          </div>
+          <div class="input-hint">A consulta usa o certificado selecionado e ocorre diretamente no computador.</div>
+        </div>
+        <p id="status" class="status" aria-live="polite"></p>
+        <div id="actions" class="actions" hidden>
+          <button id="viewDanfe" class="action-button" type="button">Visualizar DANFE</button>
+          <button id="printDanfe" class="action-button" type="button">Imprimir / Salvar PDF</button>
+          <button id="view" class="action-button" type="button">Visualizar XML</button>
+          <button id="download" class="action-button" type="button">Baixar XML</button>
+        </div>
+      </div>
+
+      <div class="panel batch-panel">
+        <div class="panel-heading">
+          <span class="panel-icon">03</span>
+          <div>
+            <h2>Consulta em lote</h2>
+            <p>Processe até 100 chaves e baixe os XMLs em um único ZIP.</p>
+          </div>
+        </div>
+        <div class="field">
+          <label for="batchKeys">Chaves de acesso</label>
+          <textarea id="batchKeys" rows="5" placeholder="Cole uma chave por linha, até 100"></textarea>
+          <div class="batch-footer">
+            <span class="input-hint">Uma chave por linha · duplicadas serão ignoradas</span>
+            <button id="batchLookup" class="secondary" type="button">Consultar lote e baixar ZIP</button>
+          </div>
+          <p id="batchStatus" class="status" aria-live="polite"></p>
+        </div>
+      </div>
+    </section>
+    <section id="danfe" class="danfe" hidden></section>
+  </main>
+  <script src="/app.js" defer></script>
+</body>
+</html>
