@@ -4,17 +4,34 @@ Ferramenta interna para consultar e baixar NF-e por chave usando o certificado A
 
 ## Objetivo
 
-O projeto deve permanecer simples e direto. A primeira etapa entrega apenas a fundação local do aplicativo. Consulta única, lote, DANFE e atualização entram por marcos separados e testáveis.
+O projeto deve permanecer simples e direto. Cada PC roda sua própria instalação local e o navegador acessa somente `http://127.0.0.1:17345`.
 
-## Arquitetura alvo
+## Marco atual
 
-Cada PC roda sua própria instalação. O navegador acessa somente `http://127.0.0.1:17345` no próprio computador. Não existe servidor compartilhado na LAN, login, usuário, `distNSU`, dashboard ou sincronização entre máquinas.
+A fundação da V1 agora cobre:
+
+- host local fixo em loopback;
+- proteção por `Host`, `Origin` e CSRF;
+- seleção de certificado A1 no Windows Certificate Store;
+- identidade fiscal derivada do certificado;
+- consulta única por chave via `consChNFe`;
+- cache de XML criptografado com DPAPI e retenção de 24 horas;
+- tratamento persistente de `cStat=656`;
+- tratamento de `137`, `138` com XML e `138` sem XML;
+- retry limitado para falhas transitórias de rede;
+- interface web mínima para selecionar certificado, consultar, visualizar e baixar XML;
+- ícone de bandeja com abrir sistema e sair;
+- CI sem acesso à SEFAZ real.
+
+## Fora do marco atual
+
+Lote/ZIP, DANFE completo, instalador/atualizador assinado e piloto nos três PCs continuam como marcos separados.
 
 ## Segurança
 
 - certificado e chave privada permanecem no Windows Certificate Store;
 - nenhuma interface fiscal deve ficar acessível pela LAN;
-- XMLs em repouso serão criptografados localmente;
+- XMLs em repouso são criptografados localmente;
 - CI nunca consulta a SEFAZ real nem usa certificado/XML fiscal real.
 
 ## Documentação
