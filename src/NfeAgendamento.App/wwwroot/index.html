@@ -13,15 +13,9 @@
       <p class="muted">Consulta local de NF-e por chave de acesso.</p>
     </header>
     <section class="card">
-      <div class="certificate-row">
-        <div>
-          <label for="certificateSelect">Certificado</label>
-          <select id="certificateSelect">
-            <option value="">Selecione um certificado...</option>
-          </select>
-          <p id="certificateStatus" class="muted"></p>
-        </div>
-        <button id="saveCertificate" type="button">Salvar</button>
+      <div class="row certificate-row">
+        <div><strong>Certificado</strong><div id="certificate" class="muted">Carregando...</div></div>
+        <button id="refreshCertificate" type="button">Atualizar</button>
       </div>
       <label for="accessKey">Chave de acesso</label>
       <div class="lookup-row">

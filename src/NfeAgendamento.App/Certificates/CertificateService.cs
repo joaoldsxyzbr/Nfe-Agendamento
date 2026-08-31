@@ -50,8 +50,6 @@ public sealed class CertificateService
         var normalized = NormalizeThumbprint(thumbprint);
         using var certificate = GetByThumbprint(normalized);
 
-        _ = CertificateIdentityReader.Read(certificate);
-
         var directory = Path.GetDirectoryName(_selectionPath)
             ?? throw new InvalidOperationException("Caminho de estado local inválido.");
         Directory.CreateDirectory(directory);
@@ -78,27 +76,6 @@ public sealed class CertificateService
         catch (InvalidOperationException)
         {
             return null;
-        }
-    }
-
-    public (X509Certificate2 Certificate, CertificateSelection Selection) GetCurrentSelectionWithCertificate()
-    {
-        if (!File.Exists(_selectionPath))
-            throw new InvalidOperationException("Nenhum certificado foi configurado.");
-
-        var thumbprint = File.ReadAllText(_selectionPath).Trim();
-        if (thumbprint.Length == 0)
-            throw new InvalidOperationException("Nenhum certificado foi configurado.");
-
-        var certificate = GetByThumbprint(thumbprint);
-        try
-        {
-            _ = CertificateIdentityReader.Read(certificate);
-            return (new X509Certificate2(certificate), ToSelection(certificate));
-        }
-        finally
-        {
-            certificate.Dispose();
         }
     }
 

@@ -20,7 +20,7 @@ A fundação da V1 agora cobre:
 - tratamento de `137`, `138` com XML e `138` sem XML;
 - retry limitado para falhas transitórias de rede;
 - interface web mínima para selecionar certificado, consultar, visualizar e baixar XML;
-- ícone de bandeja com abrir sistema e sair;
+- ações de bandeja para abrir, configurar certificado e verificar atualização;
 - CI sem acesso à SEFAZ real.
 
 ## Fora do marco atual

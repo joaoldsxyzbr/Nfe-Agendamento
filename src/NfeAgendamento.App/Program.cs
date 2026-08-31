@@ -1,3 +1,4 @@
+using System.Security.Cryptography.X509Certificates;
 using NfeAgendamento.App.Certificates;
 using NfeAgendamento.App.Fiscal;
 using NfeAgendamento.App.Security;
@@ -24,7 +25,8 @@ internal static class Program
             var certificates = sp.GetRequiredService<CertificateService>();
             var current = certificates.GetCurrentSelectionWithCertificate();
             var identity = CertificateIdentityReader.Read(current.Certificate);
-            return new NfeDistributionTransport(current.Certificate, identity.Cnpj, identity.UfAutor);
+            var transport = new NfeDistributionTransport(current.Certificate, identity.Cnpj, identity.UfAutor);
+            return transport;
         });
 
         var app = builder.Build();
@@ -34,17 +36,26 @@ internal static class Program
 
         app.MapGet("/api/bootstrap", (CsrfTokenService csrf) =>
             Results.Ok(new { csrfToken = csrf.CurrentToken }));
+
         app.MapGet("/api/certificates", (CertificateService certificates) =>
             Results.Ok(certificates.ListValidCertificates()));
-        app.MapGet("/api/certificate/current", async (CertificateService certificates, CancellationToken cancellationToken) =>
+
+        app.MapGet("/api/certificate/current", async (
+            CertificateService certificates,
+            CancellationToken cancellationToken) =>
         {
             var current = await certificates.GetCurrentAsync(cancellationToken);
             return current is null ? Results.NoContent() : Results.Ok(current);
         });
-        app.MapPost("/api/certificate/select", async (CertificateSelectRequest? request, CertificateService certificates, CancellationToken cancellationToken) =>
+
+        app.MapPost("/api/certificate/select", async (
+            CertificateSelectRequest? request,
+            CertificateService certificates,
+            CancellationToken cancellationToken) =>
         {
             if (request is null || string.IsNullOrWhiteSpace(request.Thumbprint))
                 return Results.BadRequest(new { status = "invalid_certificate", message = "Selecione um certificado." });
+
             try
             {
                 await certificates.SelectAsync(request.Thumbprint, cancellationToken);
@@ -55,19 +66,26 @@ internal static class Program
                 return Results.BadRequest(new { status = "invalid_certificate", message = ex.Message });
             }
         });
-        app.MapPost("/api/nfe/lookup", async (LookupRequest? request, NfeLookupService lookup, CancellationToken cancellationToken) =>
+
+        app.MapPost("/api/nfe/lookup", async (
+            LookupRequest? request,
+            NfeLookupService lookup,
+            CancellationToken cancellationToken) =>
         {
             if (request is null || !AccessKeyValidator.IsValid(request.AccessKey))
                 return Results.BadRequest(new { status = "invalid_key", message = "Informe uma chave NF-e válida com 44 dígitos." });
+
             try
             {
                 var result = await lookup.LookupAsync(request.AccessKey, cancellationToken);
                 return result.Status switch
                 {
                     NfeLookupStatus.Found => Results.Text(result.Xml!, "application/xml; charset=utf-8"),
-                    NfeLookupStatus.NotFound => Results.Json(new { status = "not_found", message = result.Message, cStat = result.CStat }, statusCode: 404),
-                    NfeLookupStatus.ManifestationRequired => Results.Json(new { status = "manifestation_required", message = result.Message, cStat = result.CStat }, statusCode: 409),
-                    NfeLookupStatus.Blocked => Results.Json(new { status = "consumo_indevido", message = result.Message, cStat = result.CStat, blockedUntilUtc = result.BlockedUntilUtc }, statusCode: 429),
+                    NfeLookupStatus.NotFound => Results.NotFound(new { status = "not_found", message = result.Message, cStat = result.CStat }),
+                    NfeLookupStatus.ManifestationRequired => Results.Conflict(new { status = "manifestation_required", message = result.Message, cStat = result.CStat }),
+                    NfeLookupStatus.Blocked => Results.StatusCode(StatusCodes.Status429TooManyRequests) is IResult blocked
+                        ? Results.Json(new { status = "consumo_indevido", message = result.Message, cStat = result.CStat, blockedUntilUtc = result.BlockedUntilUtc }, statusCode: 429)
+                        : blocked,
                     _ => Results.Json(new { status = "network_error", message = result.Message ?? "Não foi possível concluir a consulta." }, statusCode: 502)
                 };
             }
@@ -77,7 +95,7 @@ internal static class Program
             }
             catch (InvalidOperationException ex)
             {
-                return Results.Json(new { status = "configuration_error", message = ex.Message }, statusCode: 409);
+                return Results.Conflict(new { status = "configuration_error", message = ex.Message });
             }
         });
 
@@ -85,7 +103,7 @@ internal static class Program
         {
             await app.StartAsync();
         }
-        catch (IOException)
+        catch (Exception ex) when (ex is IOException or InvalidOperationException)
         {
             MessageBox.Show(
                 "A porta local 17345 já está em uso. Feche a outra instância do NFe Agendamento ou o programa que está usando essa porta.",
@@ -96,8 +114,7 @@ internal static class Program
         }
 
         OpenBrowser(LocalHost.ListenUrl);
-        Application.Run(new TrayApplicationContext(LocalHost.ListenUrl));
-        await app.StopAsync();
+        await app.WaitForShutdownAsync();
     }
 
     private static void OpenBrowser(string url)
