@@ -49,8 +49,13 @@ public sealed class CertificateServiceTests
         using var generated = request.CreateSelfSigned(notBefore, notAfter);
 
         if (keepPrivateKey)
-            return X509CertificateLoader.LoadPkcs12(generated.Export(X509ContentType.Pfx), null, X509KeyStorageFlags.Exportable);
+        {
+            return new X509Certificate2(
+                generated.Export(X509ContentType.Pfx),
+                (string?)null,
+                X509KeyStorageFlags.Exportable | X509KeyStorageFlags.EphemeralKeySet);
+        }
 
-        return X509CertificateLoader.LoadCertificate(generated.Export(X509ContentType.Cert));
+        return new X509Certificate2(generated.Export(X509ContentType.Cert));
     }
 }
