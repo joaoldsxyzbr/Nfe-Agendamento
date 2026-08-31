@@ -34,4 +34,17 @@ public sealed class DanfeStaticAssetsTests
         Assert.Contains(".danfe-page", css);
         Assert.Contains("background: #fff", css);
     }
+
+    [Fact]
+    public void Danfe_uses_a4_space_and_only_renders_transport_when_it_has_useful_data()
+    {
+        var script = Fixture("app.js");
+        var css = Fixture("styles.css");
+
+        Assert.Contains("hasTransportData", script);
+        Assert.Contains("transportSection", script);
+        Assert.Contains("danfe-products-fill", script);
+        Assert.Contains("min-height: 277mm", css);
+        Assert.Contains("flex: 1", css);
+    }
 }
