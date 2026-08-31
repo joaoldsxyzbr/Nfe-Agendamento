@@ -8,6 +8,7 @@ public sealed record CertificateIdentity(string Cnpj, string UfAutor);
 public static class CertificateIdentityReader
 {
     private static readonly Regex CnpjRegex = new(@"(?<!\d)\d{14}(?!\d)", RegexOptions.Compiled);
+    private static readonly Regex CommonNameCnpjRegex = new(@"(?:^|,)\s*CN\s*=\s*(?:\"[^\"]*?:|[^,]*?:)(\d{14})(?:\"|,|$)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex StateRegex = new(@"(?:^|[,;])\s*(?:S|ST|State|UF)\s*=\s*([A-Z]{2})(?:[,;]|$)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly IReadOnlyDictionary<string, string> StateCodes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
     {
@@ -21,8 +22,12 @@ public static class CertificateIdentityReader
     {
         ArgumentNullException.ThrowIfNull(certificate);
         var subject = certificate.Subject ?? string.Empty;
+        var commonNameCnpj = CommonNameCnpjRegex.Match(subject).Groups[1].Value;
         var cnpjMatches = CnpjRegex.Matches(subject).Select(m => m.Value).Distinct(StringComparer.Ordinal).ToArray();
-        if (cnpjMatches.Length != 1)
+        var cnpj = commonNameCnpj.Length == 14
+            ? commonNameCnpj
+            : cnpjMatches.Length == 1 ? cnpjMatches[0] : string.Empty;
+        if (cnpj.Length != 14)
             throw new InvalidOperationException("Não foi possível identificar com segurança o CNPJ no certificado selecionado.");
 
         var subjectState = StateRegex.Match(subject).Groups[1].Value;
@@ -32,6 +37,6 @@ public static class CertificateIdentityReader
         if (state.Length != 2 || state.Any(c => c is < '0' or > '9'))
             throw new InvalidOperationException("Informe a UF autora em formato numérico (ex.: 42 para SC).");
 
-        return new CertificateIdentity(cnpjMatches[0], state);
+        return new CertificateIdentity(cnpj, state);
     }
 }
