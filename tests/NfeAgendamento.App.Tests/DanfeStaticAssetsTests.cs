@@ -38,8 +38,8 @@ public sealed class DanfeStaticAssetsTests
     [Fact]
     public void Danfe_uses_a4_space_and_only_renders_transport_when_it_has_useful_data()
     {
-        var script = Fixture("app.js");
-        var css = Fixture("styles.css");
+        var script = Fixture("danfe-compact.js");
+        var css = Fixture("danfe-compact.css");
 
         Assert.Contains("hasTransportData", script);
         Assert.Contains("transportSection", script);
