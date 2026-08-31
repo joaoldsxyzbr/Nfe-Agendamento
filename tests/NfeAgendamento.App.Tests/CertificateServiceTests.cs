@@ -50,6 +50,22 @@ public sealed class CertificateServiceTests
         Assert.Equal("42", identity.UfAutor);
     }
 
+    [Fact]
+    public void Certificate_identity_prefers_cnpj_suffix_from_common_name_when_subject_contains_other_14_digit_identifier()
+    {
+        var now = new DateTimeOffset(2026, 8, 31, 12, 0, 0, TimeSpan.Zero);
+        using var certificate = CreateCertificate(
+            now.AddDays(-1),
+            now.AddDays(30),
+            keepPrivateKey: true,
+            "CN=PRADO SUPERMERCADO LTDA:09199938000157, OU=37279265000180, O=ICP-Brasil, C=BR");
+
+        var identity = CertificateIdentityReader.Read(certificate, "42");
+
+        Assert.Equal("09199938000157", identity.Cnpj);
+        Assert.Equal("42", identity.UfAutor);
+    }
+
     private static X509Certificate2 CreateCertificate(
         DateTimeOffset notBefore,
         DateTimeOffset notAfter,
