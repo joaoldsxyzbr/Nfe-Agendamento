@@ -68,4 +68,18 @@ public sealed class DanfeStaticAssetsTests
         Assert.Contains("attr(det, 'det', 'nItem')", script);
         Assert.Contains("colspan=\"16\"", script);
     }
+
+    [Fact]
+    public void Danfe_item_column_has_fixed_width_and_does_not_wrap()
+    {
+        var script = Fixture("danfe-compact.js");
+        var css = Fixture("danfe-compact.css");
+
+        Assert.Contains("class=\"center item-col\"", script);
+        Assert.Contains("class=\"code-col\"", script);
+        Assert.Contains(".products-table col.item", css);
+        Assert.Contains("width: 8mm", css);
+        Assert.Contains("white-space: nowrap", css);
+        Assert.Contains(".products-table .item-col", css);
+    }
 }
