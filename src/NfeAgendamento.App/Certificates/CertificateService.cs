@@ -5,6 +5,7 @@ namespace NfeAgendamento.App.Certificates;
 public sealed class CertificateService
 {
     private readonly string _selectionPath;
+    private readonly string _authorityStatePath;
 
     public CertificateService()
         : this(Path.Combine(AppPaths.StateRoot, "certificate-thumbprint.txt"))
@@ -17,6 +18,7 @@ public sealed class CertificateService
             throw new ArgumentException("Caminho de seleção de certificado inválido.", nameof(selectionPath));
 
         _selectionPath = selectionPath;
+        _authorityStatePath = selectionPath + ".uf";
     }
 
     public IReadOnlyList<CertificateSelection> ListValidCertificates()
@@ -45,12 +47,13 @@ public sealed class CertificateService
             "O certificado selecionado não foi encontrado, está vencido ou não possui chave privada disponível.");
     }
 
-    public async Task SelectAsync(string thumbprint, CancellationToken cancellationToken = default)
+    public async Task SelectAsync(string thumbprint, string ufAutor, CancellationToken cancellationToken = default)
     {
         var normalized = NormalizeThumbprint(thumbprint);
+        var normalizedUf = NormalizeAuthorityState(ufAutor);
         using var certificate = GetByThumbprint(normalized);
 
-        _ = CertificateIdentityReader.Read(certificate);
+        _ = CertificateIdentityReader.Read(certificate, normalizedUf);
 
         var directory = Path.GetDirectoryName(_selectionPath)
             ?? throw new InvalidOperationException("Caminho de estado local inválido.");
@@ -59,6 +62,8 @@ public sealed class CertificateService
         var temporary = _selectionPath + ".tmp";
         await File.WriteAllTextAsync(temporary, normalized, cancellationToken);
         File.Move(temporary, _selectionPath, overwrite: true);
+        await File.WriteAllTextAsync(_authorityStatePath + ".tmp", normalizedUf, cancellationToken);
+        File.Move(_authorityStatePath + ".tmp", _authorityStatePath, overwrite: true);
     }
 
     public async Task<CertificateSelection?> GetCurrentAsync(CancellationToken cancellationToken = default)
@@ -93,13 +98,24 @@ public sealed class CertificateService
         var certificate = GetByThumbprint(thumbprint);
         try
         {
-            _ = CertificateIdentityReader.Read(certificate);
+            var ufAutor = GetCurrentAuthorityState();
+            _ = CertificateIdentityReader.Read(certificate, ufAutor);
             return (new X509Certificate2(certificate), ToSelection(certificate));
         }
         finally
         {
             certificate.Dispose();
         }
+    }
+
+    public string? GetCurrentAuthorityState() =>
+        File.Exists(_authorityStatePath) ? File.ReadAllText(_authorityStatePath).Trim() : null;
+
+    private static string NormalizeAuthorityState(string ufAutor)
+    {
+        if (string.IsNullOrWhiteSpace(ufAutor) || ufAutor.Length != 2 || ufAutor.Any(c => c is < '0' or > '9'))
+            throw new ArgumentException("Informe a UF autora em formato numérico (ex.: 42 para SC).", nameof(ufAutor));
+        return ufAutor;
     }
 
     public static IReadOnlyList<X509Certificate2> FilterUsable(

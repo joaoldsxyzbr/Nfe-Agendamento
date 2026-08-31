@@ -40,15 +40,17 @@ internal static class Program
         app.MapGet("/api/certificate/current", async (CertificateService certificates, CancellationToken cancellationToken) =>
         {
             var current = await certificates.GetCurrentAsync(cancellationToken);
-            return current is null ? Results.NoContent() : Results.Ok(current);
+            return current is null
+                ? Results.NoContent()
+                : Results.Ok(new { current.Thumbprint, current.Subject, current.NotAfter, ufAutor = certificates.GetCurrentAuthorityState() });
         });
         app.MapPost("/api/certificate/select", async (CertificateSelectRequest? request, CertificateService certificates, CancellationToken cancellationToken) =>
         {
-            if (request is null || string.IsNullOrWhiteSpace(request.Thumbprint))
-                return Results.BadRequest(new { status = "invalid_certificate", message = "Selecione um certificado." });
+            if (request is null || string.IsNullOrWhiteSpace(request.Thumbprint) || string.IsNullOrWhiteSpace(request.UfAutor))
+                return Results.BadRequest(new { status = "invalid_certificate", message = "Selecione o certificado e informe a UF autora." });
             try
             {
-                await certificates.SelectAsync(request.Thumbprint, cancellationToken);
+                await certificates.SelectAsync(request.Thumbprint, request.UfAutor, cancellationToken);
                 return Results.NoContent();
             }
             catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
@@ -56,12 +58,13 @@ internal static class Program
                 return Results.BadRequest(new { status = "invalid_certificate", message = ex.Message });
             }
         });
-        app.MapPost("/api/nfe/lookup", async (LookupRequest? request, NfeLookupService lookup, CancellationToken cancellationToken) =>
+        app.MapPost("/api/nfe/lookup", async (LookupRequest? request, HttpContext context, CancellationToken cancellationToken) =>
         {
             if (request is null || !AccessKeyValidator.IsValid(request.AccessKey))
                 return Results.BadRequest(new { status = "invalid_key", message = "Informe uma chave NF-e válida com 44 dígitos." });
             try
             {
+                var lookup = context.RequestServices.GetRequiredService<NfeLookupService>();
                 var result = await lookup.LookupAsync(request.AccessKey, cancellationToken);
                 return result.Status switch
                 {
@@ -81,12 +84,13 @@ internal static class Program
                 return Results.Json(new { status = "configuration_error", message = ex.Message }, statusCode: 409);
             }
         });
-        app.MapPost("/api/nfe/batch", async (BatchLookupRequest? request, BatchLookupService batch, CancellationToken cancellationToken) =>
+        app.MapPost("/api/nfe/batch", async (BatchLookupRequest? request, HttpContext context, CancellationToken cancellationToken) =>
         {
             if (request is null)
                 return Results.BadRequest(new { status = "invalid_batch", message = "Informe as chaves do lote." });
             try
             {
+                var batch = context.RequestServices.GetRequiredService<BatchLookupService>();
                 var result = await batch.LookupAsync(request.AccessKeys ?? [], cancellationToken);
                 return Results.File(BatchLookupService.CreateZip(result), "application/zip", "nfe-agendamento.zip");
             }
@@ -127,6 +131,6 @@ internal static class Program
     }
 }
 
-internal sealed record CertificateSelectRequest(string Thumbprint);
+internal sealed record CertificateSelectRequest(string Thumbprint, string UfAutor);
 internal sealed record LookupRequest(string AccessKey);
 internal sealed record BatchLookupRequest(string[]? AccessKeys);

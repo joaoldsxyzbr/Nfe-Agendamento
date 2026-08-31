@@ -29,7 +29,8 @@ async function loadCertificates() {
   if (currentResponse.status === 200) {
     const current = await currentResponse.json();
     select.value = current.thumbprint;
-    $('certificateStatus').textContent = 'Certificado selecionado.';
+    if (current.ufAutor) $('ufAutor').value = current.ufAutor;
+    $('certificateStatus').textContent = current.ufAutor ? 'Certificado selecionado.' : 'Informe a UF autora para concluir a configuração.';
   } else {
     $('certificateStatus').textContent = certificates.length ? 'Selecione o certificado usado nas consultas.' : 'Nenhum certificado A1 válido foi encontrado.';
   }
@@ -46,7 +47,7 @@ async function saveCertificate() {
     method: 'POST',
     cache: 'no-store',
     headers: { 'content-type': 'application/json', 'X-CSRF-Token': csrfToken },
-    body: JSON.stringify({ thumbprint })
+    body: JSON.stringify({ thumbprint, ufAutor: $('ufAutor').value })
   });
   if (!response.ok) {
     const error = await response.json().catch(() => ({ message: 'Não foi possível salvar o certificado.' }));
