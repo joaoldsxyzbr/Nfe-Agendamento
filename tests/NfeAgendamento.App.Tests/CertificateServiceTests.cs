@@ -38,6 +38,18 @@ public sealed class CertificateServiceTests
         Assert.Equal(certificate.NotAfter, selection.NotAfter);
     }
 
+    [Fact]
+    public void Certificate_identity_accepts_explicit_authority_state_when_subject_has_no_state()
+    {
+        var now = new DateTimeOffset(2026, 8, 31, 12, 0, 0, TimeSpan.Zero);
+        using var certificate = CreateCertificate(now.AddDays(-1), now.AddDays(30), keepPrivateKey: true, "CN=12345678000195, O=Empresa Teste, C=BR");
+
+        var identity = CertificateIdentityReader.Read(certificate, "42");
+
+        Assert.Equal("12345678000195", identity.Cnpj);
+        Assert.Equal("42", identity.UfAutor);
+    }
+
     private static X509Certificate2 CreateCertificate(
         DateTimeOffset notBefore,
         DateTimeOffset notAfter,
