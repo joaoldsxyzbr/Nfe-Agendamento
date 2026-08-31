@@ -34,26 +34,17 @@ internal static class Program
 
         app.MapGet("/api/bootstrap", (CsrfTokenService csrf) =>
             Results.Ok(new { csrfToken = csrf.CurrentToken }));
-
         app.MapGet("/api/certificates", (CertificateService certificates) =>
             Results.Ok(certificates.ListValidCertificates()));
-
-        app.MapGet("/api/certificate/current", async (
-            CertificateService certificates,
-            CancellationToken cancellationToken) =>
+        app.MapGet("/api/certificate/current", async (CertificateService certificates, CancellationToken cancellationToken) =>
         {
             var current = await certificates.GetCurrentAsync(cancellationToken);
             return current is null ? Results.NoContent() : Results.Ok(current);
         });
-
-        app.MapPost("/api/certificate/select", async (
-            CertificateSelectRequest? request,
-            CertificateService certificates,
-            CancellationToken cancellationToken) =>
+        app.MapPost("/api/certificate/select", async (CertificateSelectRequest? request, CertificateService certificates, CancellationToken cancellationToken) =>
         {
             if (request is null || string.IsNullOrWhiteSpace(request.Thumbprint))
                 return Results.BadRequest(new { status = "invalid_certificate", message = "Selecione um certificado." });
-
             try
             {
                 await certificates.SelectAsync(request.Thumbprint, cancellationToken);
@@ -64,15 +55,10 @@ internal static class Program
                 return Results.BadRequest(new { status = "invalid_certificate", message = ex.Message });
             }
         });
-
-        app.MapPost("/api/nfe/lookup", async (
-            LookupRequest? request,
-            NfeLookupService lookup,
-            CancellationToken cancellationToken) =>
+        app.MapPost("/api/nfe/lookup", async (LookupRequest? request, NfeLookupService lookup, CancellationToken cancellationToken) =>
         {
             if (request is null || !AccessKeyValidator.IsValid(request.AccessKey))
                 return Results.BadRequest(new { status = "invalid_key", message = "Informe uma chave NF-e válida com 44 dígitos." });
-
             try
             {
                 var result = await lookup.LookupAsync(request.AccessKey, cancellationToken);
@@ -110,7 +96,8 @@ internal static class Program
         }
 
         OpenBrowser(LocalHost.ListenUrl);
-        await app.WaitForShutdownAsync();
+        Application.Run(new TrayApplicationContext(LocalHost.ListenUrl));
+        await app.StopAsync();
     }
 
     private static void OpenBrowser(string url)
