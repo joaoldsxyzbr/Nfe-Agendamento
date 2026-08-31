@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Reflection;
+using System.Text.Json.Serialization;
 
 namespace NfeAgendamento.App.Updates;
 
@@ -43,5 +44,6 @@ public sealed class UpdateService : IDisposable
         _httpClient.Dispose();
     }
 
-    private sealed record GitHubRelease(string? TagName);
+    private sealed record GitHubRelease(
+        [property: JsonPropertyName("tag_name")] string? TagName);
 }
