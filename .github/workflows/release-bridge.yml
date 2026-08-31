@@ -24,11 +24,11 @@ jobs:
         env:
           COMMENT: ${{ github.event.comment.body }}
         run: |
-          $parts = $env:COMMENT -split '\\s+'
+          $parts = $env:COMMENT -split '\s+'
           if ($parts.Count -lt 3) { throw 'Use: /release v1.0.0 ref=nome-da-branch' }
           $version = $parts[1]
           $ref = $parts[2] -replace '^ref=', ''
-          if ($version -notmatch '^v?[0-9]+\\.[0-9]+\\.[0-9]+$') { throw 'Versão inválida. Use v1.0.0.' }
+          if ($version -notmatch '^v?[0-9]+\.[0-9]+\.[0-9]+$') { throw 'Versão inválida. Use v1.0.0.' }
           if ([string]::IsNullOrWhiteSpace($ref)) { throw 'Branch/ref não informado.' }
           "version=$version" >> $env:GITHUB_OUTPUT
           "tag=v$($version.TrimStart('v','V'))" >> $env:GITHUB_OUTPUT
