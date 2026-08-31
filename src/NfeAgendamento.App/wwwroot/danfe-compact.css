@@ -31,6 +31,21 @@
 .products-table.danfe-products-fill tbody tr:last-child td { height: 100%; }
 .products-table th,
 .products-table td { padding: 1.7px 2px; }
+.products-table col.item { width: 8mm; }
+.products-table col.code { width: 20mm; }
+.products-table .item-col,
+.products-table thead th:first-child {
+  white-space: nowrap;
+  text-align: center;
+  word-break: normal;
+  overflow-wrap: normal;
+}
+.products-table .code-col,
+.products-table thead th:nth-child(2) {
+  white-space: nowrap;
+  word-break: normal;
+  overflow-wrap: normal;
+}
 .additional-grid { min-height: 72px; }
 .additional-grid > div { padding: 3px 4px; }
 .additional-grid p { font-size: 6px; line-height: 1.12; }

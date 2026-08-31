@@ -31,8 +31,8 @@ buildProductsTable = function compactProductsTable(products) {
     const description = `${escapeHtml(value(prod, 'xProd'))}${tax.taxNote ? `<small class="tax-detail">${escapeHtml(tax.taxNote)}</small>` : ''}`;
     const itemNumber = attr(det, 'det', 'nItem');
     return `<tr>
-      <td class="center">${escapeHtml(itemNumber)}</td>
-      <td>${escapeHtml(value(prod, 'cProd'))}</td>
+      <td class="center item-col">${escapeHtml(itemNumber)}</td>
+      <td class="code-col">${escapeHtml(value(prod, 'cProd'))}</td>
       <td class="description">${description}</td>
       <td class="center">${escapeHtml(value(prod, 'NCM'))}</td>
       <td class="center">${escapeHtml(tax.cst)}</td>
