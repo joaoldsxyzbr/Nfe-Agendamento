@@ -120,4 +120,32 @@ $('download').addEventListener('click', () => {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
 
+$('batchLookup').addEventListener('click', async () => {
+  const accessKeys = $('batchKeys').value.split(/\s+/).map(key => key.replace(/\D/g, '')).filter(Boolean);
+  $('batchStatus').textContent = 'Consultando lote...';
+  try {
+    const response = await fetch('/api/nfe/batch', {
+      method: 'POST',
+      cache: 'no-store',
+      headers: { 'content-type': 'application/json', 'X-CSRF-Token': csrfToken },
+      body: JSON.stringify({ accessKeys })
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: 'Falha no lote.' }));
+      $('batchStatus').textContent = error.message || 'Falha no lote.';
+      return;
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = 'nfe-agendamento.zip';
+    anchor.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    $('batchStatus').textContent = 'Lote concluído. O ZIP foi baixado.';
+  } catch {
+    $('batchStatus').textContent = 'Não foi possível conectar ao aplicativo local.';
+  }
+});
+
 boot().catch(error => setStatus(error.message, true));

@@ -14,4 +14,6 @@ button { border: 0; border-radius: 8px; padding: 11px 16px; font: inherit; curso
 .status { min-height: 24px; margin: 16px 0 0; }
 .status.error { font-weight: 600; }
 .actions { display: flex; gap: 10px; margin-top: 12px; }
+textarea { width: 100%; resize: vertical; padding: 12px; border: 1px solid #d1d5db; border-radius: 8px; font: inherit; margin-bottom: 10px; }
+hr { border: 0; border-top: 1px solid #e5e7eb; margin: 24px 0; }
 @media (max-width: 620px) { .lookup-row { flex-direction: column; } .shell { margin: 2vh auto; } }

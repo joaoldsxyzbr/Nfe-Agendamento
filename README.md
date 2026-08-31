@@ -21,11 +21,12 @@ A fundação da V1 agora cobre:
 - retry limitado para falhas transitórias de rede;
 - interface web mínima para selecionar certificado, consultar, visualizar e baixar XML;
 - ações de bandeja para abrir, configurar certificado e verificar atualização;
+- consulta em lote sequencial de até 100 chaves com download em ZIP;
 - CI sem acesso à SEFAZ real.
 
 ## Fora do marco atual
 
-Lote/ZIP, DANFE completo, instalador/atualizador assinado e piloto nos três PCs continuam como marcos separados.
+DANFE completo, instalador/atualizador assinado e piloto nos três PCs continuam como marcos separados.
 
 ## Segurança
 

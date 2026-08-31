@@ -33,6 +33,11 @@
         <button id="view" type="button">Visualizar XML</button>
         <button id="download" type="button">Baixar XML</button>
       </div>
+      <hr>
+      <label for="batchKeys">Consulta em lote</label>
+      <textarea id="batchKeys" rows="5" placeholder="Cole uma chave por linha, até 100"></textarea>
+      <button id="batchLookup" type="button">Consultar lote e baixar ZIP</button>
+      <p id="batchStatus" class="status" aria-live="polite"></p>
     </section>
   </main>
   <script src="/app.js" defer></script>
