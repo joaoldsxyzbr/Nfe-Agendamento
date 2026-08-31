@@ -136,6 +136,17 @@ function address(root) {
   return [street, value(root, 'xBairro'), city, value(root, 'CEP')].filter(Boolean).join(' · ');
 }
 
+function closeDanfe() {
+  $('danfe').hidden = true;
+  document.body.classList.remove('danfe-open');
+}
+
+function openDanfe() {
+  $('danfe').hidden = false;
+  document.body.classList.add('danfe-open');
+  $('closeDanfe')?.focus();
+}
+
 function renderDanfe() {
   const document = new DOMParser().parseFromString(currentXml, 'application/xml');
   if (document.querySelector('parsererror')) throw new Error('O XML da NF-e não pôde ser lido.');
@@ -154,26 +165,38 @@ function renderDanfe() {
 
   const key = (attr(infNFe, 'infNFe', 'Id') || '').replace(/^NFe/, '') || currentKey;
   $('danfe').innerHTML = `
-    <div class="danfe-toolbar"><button type="button" id="closeDanfe">Fechar</button><button type="button" id="printDanfeTop">Imprimir / Salvar PDF</button></div>
-    <div class="danfe-page">
-      <div class="danfe-top">
-        <div class="issuer"><strong>${escapeHtml(value(emit, 'xNome'))}</strong><span>${escapeHtml(address(emit))}</span><span>CNPJ: ${escapeHtml(value(emit, 'CNPJ'))}</span></div>
-        <div class="danfe-title"><strong>DANFE</strong><span>Documento Auxiliar da Nota Fiscal Eletrônica</span><b>NF-e</b></div>
-        <div class="invoice-number"><span>Nº</span><strong>${escapeHtml(value(ide, 'nNF'))}</strong><span>Série ${escapeHtml(value(ide, 'serie'))}</span><small>Folha 1/1</small></div>
+    <div class="danfe-modal" role="document">
+      <div class="danfe-toolbar"><button type="button" id="closeDanfe">Fechar</button><button type="button" id="printDanfeTop">Imprimir / Salvar PDF</button></div>
+      <div class="danfe-scroll">
+        <div class="danfe-page">
+          <div class="danfe-top">
+            <div class="issuer"><strong>${escapeHtml(value(emit, 'xNome'))}</strong><span>${escapeHtml(address(emit))}</span><span>CNPJ: ${escapeHtml(value(emit, 'CNPJ'))}</span></div>
+            <div class="danfe-title"><strong>DANFE</strong><span>Documento Auxiliar da Nota Fiscal Eletrônica</span><b>NF-e</b></div>
+            <div class="invoice-number"><span>Nº</span><strong>${escapeHtml(value(ide, 'nNF'))}</strong><span>Série ${escapeHtml(value(ide, 'serie'))}</span><small>Folha 1/1</small></div>
+          </div>
+          <div class="section key-section"><span class="section-title">Chave de acesso</span><strong class="access-key">${escapeHtml(key.replace(/(.{4})/g, '$1 '))}</strong><small>Consulta de autenticidade no portal nacional da NF-e</small></div>
+          <div class="grid grid-4"><div><span>Natureza da operação</span><strong>${escapeHtml(value(ide, 'natOp'))}</strong></div><div><span>Data de emissão</span><strong>${escapeHtml(value(ide, 'dhEmi') || value(ide, 'dEmi'))}</strong></div><div><span>Tipo</span><strong>${value(ide, 'tpNF') === '1' ? 'Saída' : 'Entrada'}</strong></div><div><span>Protocolo</span><strong>${escapeHtml(value(document, 'nProt'))}</strong></div></div>
+          <div class="section"><span class="section-title">Emitente</span><div class="party"><strong>${escapeHtml(value(emit, 'xNome'))}</strong><span>CNPJ: ${escapeHtml(value(emit, 'CNPJ'))} · IE: ${escapeHtml(value(emit, 'IE'))}</span><span>${escapeHtml(address(emit))}</span></div></div>
+          <div class="section"><span class="section-title">Destinatário / Remetente</span><div class="party"><strong>${escapeHtml(value(dest, 'xNome'))}</strong><span>CNPJ/CPF: ${escapeHtml(value(dest, 'CNPJ') || value(dest, 'CPF'))} · IE: ${escapeHtml(value(dest, 'IE'))}</span><span>${escapeHtml(address(dest))}</span></div></div>
+          <div class="section products"><span class="section-title">Produtos e serviços</span><table><thead><tr><th>Item</th><th>Código</th><th>Descrição</th><th>NCM</th><th>CFOP</th><th>UN</th><th>Qtd.</th><th>Vlr. unit.</th><th>Vlr. total</th></tr></thead><tbody>${rows || '<tr><td colspan="9">Nenhum produto informado no XML.</td></tr>'}</tbody></table></div>
+          <div class="section totals"><span class="section-title">Cálculo do imposto</span><div class="grid grid-5"><div><span>Base ICMS</span><strong>${money(value(total, 'vBC'))}</strong></div><div><span>ICMS</span><strong>${money(value(total, 'vICMS'))}</strong></div><div><span>IPI</span><strong>${money(value(total, 'vIPI'))}</strong></div><div><span>Frete</span><strong>${money(value(total, 'vFrete'))}</strong></div><div class="grand-total"><span>Valor total da NF-e</span><strong>${money(value(total, 'vNF'))}</strong></div></div></div>
+          <div class="section"><span class="section-title">Transportador / Volumes transportados</span><div class="grid grid-3"><div><span>Transportador</span><strong>${escapeHtml(value(transp, 'xNome'))}</strong></div><div><span>CNPJ</span><strong>${escapeHtml(value(transp, 'CNPJ'))}</strong></div><div><span>Volumes</span><strong>${escapeHtml(value(transp, 'qVol'))}</strong></div></div></div>
+          <div class="section additional"><span class="section-title">Dados adicionais</span><p>${escapeHtml(value(infNFe, 'infCpl'))}</p></div>
+        </div>
       </div>
-      <div class="section key-section"><span class="section-title">Chave de acesso</span><strong class="access-key">${escapeHtml(key.replace(/(.{4})/g, '$1 '))}</strong><small>Consulta de autenticidade no portal nacional da NF-e</small></div>
-      <div class="grid grid-4"><div><span>Natureza da operação</span><strong>${escapeHtml(value(ide, 'natOp'))}</strong></div><div><span>Data de emissão</span><strong>${escapeHtml(value(ide, 'dhEmi') || value(ide, 'dEmi'))}</strong></div><div><span>Tipo</span><strong>${value(ide, 'tpNF') === '1' ? 'Saída' : 'Entrada'}</strong></div><div><span>Protocolo</span><strong>${escapeHtml(value(document, 'nProt'))}</strong></div></div>
-      <div class="section"><span class="section-title">Emitente</span><div class="party"><strong>${escapeHtml(value(emit, 'xNome'))}</strong><span>CNPJ: ${escapeHtml(value(emit, 'CNPJ'))} · IE: ${escapeHtml(value(emit, 'IE'))}</span><span>${escapeHtml(address(emit))}</span></div></div>
-      <div class="section"><span class="section-title">Destinatário / Remetente</span><div class="party"><strong>${escapeHtml(value(dest, 'xNome'))}</strong><span>CNPJ/CPF: ${escapeHtml(value(dest, 'CNPJ') || value(dest, 'CPF'))} · IE: ${escapeHtml(value(dest, 'IE'))}</span><span>${escapeHtml(address(dest))}</span></div></div>
-      <div class="section products"><span class="section-title">Produtos e serviços</span><table><thead><tr><th>Item</th><th>Código</th><th>Descrição</th><th>NCM</th><th>CFOP</th><th>UN</th><th>Qtd.</th><th>Vlr. unit.</th><th>Vlr. total</th></tr></thead><tbody>${rows || '<tr><td colspan="9">Nenhum produto informado no XML.</td></tr>'}</tbody></table></div>
-      <div class="section totals"><span class="section-title">Cálculo do imposto</span><div class="grid grid-5"><div><span>Base ICMS</span><strong>${money(value(total, 'vBC'))}</strong></div><div><span>ICMS</span><strong>${money(value(total, 'vICMS'))}</strong></div><div><span>IPI</span><strong>${money(value(total, 'vIPI'))}</strong></div><div><span>Frete</span><strong>${money(value(total, 'vFrete'))}</strong></div><div class="grand-total"><span>Valor total da NF-e</span><strong>${money(value(total, 'vNF'))}</strong></div></div></div>
-      <div class="section"><span class="section-title">Transportador / Volumes transportados</span><div class="grid grid-3"><div><span>Transportador</span><strong>${escapeHtml(value(transp, 'xNome'))}</strong></div><div><span>CNPJ</span><strong>${escapeHtml(value(transp, 'CNPJ'))}</strong></div><div><span>Volumes</span><strong>${escapeHtml(value(transp, 'qVol'))}</strong></div></div></div>
-      <div class="section additional"><span class="section-title">Dados adicionais</span><p>${escapeHtml(value(infNFe, 'infCpl'))}</p></div>
     </div>`;
-  $('danfe').hidden = false;
-  $('closeDanfe').addEventListener('click', () => { $('danfe').hidden = true; });
+  openDanfe();
+  $('closeDanfe').addEventListener('click', closeDanfe);
   $('printDanfeTop').addEventListener('click', () => window.print());
 }
+
+$('danfe').addEventListener('click', (event) => {
+  if (event.target === $('danfe')) closeDanfe();
+});
+
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && !$('danfe').hidden) closeDanfe();
+});
 
 $('lookup').addEventListener('click', lookup);
 $('saveCertificate').addEventListener('click', () => saveCertificate().catch(error => setStatus(error.message, true)));
