@@ -1,0 +1,58 @@
+name: Release Bridge
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  release:
+    if: >
+      github.event.issue.pull_request &&
+      (github.event.comment.author_association == 'OWNER' ||
+       github.event.comment.author_association == 'COLLABORATOR' ||
+       github.event.comment.author_association == 'MEMBER') &&
+      startsWith(github.event.comment.body, '/release ')
+    runs-on: windows-latest
+    steps:
+      - name: Interpretar comando
+        id: command
+        shell: pwsh
+        env:
+          COMMENT: ${{ github.event.comment.body }}
+        run: |
+          $parts = $env:COMMENT -split '\\s+'
+          if ($parts.Count -lt 3) { throw 'Use: /release v1.0.0 ref=nome-da-branch' }
+          $version = $parts[1]
+          $ref = $parts[2] -replace '^ref=', ''
+          if ($version -notmatch '^v?[0-9]+\\.[0-9]+\\.[0-9]+$') { throw 'Versão inválida. Use v1.0.0.' }
+          if ([string]::IsNullOrWhiteSpace($ref)) { throw 'Branch/ref não informado.' }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=v$($version.TrimStart('v','V'))" >> $env:GITHUB_OUTPUT
+          "ref=$ref" >> $env:GITHUB_OUTPUT
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.command.outputs.ref }}
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Testar e publicar
+        shell: pwsh
+        run: |
+          dotnet restore Nfe-Agendamento.sln
+          dotnet test Nfe-Agendamento.sln -c Release --no-restore
+          dotnet publish src/NfeAgendamento.App/NfeAgendamento.App.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o artifacts/nfe-agendamento
+          Compress-Archive -Path artifacts/nfe-agendamento/* -DestinationPath artifacts/Nfe-Agendamento-win-x64.zip
+
+      - name: Criar Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          gh release create "${{ steps.command.outputs.tag }}" artifacts/Nfe-Agendamento-win-x64.zip --target "${{ steps.command.outputs.ref }}" --title "NFe Agendamento ${{ steps.command.outputs.version }}" --notes "Pacote Windows autocontido para teste do NFe Agendamento."
