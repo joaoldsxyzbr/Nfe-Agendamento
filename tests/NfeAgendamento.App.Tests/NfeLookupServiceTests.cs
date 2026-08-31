@@ -7,6 +7,7 @@ namespace NfeAgendamento.App.Tests;
 public sealed class NfeLookupServiceTests
 {
     private const string ValidKey = "35260812345678000195550010000000011000000018";
+    private const string ValidKey2 = "35260812345678000195550010000000021000000015";
 
     [Fact]
     public async Task Lookup_returns_cache_without_calling_transport()
@@ -82,15 +83,37 @@ public sealed class NfeLookupServiceTests
         Assert.Equal("<nfeProc>ok</nfeProc>", (await cache.TryGetAsync(ValidKey))!.Xml);
     }
 
+    [Fact]
+    public async Task Lookup_serializes_fiscal_calls_across_service_instances()
+    {
+        using var temp = new TemporaryDirectory();
+        var gate = new FiscalOperationGate();
+        var transport = new BlockingTransport();
+        var service1 = CreateService(Path.Combine(temp.Path, "a"), null, transport, gate: gate);
+        var service2 = CreateService(Path.Combine(temp.Path, "b"), null, transport, gate: gate);
+
+        var first = service1.LookupAsync(ValidKey);
+        await transport.FirstCallEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var second = service2.LookupAsync(ValidKey2);
+        await Task.Delay(100);
+
+        Assert.Equal(1, transport.CallCount);
+        transport.ReleaseFirstCall.SetResult();
+        await Task.WhenAll(first, second);
+        Assert.Equal(2, transport.CallCount);
+    }
+
     private static NfeLookupService CreateService(
         string root,
         EncryptedXmlCache? cache,
         INfeDistributionTransport transport,
-        FiscalCooldownStore? cooldown = null) =>
+        FiscalCooldownStore? cooldown = null,
+        FiscalOperationGate? gate = null) =>
         new(
             transport,
             cache ?? new EncryptedXmlCache(Path.Combine(root, "cache"), TimeProvider.System, TimeSpan.FromHours(24)),
-            cooldown ?? new FiscalCooldownStore(Path.Combine(root, "cooldown.bin")));
+            cooldown ?? new FiscalCooldownStore(Path.Combine(root, "cooldown.bin")),
+            gate: gate);
 
     private sealed class FakeTransport(NfeDistributionResponse response) : INfeDistributionTransport
     {
@@ -100,6 +123,24 @@ public sealed class NfeLookupServiceTests
         {
             CallCount++;
             return Task.FromResult(response);
+        }
+    }
+
+    private sealed class BlockingTransport : INfeDistributionTransport
+    {
+        public int CallCount;
+        public TaskCompletionSource FirstCallEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource ReleaseFirstCall { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task<NfeDistributionResponse> QueryByAccessKeyAsync(string accessKey, CancellationToken cancellationToken = default)
+        {
+            var call = Interlocked.Increment(ref CallCount);
+            if (call == 1)
+            {
+                FirstCallEntered.SetResult();
+                await ReleaseFirstCall.Task.WaitAsync(cancellationToken);
+            }
+            return new NfeDistributionResponse("137", "Nenhum documento localizado", null);
         }
     }
 
