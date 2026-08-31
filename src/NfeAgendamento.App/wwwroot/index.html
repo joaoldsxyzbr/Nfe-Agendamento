@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NFe Agendamento</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <h1>NFe Agendamento</h1>
+      <p class="muted">Consulta local de NF-e por chave de acesso.</p>
+    </header>
+    <section class="card">
+      <div class="row certificate-row">
+        <div><strong>Certificado</strong><div id="certificate" class="muted">Carregando...</div></div>
+        <button id="refreshCertificate" type="button">Atualizar</button>
+      </div>
+      <label for="accessKey">Chave de acesso</label>
+      <div class="lookup-row">
+        <input id="accessKey" inputmode="numeric" maxlength="44" autocomplete="off" placeholder="Digite os 44 dígitos">
+        <button id="lookup" type="button">Consultar</button>
+      </div>
+      <p id="status" class="status" aria-live="polite"></p>
+      <div id="actions" class="actions" hidden>
+        <button id="view" type="button">Visualizar XML</button>
+        <button id="download" type="button">Baixar XML</button>
+      </div>
+    </section>
+  </main>
+  <script src="/app.js" defer></script>
+</body>
+</html>
