@@ -13,11 +13,10 @@
 1. Extraia o pacote em uma pasta permanente.
 2. Execute `NfeAgendamento.App.exe --lan`.
 3. Abra `http://127.0.0.1:17345` no próprio PC.
-4. Use a senha padrão `agendamentoprado`.
-5. Selecione o certificado A1.
-6. Informe a UF autora.
-7. Faça uma consulta individual de teste.
-8. Teste o download do XML e a visualização do DANFE.
+4. Selecione o certificado A1.
+5. Informe a UF autora.
+6. Faça uma consulta individual de teste.
+7. Teste o download do XML e a visualização do DANFE.
 
 O modo `--lan` faz o servidor escutar nas interfaces de rede. O modo sem argumento continua restrito a `127.0.0.1`.
 
@@ -31,7 +30,7 @@ O endereço principal é:
 http://nfeagendamento.local:17345
 ```
 
-Se não funcionar, descubra o IPv4 do PC central com `ipconfig` e use:
+O acesso é direto, sem senha. Se não funcionar, descubra o IPv4 do PC central com `ipconfig` e use:
 
 ```text
 http://IP-DO-CENTRAL:17345
@@ -66,9 +65,11 @@ A regra recomendada no PC central deve limitar:
 
 Não abra a porta no roteador e não use perfil de rede pública.
 
-## Senha
+## Acesso interno
 
-A senha padrão é `agendamentoprado` e é usada pelos navegadores da equipe. O acesso deve ficar restrito à rede privada da empresa.
+O aplicativo não possui autenticação própria. Qualquer computador que consiga alcançar a porta 17345 poderá abrir a interface, por isso o acesso deve ficar restrito à rede privada da empresa.
+
+Não publique a porta 17345 na internet e não permita o aplicativo no perfil de rede pública do Windows.
 
 ## Dados locais
 
@@ -97,10 +98,6 @@ O cache e o estado fiscal são protegidos pelo DPAPI do usuário do Windows. Tro
 3. teste a conectividade entre os PCs;
 4. confirme o IP atual do PC central;
 5. verifique se o PC entrou em outra rede.
-
-### Retorno 401
-
-Faça login novamente com a senha da central. Se ocorrer em uma chamada fiscal, a sessão do navegador pode ter expirado.
 
 ### Retorno 429
 
