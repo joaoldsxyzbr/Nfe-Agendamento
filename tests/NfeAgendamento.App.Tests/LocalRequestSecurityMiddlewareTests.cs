@@ -18,13 +18,7 @@ public sealed class LocalRequestSecurityMiddlewareTests
         int expectedStatus)
     {
         var csrf = new CsrfTokenService();
-        var middleware = new LocalRequestSecurityMiddleware(
-            next: context =>
-            {
-                context.Response.StatusCode = StatusCodes.Status200OK;
-                return Task.CompletedTask;
-            },
-            csrf);
+        var middleware = CreateMiddleware(csrf, centralEnabled: true);
 
         var context = CreateContext(HttpMethods.Get, host, origin);
         await middleware.InvokeAsync(context);
@@ -33,12 +27,12 @@ public sealed class LocalRequestSecurityMiddlewareTests
     }
 
     [Fact]
-    public async Task Security_policy_rejects_non_loopback_remote_address()
+    public async Task Security_policy_rejects_non_loopback_when_central_is_stopped()
     {
         var csrf = new CsrfTokenService();
-        var middleware = CreateMiddleware(csrf);
-        var context = CreateContext(HttpMethods.Get, "127.0.0.1:17345", "http://127.0.0.1:17345");
-        context.Connection.RemoteIpAddress = IPAddress.Parse("192.168.1.50");
+        var middleware = CreateMiddleware(csrf, centralEnabled: false);
+        var context = CreateContext(HttpMethods.Get, "10.0.0.29:17345", "http://10.0.0.29:17345");
+        context.Connection.RemoteIpAddress = IPAddress.Parse("10.0.0.30");
 
         await middleware.InvokeAsync(context);
 
@@ -46,10 +40,23 @@ public sealed class LocalRequestSecurityMiddlewareTests
     }
 
     [Fact]
+    public async Task Security_policy_allows_non_loopback_when_central_is_active()
+    {
+        var csrf = new CsrfTokenService();
+        var middleware = CreateMiddleware(csrf, centralEnabled: true);
+        var context = CreateContext(HttpMethods.Get, "10.0.0.29:17345", "http://10.0.0.29:17345");
+        context.Connection.RemoteIpAddress = IPAddress.Parse("10.0.0.30");
+
+        await middleware.InvokeAsync(context);
+
+        Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+    }
+
+    [Fact]
     public async Task Post_without_csrf_is_rejected()
     {
         var csrf = new CsrfTokenService();
-        var middleware = CreateMiddleware(csrf);
+        var middleware = CreateMiddleware(csrf, centralEnabled: true);
         var context = CreateContext(HttpMethods.Post, "127.0.0.1:17345", "http://127.0.0.1:17345");
         context.Request.ContentType = "application/json";
         context.Request.ContentLength = 2;
@@ -63,7 +70,7 @@ public sealed class LocalRequestSecurityMiddlewareTests
     public async Task Post_with_valid_csrf_is_allowed()
     {
         var csrf = new CsrfTokenService();
-        var middleware = CreateMiddleware(csrf);
+        var middleware = CreateMiddleware(csrf, centralEnabled: true);
         var context = CreateContext(HttpMethods.Post, "127.0.0.1:17345", "http://127.0.0.1:17345");
         context.Request.ContentType = "application/json";
         context.Request.ContentLength = 2;
@@ -78,7 +85,7 @@ public sealed class LocalRequestSecurityMiddlewareTests
     public async Task Oversized_json_post_is_rejected()
     {
         var csrf = new CsrfTokenService();
-        var middleware = CreateMiddleware(csrf);
+        var middleware = CreateMiddleware(csrf, centralEnabled: true);
         var context = CreateContext(HttpMethods.Post, "127.0.0.1:17345", "http://127.0.0.1:17345");
         context.Request.ContentType = "application/json";
         context.Request.ContentLength = LocalHost.MaxRequestBodyBytes + 1;
@@ -89,14 +96,22 @@ public sealed class LocalRequestSecurityMiddlewareTests
         Assert.Equal(StatusCodes.Status413PayloadTooLarge, context.Response.StatusCode);
     }
 
-    private static LocalRequestSecurityMiddleware CreateMiddleware(CsrfTokenService csrf) =>
-        new(
+    private static LocalRequestSecurityMiddleware CreateMiddleware(CsrfTokenService csrf, bool centralEnabled)
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"nfe-security-{Guid.NewGuid():N}", "central.json");
+        var store = new CentralSettingsStore(path);
+        var state = new CentralStateService(store);
+        state.SetEnabled(centralEnabled);
+
+        return new LocalRequestSecurityMiddleware(
             next: context =>
             {
                 context.Response.StatusCode = StatusCodes.Status200OK;
                 return Task.CompletedTask;
             },
-            csrf);
+            csrf,
+            state);
+    }
 
     private static DefaultHttpContext CreateContext(string method, string host, string? origin)
     {
