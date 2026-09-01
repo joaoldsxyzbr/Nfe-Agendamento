@@ -12,8 +12,13 @@ internal static class Program
     {
         ApplicationConfiguration.Initialize();
 
-        var builder = WebApplication.CreateBuilder(args);
-        LocalHost.Configure(builder, args);
+        var startupEnabled = StartupManager.IsEnabled();
+        var launchArgs = StartupManager.ResolveLaunchArguments(args, startupEnabled);
+        if (startupEnabled)
+            StartupManager.SetEnabled(true, lanMode: true);
+
+        var builder = WebApplication.CreateBuilder(launchArgs);
+        LocalHost.Configure(builder, launchArgs);
         builder.Services.AddSingleton<CsrfTokenService>();
         builder.Services.AddSingleton<CertificateService>();
         builder.Services.AddSingleton<EncryptedXmlCache>();
@@ -36,7 +41,7 @@ internal static class Program
         app.UseStaticFiles();
 
         app.MapGet("/api/bootstrap", (CsrfTokenService csrf) =>
-            Results.Ok(new { csrfToken = csrf.CurrentToken, lanMode = LocalHost.IsLanMode, accessUrl = LocalHost.GetBrowserUrl(args) }));
+            Results.Ok(new { csrfToken = csrf.CurrentToken, lanMode = LocalHost.IsLanMode, accessUrl = LocalHost.GetBrowserUrl(launchArgs) }));
         app.MapGet("/api/certificates", (CertificateService certificates) =>
             Results.Ok(certificates.ListValidCertificates()));
         app.MapGet("/api/certificate/current", async (CertificateService certificates, CancellationToken cancellationToken) =>
@@ -101,7 +106,7 @@ internal static class Program
             return;
         }
 
-        var browserUrl = LocalHost.GetBrowserUrl(args);
+        var browserUrl = LocalHost.GetBrowserUrl(launchArgs);
         using var networkName = LocalHost.IsLanMode ? NetworkNameService.Start() : null;
         OpenBrowser(browserUrl);
         Application.Run(new TrayApplicationContext(browserUrl));
