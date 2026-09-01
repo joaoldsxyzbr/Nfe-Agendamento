@@ -18,7 +18,7 @@ public sealed class FiscalRequestCoordinatorTests
             Interlocked.Increment(ref calls);
             entered.TrySetResult();
             await release.Task;
-            return NfeLookupResult.NotFound("não encontrada");
+            return NotFoundResult();
         }
 
         var first = coordinator.ExecuteAsync("key-1", Operation);
@@ -50,7 +50,7 @@ public sealed class FiscalRequestCoordinatorTests
 
             await release.Task;
             Interlocked.Decrement(ref active);
-            return NfeLookupResult.NotFound("não encontrada");
+            return NotFoundResult();
         }
 
         var first = coordinator.ExecuteAsync("key-1", Operation);
@@ -72,7 +72,7 @@ public sealed class FiscalRequestCoordinatorTests
         Task<NfeLookupResult> Operation()
         {
             Interlocked.Increment(ref calls);
-            return Task.FromResult(NfeLookupResult.NotFound("não encontrada"));
+            return Task.FromResult(NotFoundResult());
         }
 
         await coordinator.ExecuteAsync("key-1", Operation);
@@ -80,6 +80,9 @@ public sealed class FiscalRequestCoordinatorTests
 
         Assert.Equal(2, calls);
     }
+
+    private static NfeLookupResult NotFoundResult() =>
+        new(NfeLookupStatus.NotFound, null, "137", "não encontrada", false);
 
     private static void UpdateMaximum(ref int target, int candidate)
     {
