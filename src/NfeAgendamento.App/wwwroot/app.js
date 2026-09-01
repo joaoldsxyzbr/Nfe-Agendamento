@@ -1,14 +1,54 @@
 let csrfToken = '';
 let currentXml = '';
 let currentKey = '';
+let lookupInProgress = false;
 
 const $ = (id) => document.getElementById(id);
 
 async function boot() {
   const response = await fetch('/api/bootstrap', { cache: 'no-store' });
   if (!response.ok) throw new Error('Não foi possível inicializar a sessão local.');
-  ({ csrfToken } = await response.json());
+  const bootstrap = await response.json();
+  csrfToken = bootstrap.csrfToken;
+  if (bootstrap.lanMode && !(await ensureAuth())) return;
   await loadCertificates();
+}
+
+async function ensureAuth() {
+  const statusResponse = await fetch('/api/auth/status', { cache: 'no-store' });
+  const auth = await statusResponse.json();
+  if (auth.authenticated) return true;
+
+  const gate = $('authGate');
+  gate.hidden = false;
+  $('authMessage').textContent = auth.configured
+    ? 'Informe a senha numérica da central.'
+    : 'Crie a senha numérica da central neste computador.';
+  $('authForm').onsubmit = async (event) => {
+    event.preventDefault();
+    const password = $('authPassword').value;
+    const endpoint = auth.configured ? '/api/auth/login' : '/api/auth/setup';
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'X-CSRF-Token': csrfToken },
+      body: JSON.stringify({ password })
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: 'Não foi possível autenticar.' }));
+      $('authStatus').textContent = error.message;
+      $('authStatus').className = 'status error';
+      return;
+    }
+    if (!auth.configured) {
+      auth.configured = true;
+      $('authMessage').textContent = 'Senha criada. Informe-a para entrar.';
+      $('authPassword').value = '';
+      return;
+    }
+    gate.hidden = true;
+    await loadCertificates();
+  };
+  return false;
 }
 
 async function loadCertificates() {
@@ -59,7 +99,10 @@ async function saveCertificate() {
 }
 
 async function lookup() {
+  if (lookupInProgress) return;
+
   const accessKey = $('accessKey').value.replace(/\D/g, '');
+  const lookupButton = $('lookup');
   $('accessKey').value = accessKey;
   $('actions').hidden = true;
   currentXml = '';
@@ -70,6 +113,9 @@ async function lookup() {
     return;
   }
 
+  lookupInProgress = true;
+  lookupButton.disabled = true;
+  lookupButton.querySelector('span').textContent = 'Consultando...';
   setStatus('Consultando a SEFAZ...');
   try {
     const response = await fetch('/api/nfe/lookup', {
@@ -96,6 +142,10 @@ async function lookup() {
     setStatus(error.message || 'Falha na consulta.', true);
   } catch {
     setStatus('Não foi possível conectar ao aplicativo local.', true);
+  } finally {
+    lookupInProgress = false;
+    lookupButton.disabled = false;
+    lookupButton.querySelector('span').textContent = 'Consultar NF-e';
   }
 }
 
