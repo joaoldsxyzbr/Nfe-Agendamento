@@ -46,7 +46,7 @@ public sealed class EncryptedXmlCacheTests
     }
 
     [Fact]
-    public async Task Corrupt_ciphertext_fails_closed()
+    public async Task Corrupt_ciphertext_is_deleted_and_treated_as_cache_miss()
     {
         var root = TempDirectory();
         var clock = new TestTimeProvider(DateTimeOffset.Parse("2026-08-31T12:00:00Z"));
@@ -55,7 +55,10 @@ public sealed class EncryptedXmlCacheTests
         var file = Assert.Single(Directory.GetFiles(root, "*.bin"));
         await File.WriteAllBytesAsync(file, Encoding.UTF8.GetBytes("not-valid-dpapi-data"));
 
-        await Assert.ThrowsAsync<InvalidDataException>(() => cache.TryGetAsync(AccessKey));
+        var entry = await cache.TryGetAsync(AccessKey);
+
+        Assert.Null(entry);
+        Assert.False(File.Exists(file));
     }
 
     private static string TempDirectory() =>
