@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
+using Microsoft.AspNetCore.Http;
 
 namespace NfeAgendamento.App;
 
@@ -20,38 +21,28 @@ public sealed record LanAddressCandidate
 
 public static class CentralNetworkInfo
 {
-    public static IPAddress? FindLanIPv4()
+    public static IPAddress? FindLanIPv4() =>
+        SelectPreferredIPv4(GetLanAddressCandidates());
+
+    public static IReadOnlyList<IPAddress> GetLanIPv4Addresses() =>
+        GetLanAddressCandidates()
+            .Select(candidate => candidate.Address)
+            .Distinct()
+            .ToArray();
+
+    public static bool IsLocalLanHost(HostString host) =>
+        MatchesLanHost(host, GetLanIPv4Addresses());
+
+    public static bool MatchesLanHost(HostString host, IEnumerable<IPAddress> localAddresses)
     {
-        var candidates = new List<LanAddressCandidate>();
+        ArgumentNullException.ThrowIfNull(localAddresses);
 
-        foreach (var network in NetworkInterface.GetAllNetworkInterfaces())
-        {
-            if (network.OperationalStatus != OperationalStatus.Up)
-                continue;
-            if (network.NetworkInterfaceType is NetworkInterfaceType.Loopback or NetworkInterfaceType.Tunnel)
-                continue;
+        if (host.Port != LocalHost.Port || !IPAddress.TryParse(host.Host, out var requestedAddress))
+            return false;
+        if (!IsUsableLanIPv4(requestedAddress))
+            return false;
 
-            IPInterfaceProperties properties;
-            try
-            {
-                properties = network.GetIPProperties();
-            }
-            catch (NetworkInformationException)
-            {
-                continue;
-            }
-
-            var hasGateway = properties.GatewayAddresses.Any(gateway => IsUsableGateway(gateway.Address));
-            foreach (var unicast in properties.UnicastAddresses)
-            {
-                if (!IsUsableLanIPv4(unicast.Address))
-                    continue;
-
-                candidates.Add(new LanAddressCandidate(unicast.Address, hasGateway, network.NetworkInterfaceType));
-            }
-        }
-
-        return SelectPreferredIPv4(candidates);
+        return localAddresses.Any(address => address.Equals(requestedAddress));
     }
 
     public static IPAddress? SelectPreferredIPv4(IEnumerable<LanAddressCandidate> candidates)
@@ -94,6 +85,40 @@ public static class CentralNetworkInfo
 
         var address = FindLanIPv4();
         return address is null ? LocalHost.ListenUrl : BuildAccessUrl(address);
+    }
+
+    private static IReadOnlyList<LanAddressCandidate> GetLanAddressCandidates()
+    {
+        var candidates = new List<LanAddressCandidate>();
+
+        foreach (var network in NetworkInterface.GetAllNetworkInterfaces())
+        {
+            if (network.OperationalStatus != OperationalStatus.Up)
+                continue;
+            if (network.NetworkInterfaceType is NetworkInterfaceType.Loopback or NetworkInterfaceType.Tunnel)
+                continue;
+
+            IPInterfaceProperties properties;
+            try
+            {
+                properties = network.GetIPProperties();
+            }
+            catch (NetworkInformationException)
+            {
+                continue;
+            }
+
+            var hasGateway = properties.GatewayAddresses.Any(gateway => IsUsableGateway(gateway.Address));
+            foreach (var unicast in properties.UnicastAddresses)
+            {
+                if (!IsUsableLanIPv4(unicast.Address))
+                    continue;
+
+                candidates.Add(new LanAddressCandidate(unicast.Address, hasGateway, network.NetworkInterfaceType));
+            }
+        }
+
+        return candidates;
     }
 
     private static bool IsUsableGateway(IPAddress address) =>
