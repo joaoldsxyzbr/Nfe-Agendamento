@@ -16,6 +16,9 @@ assert.ok(bridge.includes('node tests/js/product-mapping-regression.test.js'), '
 assert.ok(bridge.includes('node tests/js/lookup-feedback-regression.test.js'), 'Release deve validar o feedback fiscal.');
 assert.ok(bridge.includes('node tests/js/release-readiness-regression.test.js'), 'Release deve validar a própria prontidão.');
 assert.ok(!fs.existsSync(path.join(root, legacyTagPath)), 'Workflow legado por tag deve ser removido para existir um único caminho de release.');
+assert.ok(bridge.includes('ref: ${{ github.sha }}'), 'Release deve fazer checkout do SHA imutável que disparou o workflow.');
+assert.ok(bridge.includes('--target "${{ github.sha }}"'), 'Tag/release deve apontar para o mesmo SHA que foi testado e empacotado.');
+assert.ok(!bridge.includes('--target main'), 'Release não pode tagar main mutável depois dos testes.');
 
 const workflowText = `${ci}\n${bridge}`;
 const forbiddenWorkflowPatterns = [
@@ -49,4 +52,4 @@ const certificateFiles = walk(root)
   .filter((file) => /\.(pfx|p12)$/i.test(file));
 assert.deepStrictEqual(certificateFiles, [], 'Repositório não pode conter certificado A1 empacotado.');
 
-console.log('OK: release tem um único caminho, executa regressões e não depende de credenciais fiscais reais.');
+console.log('OK: release usa SHA imutável, executa regressões e não depende de credenciais fiscais reais.');
