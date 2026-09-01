@@ -36,6 +36,16 @@ public sealed class DanfeStaticAssetsTests
     }
 
     [Fact]
+    public void Lookup_button_is_guarded_against_duplicate_requests()
+    {
+        var script = Fixture("app.js");
+
+        Assert.Contains("if (lookupInProgress) return;", script);
+        Assert.Contains("lookupButton.disabled = true;", script);
+        Assert.Contains("lookupButton.disabled = false;", script);
+    }
+
+    [Fact]
     public void Danfe_uses_a4_space_and_only_renders_transport_when_it_has_useful_data()
     {
         var script = Fixture("danfe-compact.js");
