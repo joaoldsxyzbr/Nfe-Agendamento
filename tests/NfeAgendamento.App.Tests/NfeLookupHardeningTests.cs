@@ -1,3 +1,5 @@
+using System.Net;
+using System.Net.Http;
 using NfeAgendamento.App.Fiscal;
 using NfeAgendamento.App.Storage;
 using Xunit;
@@ -54,6 +56,29 @@ public sealed class NfeLookupHardeningTests
     }
 
     [Fact]
+    public async Task Non_transient_http_error_is_not_retried()
+    {
+        using var temp = new TemporaryDirectory();
+        var transport = new HttpFailureTransport(HttpStatusCode.BadRequest);
+        var delayCount = 0;
+        var service = new NfeLookupService(
+            transport,
+            new EncryptedXmlCache(Path.Combine(temp.Path, "cache"), TimeProvider.System, TimeSpan.FromHours(24)),
+            new FiscalCooldownStore(Path.Combine(temp.Path, "cooldown.bin")),
+            delay: (_, _) =>
+            {
+                delayCount++;
+                return Task.CompletedTask;
+            });
+
+        var result = await service.LookupAsync(ValidKey);
+
+        Assert.Equal(NfeLookupStatus.Failed, result.Status);
+        Assert.Equal(1, transport.CallCount);
+        Assert.Equal(0, delayCount);
+    }
+
+    [Fact]
     public async Task Deduplicated_lookup_writes_one_audit_record_without_full_key()
     {
         using var temp = new TemporaryDirectory();
@@ -100,6 +125,17 @@ public sealed class NfeLookupHardeningTests
             return Task.FromResult(CallCount == 1
                 ? new NfeDistributionResponse("656", "Consumo indevido", null)
                 : new NfeDistributionResponse("137", "Nenhum documento localizado", null));
+        }
+    }
+
+    private sealed class HttpFailureTransport(HttpStatusCode statusCode) : INfeDistributionTransport
+    {
+        public int CallCount { get; private set; }
+
+        public Task<NfeDistributionResponse> QueryByAccessKeyAsync(string accessKey, CancellationToken cancellationToken = default)
+        {
+            CallCount++;
+            throw new HttpRequestException("Falha HTTP simulada.", null, statusCode);
         }
     }
 
