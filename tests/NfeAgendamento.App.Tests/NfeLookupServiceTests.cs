@@ -1,3 +1,4 @@
+using System.Net.Http;
 using NfeAgendamento.App.Fiscal;
 using NfeAgendamento.App.Storage;
 using Xunit;
@@ -123,17 +124,51 @@ public sealed class NfeLookupServiceTests
         Assert.Equal(1, transport.CallCount);
     }
 
+    [Fact]
+    public async Task Lookup_returns_failed_after_final_network_error()
+    {
+        using var temp = new TemporaryDirectory();
+        var transport = new AlwaysFailingNetworkTransport();
+        var service = CreateService(
+            temp.Path,
+            null,
+            transport,
+            delay: (_, _) => Task.CompletedTask);
+
+        var result = await service.LookupAsync(ValidKey);
+
+        Assert.Equal(NfeLookupStatus.Failed, result.Status);
+        Assert.Equal(3, transport.CallCount);
+        Assert.Contains("comunicar", result.Message!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Lookup_returns_failed_when_sefaz_response_is_invalid()
+    {
+        using var temp = new TemporaryDirectory();
+        var transport = new InvalidResponseTransport();
+        var service = CreateService(temp.Path, null, transport);
+
+        var result = await service.LookupAsync(ValidKey);
+
+        Assert.Equal(NfeLookupStatus.Failed, result.Status);
+        Assert.Equal(1, transport.CallCount);
+        Assert.Contains("validada", result.Message!, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static NfeLookupService CreateService(
         string root,
         EncryptedXmlCache? cache,
         INfeDistributionTransport transport,
         FiscalCooldownStore? cooldown = null,
         FiscalOperationGate? gate = null,
-        FiscalRequestCoordinator? coordinator = null) =>
+        FiscalRequestCoordinator? coordinator = null,
+        Func<TimeSpan, CancellationToken, Task>? delay = null) =>
         new(
             transport,
             cache ?? new EncryptedXmlCache(Path.Combine(root, "cache"), TimeProvider.System, TimeSpan.FromHours(24)),
             cooldown ?? new FiscalCooldownStore(Path.Combine(root, "cooldown.bin")),
+            delay: delay,
             gate: gate,
             coordinator: coordinator);
 
@@ -163,6 +198,28 @@ public sealed class NfeLookupServiceTests
                 await ReleaseFirstCall.Task.WaitAsync(cancellationToken);
             }
             return new NfeDistributionResponse("137", "Nenhum documento localizado", null);
+        }
+    }
+
+    private sealed class AlwaysFailingNetworkTransport : INfeDistributionTransport
+    {
+        public int CallCount { get; private set; }
+
+        public Task<NfeDistributionResponse> QueryByAccessKeyAsync(string accessKey, CancellationToken cancellationToken = default)
+        {
+            CallCount++;
+            throw new HttpRequestException("falha de rede de teste");
+        }
+    }
+
+    private sealed class InvalidResponseTransport : INfeDistributionTransport
+    {
+        public int CallCount { get; private set; }
+
+        public Task<NfeDistributionResponse> QueryByAccessKeyAsync(string accessKey, CancellationToken cancellationToken = default)
+        {
+            CallCount++;
+            throw new InvalidDataException("resposta inválida de teste");
         }
     }
 
