@@ -4,10 +4,10 @@ Aplicativo Windows interno para consultar, visualizar e baixar NF-e usando o cer
 
 ## Versão publicada
 
-**v0.1.11**
+**v0.1.14**
 
-- [Baixar o pacote Windows x64](https://github.com/joaoldsxyzbr/Nfe-Agendamento/releases/download/v0.1.11/Nfe-Agendamento-win-x64.zip)
-- [Ver a release v0.1.11](https://github.com/joaoldsxyzbr/Nfe-Agendamento/releases/tag/v0.1.11)
+- [Baixar o pacote Windows x64](https://github.com/joaoldsxyzbr/Nfe-Agendamento/releases/download/v0.1.14/Nfe-Agendamento-win-x64.zip)
+- [Ver a release v0.1.14](https://github.com/joaoldsxyzbr/Nfe-Agendamento/releases/tag/v0.1.14)
 
 O pacote é autocontido e não exige instalação do .NET.
 
@@ -50,9 +50,25 @@ Nenhum certificado, chave privada ou XML é enviado para a nuvem.
 - retry limitado apenas para falhas transitórias de rede;
 - proteção CSRF, validação de Host e Origin;
 - modo LAN habilitado somente com `--lan`;
-- domínio interno via mDNS.
+- domínio interno via mDNS;
+- mapeamento interno de produtos da Fernando Klein sem alterar o XML original.
 
 A consulta em lote foi removida para reduzir risco de consumo indevido e manter a operação da central simples e previsível para vários computadores.
+
+## Mapeamento Fernando Klein
+
+O mapeamento é aplicado somente quando o CPF/CNPJ do emitente corresponde ao fornecedor configurado. O código fiscal `cProd` da NF-e é sempre preservado e o código interno é exibido separadamente no DANFE.
+
+As descrições passam por normalização de acentos, espaços, pontuação e prefixos como `VERDURAS -`. O vínculo continua estrito por aliases cadastrados: não existe aproximação automática ou fuzzy matching.
+
+Se um item não existir no catálogo, o sistema mantém apenas o `cProd` original e registra no console do navegador um aviso com a descrição e o código do fornecedor. Também registra um resumo da NF, por exemplo:
+
+```text
+[NFe Agendamento] Fernando Klein: 18 itens, 17 mapeados, 1 não mapeados.
+[NFe Agendamento] Produto Fernando Klein não mapeado: VERDURAS - PRODUTO NOVO (cProd: FK999).
+```
+
+Esses logs não incluem XML completo, certificado, chave privada nem CPF/CNPJ do emitente.
 
 ## Instalação no PC central
 
@@ -164,10 +180,23 @@ Antes de publicar uma alteração:
 ```bash
 dotnet restore Nfe-Agendamento.sln
 dotnet test Nfe-Agendamento.sln -c Release
+node tests/js/product-mapping-regression.test.js
 dotnet build Nfe-Agendamento.sln -c Release
 ```
 
-O CI executa testes e build em Windows. Ele não usa certificado real, XML real nem consulta a SEFAZ.
+O CI executa testes, regressão do mapeamento, build e geração do pacote Windows. Execuções antigas da mesma branch são canceladas quando uma nova começa.
+
+## Criar uma release
+
+A release é criada manualmente pelo GitHub Actions:
+
+1. abra **Actions**;
+2. escolha **Release Bridge**;
+3. clique em **Run workflow**;
+4. informe a versão, por exemplo `v0.1.15`;
+5. execute.
+
+O workflow rejeita versão repetida ou menor/igual à última publicada, roda testes e regressão antes da publicação e impede duas releases simultâneas.
 
 ## Documentação técnica
 
