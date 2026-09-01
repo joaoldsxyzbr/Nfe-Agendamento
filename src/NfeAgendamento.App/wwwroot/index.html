@@ -6,6 +6,7 @@
   <meta name="color-scheme" content="dark">
   <title>NFe Agendamento</title>
   <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/ui-adjustments.css">
   <link rel="stylesheet" href="/danfe-compact.css">
 </head>
 <body>
@@ -35,8 +36,11 @@
 
         <div class="field">
           <label for="accessKey">Chave de acesso</label>
-          <div class="lookup-row">
+          <div class="lookup-key-row">
             <input id="accessKey" inputmode="numeric" maxlength="44" autocomplete="off" placeholder="Cole ou digite os 44 dígitos">
+          </div>
+          <div class="lookup-actions-row">
+            <button id="newLookup" class="secondary new-lookup-button" type="button">Nova consulta</button>
             <button id="lookup" class="primary" type="button"><span>Consultar NF-e</span><b>→</b></button>
           </div>
           <div class="input-hint">A consulta usa o certificado configurado ao lado e acessa a SEFAZ diretamente pelo aplicativo.</div>
@@ -82,6 +86,19 @@
 
     <section id="danfe" class="danfe" role="dialog" aria-modal="true" aria-label="Visualização do DANFE" hidden></section>
   </main>
+  <script>
+    function resetLookup() {
+      const accessKey = document.getElementById('accessKey');
+      const status = document.getElementById('status');
+      const actions = document.getElementById('actions');
+      accessKey.value = '';
+      status.textContent = '';
+      status.className = 'status';
+      actions.hidden = true;
+      accessKey.focus();
+    }
+    document.getElementById('newLookup').addEventListener('click', resetLookup);
+  </script>
   <script src="/app.js" defer></script>
   <script src="/danfe-compact.js" defer></script>
 </body>
