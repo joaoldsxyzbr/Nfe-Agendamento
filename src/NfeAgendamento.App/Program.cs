@@ -16,7 +16,7 @@ internal static class Program
         var centralState = new CentralStateService(settingsStore);
 
         if (StartupManager.IsEnabled())
-            StartupManager.SetEnabled(true, lanMode: false);
+            StartupManager.SetEnabled(true);
 
         var appArgs = args
             .Where(argument => !string.Equals(argument, "--lan", StringComparison.OrdinalIgnoreCase))
