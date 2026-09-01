@@ -4,15 +4,68 @@ using System.Net.Sockets;
 
 namespace NfeAgendamento.App;
 
+public sealed record LanAddressCandidate
+{
+    public LanAddressCandidate(IPAddress address, bool hasGateway, NetworkInterfaceType interfaceType)
+    {
+        Address = address ?? throw new ArgumentNullException(nameof(address));
+        HasGateway = hasGateway;
+        InterfaceType = interfaceType;
+    }
+
+    public IPAddress Address { get; }
+    public bool HasGateway { get; }
+    public NetworkInterfaceType InterfaceType { get; }
+}
+
 public static class CentralNetworkInfo
 {
-    public static IPAddress? FindLanIPv4() =>
-        NetworkInterface.GetAllNetworkInterfaces()
-            .Where(network => network.OperationalStatus == OperationalStatus.Up)
-            .Where(network => network.NetworkInterfaceType is not NetworkInterfaceType.Loopback and not NetworkInterfaceType.Tunnel)
-            .SelectMany(network => network.GetIPProperties().UnicastAddresses)
-            .Select(address => address.Address)
-            .FirstOrDefault(IsUsableLanIPv4);
+    public static IPAddress? FindLanIPv4()
+    {
+        var candidates = new List<LanAddressCandidate>();
+
+        foreach (var network in NetworkInterface.GetAllNetworkInterfaces())
+        {
+            if (network.OperationalStatus != OperationalStatus.Up)
+                continue;
+            if (network.NetworkInterfaceType is NetworkInterfaceType.Loopback or NetworkInterfaceType.Tunnel)
+                continue;
+
+            IPInterfaceProperties properties;
+            try
+            {
+                properties = network.GetIPProperties();
+            }
+            catch (NetworkInformationException)
+            {
+                continue;
+            }
+
+            var hasGateway = properties.GatewayAddresses.Any(gateway => IsUsableGateway(gateway.Address));
+            foreach (var unicast in properties.UnicastAddresses)
+            {
+                if (!IsUsableLanIPv4(unicast.Address))
+                    continue;
+
+                candidates.Add(new LanAddressCandidate(unicast.Address, hasGateway, network.NetworkInterfaceType));
+            }
+        }
+
+        return SelectPreferredIPv4(candidates);
+    }
+
+    public static IPAddress? SelectPreferredIPv4(IEnumerable<LanAddressCandidate> candidates)
+    {
+        ArgumentNullException.ThrowIfNull(candidates);
+
+        return candidates
+            .Where(candidate => IsUsableLanIPv4(candidate.Address))
+            .OrderByDescending(candidate => candidate.HasGateway)
+            .ThenByDescending(candidate => IsPrivateIPv4(candidate.Address))
+            .ThenByDescending(candidate => IsPhysicalLan(candidate.InterfaceType))
+            .Select(candidate => candidate.Address)
+            .FirstOrDefault();
+    }
 
     public static string BuildAccessUrl(IPAddress address)
     {
@@ -43,12 +96,34 @@ public static class CentralNetworkInfo
         return address is null ? LocalHost.ListenUrl : BuildAccessUrl(address);
     }
 
+    private static bool IsUsableGateway(IPAddress address) =>
+        address.AddressFamily == AddressFamily.InterNetwork
+        && !address.Equals(IPAddress.Any)
+        && !IPAddress.IsLoopback(address);
+
     private static bool IsUsableLanIPv4(IPAddress address)
     {
         if (address.AddressFamily != AddressFamily.InterNetwork || IPAddress.IsLoopback(address))
             return false;
 
         var bytes = address.GetAddressBytes();
-        return !(bytes[0] == 169 && bytes[1] == 254);
+        return !(bytes[0] == 169 && bytes[1] == 254)
+            && !address.Equals(IPAddress.Any)
+            && !address.Equals(IPAddress.Broadcast);
     }
+
+    private static bool IsPrivateIPv4(IPAddress address)
+    {
+        var bytes = address.GetAddressBytes();
+        return bytes[0] == 10
+            || (bytes[0] == 172 && bytes[1] is >= 16 and <= 31)
+            || (bytes[0] == 192 && bytes[1] == 168);
+    }
+
+    private static bool IsPhysicalLan(NetworkInterfaceType type) =>
+        type is NetworkInterfaceType.Ethernet
+            or NetworkInterfaceType.GigabitEthernet
+            or NetworkInterfaceType.FastEthernetFx
+            or NetworkInterfaceType.FastEthernetT
+            or NetworkInterfaceType.Wireless80211;
 }
