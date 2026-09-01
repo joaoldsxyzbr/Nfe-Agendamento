@@ -9,6 +9,7 @@ public enum NfeLookupStatus
     NotFound,
     ManifestationRequired,
     Blocked,
+    Busy,
     Failed
 }
 
@@ -75,8 +76,17 @@ public sealed class NfeLookupService
         if (cached is not null)
             return new NfeLookupResult(NfeLookupStatus.Found, cached.Xml, "CACHE", "Documento obtido do cache local.", true);
 
-        await _gate.Semaphore.WaitAsync(cancellationToken);
+        FiscalOperationLease lease;
         try
+        {
+            lease = await _gate.EnterAsync(cancellationToken);
+        }
+        catch (FiscalQueueFullException ex)
+        {
+            return new NfeLookupResult(NfeLookupStatus.Busy, null, null, ex.Message, false);
+        }
+
+        using (lease)
         {
             cached = await _cache.TryGetAsync(accessKey, cancellationToken);
             if (cached is not null)
@@ -151,10 +161,6 @@ public sealed class NfeLookupService
             {
                 return new NfeLookupResult(NfeLookupStatus.Failed, null, null, "A resposta recebida da SEFAZ não pôde ser validada com segurança.", false);
             }
-        }
-        finally
-        {
-            _gate.Semaphore.Release();
         }
     }
 }
