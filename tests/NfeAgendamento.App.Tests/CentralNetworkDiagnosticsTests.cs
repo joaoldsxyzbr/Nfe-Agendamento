@@ -24,6 +24,12 @@ public sealed class CentralNetworkDiagnosticsTests
     }
 
     [Fact]
+    public void Mdns_uses_the_same_preferred_address_as_the_central_panel()
+    {
+        Assert.Equal(CentralNetworkInfo.FindLanIPv4(), NetworkNameService.GetAdvertisedAddress());
+    }
+
+    [Fact]
     public void Lan_host_matches_only_an_actual_local_ipv4_on_the_expected_port()
     {
         var addresses = new[]
