@@ -4,17 +4,18 @@ Ferramenta interna para consultar, visualizar e baixar NF-e por chave usando o c
 
 ## Versão atual
 
-**v0.1.4**
+**v0.1.5**
 
 A versão atual consolida a aplicação Windows portátil, execução local pela bandeja e a visualização do DANFE em um popup dedicado.
 
 ## Objetivo
 
-O projeto deve permanecer simples e direto. Cada PC roda sua própria instalação local e o navegador acessa somente `http://127.0.0.1:17345`.
+O projeto permanece simples e direto. Por padrão, o navegador acessa somente `http://127.0.0.1:17345`. Para uso da equipe, o PC central pode ser iniciado explicitamente com `--lan`; nesse modo, os demais computadores acessam `http://nfeagendamento.local:17345` e entram com a senha numérica da central.
 
 ## Funcionalidades atuais
 
-- host local fixo em loopback;
+- host local fixo em loopback por padrão, com modo LAN explícito no PC central;
+- autenticação local por senha numérica para acessos pela LAN;
 - proteção por `Host`, `Origin` e CSRF;
 - seleção de certificado A1 no Windows Certificate Store;
 - identidade fiscal derivada do certificado;
@@ -54,7 +55,7 @@ Está especificada a evolução para um DANFE fiscal mais completo, inspirado na
 - informações adicionais e área reservada ao fisco;
 - paginação automática com `Folha X/Y` e continuação dos produtos.
 
-Essa evolução completa do layout fiscal ainda é trabalho planejado e não deve ser considerada concluída na v0.1.4.
+Essa evolução completa do layout fiscal ainda é trabalho planejado e não deve ser considerada concluída na v0.1.5.
 
 ## Teste real no Windows
 
@@ -62,19 +63,29 @@ Essa evolução completa do layout fiscal ainda é trabalho planejado e não dev
 2. Extraia o ZIP em uma pasta local, por exemplo `C:\NfeAgendamento`.
 3. Execute `NfeAgendamento.App.exe`.
 4. Abra `http://127.0.0.1:17345` no mesmo PC, caso o navegador não seja aberto automaticamente.
-5. Selecione o certificado A1 instalado no usuário atual.
-6. Consulte uma chave conhecida.
-7. Teste o download do XML.
-8. Clique em `Visualizar DANFE` e confirme que a nota abre no popup dedicado.
-9. Teste `Imprimir / Salvar PDF` e confirme que somente o DANFE aparece na impressão.
-10. Teste o lote somente com chaves conhecidas e confirme o ZIP.
+5. No primeiro uso do PC central, crie a senha numérica de seis dígitos.
+6. Selecione o certificado A1 instalado no usuário atual.
+7. Consulte uma chave conhecida.
+8. Teste o download do XML.
+9. Clique em `Visualizar DANFE` e confirme que a nota abre no popup dedicado.
+10. Teste `Imprimir / Salvar PDF` e confirme que somente o DANFE aparece na impressão.
+11. Teste o lote somente com chaves conhecidas e confirme o ZIP.
 
-O pacote não instala serviço, não abre a interface fiscal para a rede e não envia certificado ou XML para a nuvem. Para encerrar, use `Sair` no ícone da bandeja.
+### Acesso pelos demais computadores
+
+1. No PC central, crie um atalho que execute `NfeAgendamento.App.exe --lan`.
+2. Permita no Firewall do Windows somente a porta TCP `17345` na rede privada da empresa.
+3. Nos demais PCs, abra `http://nfeagendamento.local:17345` e informe a senha numérica criada no central.
+4. Se a rede bloquear mDNS, use o endereço IPv4 do PC central, por exemplo `http://192.168.1.50:17345`.
+5. Não copie o certificado A1 nem a pasta de dados para os demais computadores.
+
+O pacote não instala serviço e não envia certificado ou XML para a nuvem. Sem `--lan`, a interface fiscal continua restrita ao próprio PC. Para encerrar, use `Sair` no ícone da bandeja.
 
 ## Segurança
 
 - certificado e chave privada permanecem no Windows Certificate Store;
-- nenhuma interface fiscal deve ficar acessível pela LAN;
+- o modo LAN só deve ser ativado na rede privada da empresa;
+- acessos pela LAN exigem sessão autenticada;
 - XMLs em repouso são criptografados localmente;
 - o conteúdo do XML exibido no DANFE deve ser escapado antes de entrar no HTML;
 - o DANFE completo planejado não deve depender de serviço externo para gerar código de barras ou processar dados fiscais;
@@ -82,7 +93,7 @@ O pacote não instala serviço, não abre a interface fiscal para a rede e não 
 
 ## Releases
 
-A versão atual publicada é **v0.1.4**, com pacote `Nfe-Agendamento-win-x64.zip`.
+A versão atual publicada é **v0.1.5**, com pacote `Nfe-Agendamento-win-x64.zip`.
 
 As releases são geradas pelo fluxo automatizado do GitHub após as alterações entrarem na `main`.
 
