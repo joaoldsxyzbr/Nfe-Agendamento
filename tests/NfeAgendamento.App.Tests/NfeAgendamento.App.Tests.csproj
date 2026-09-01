@@ -25,6 +25,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Content Include="..\..\src\NfeAgendamento.App\Program.cs" Link="Fixtures\Program.cs" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\src\NfeAgendamento.App\wwwroot\app.js" Link="Fixtures\app.js" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\src\NfeAgendamento.App\wwwroot\danfe-compact.js" Link="Fixtures\danfe-compact.js" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\src\NfeAgendamento.App\wwwroot\index.html" Link="Fixtures\index.html" CopyToOutputDirectory="PreserveNewest" />
