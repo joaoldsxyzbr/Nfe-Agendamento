@@ -63,22 +63,21 @@ public sealed class DanfeStaticAssetsTests
     public void New_lookup_clears_previous_result_and_is_left_of_lookup_button()
     {
         var html = Fixture("index.html");
-        var script = Fixture("app.js");
 
         Assert.Contains("id=\"newLookup\"", html);
         Assert.Contains(">Nova consulta<", html);
         Assert.True(html.IndexOf("id=\"newLookup\"", StringComparison.Ordinal) < html.IndexOf("id=\"lookup\"", StringComparison.Ordinal));
-        Assert.Contains("function resetLookup()", script);
-        Assert.Contains("$('accessKey').value = '';", script);
-        Assert.Contains("$('actions').hidden = true;", script);
-        Assert.Contains("$('accessKey').focus();", script);
-        Assert.Contains("$('newLookup').addEventListener('click', resetLookup);", script);
+        Assert.Contains("function resetLookup()", html);
+        Assert.Contains("accessKey.value = '';", html);
+        Assert.Contains("actions.hidden = true;", html);
+        Assert.Contains("accessKey.focus();", html);
+        Assert.Contains("document.getElementById('newLookup').addEventListener('click', resetLookup);", html);
     }
 
     [Fact]
     public void Main_cards_are_stretched_to_the_same_height()
     {
-        var css = Fixture("styles.css");
+        var css = Fixture("ui-adjustments.css");
 
         Assert.Contains(".workspace-grid", css);
         Assert.Contains("align-items: stretch", css);
