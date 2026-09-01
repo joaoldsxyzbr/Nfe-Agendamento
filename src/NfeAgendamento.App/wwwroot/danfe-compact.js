@@ -1,6 +1,59 @@
 // Ajustes de impressão para aproximar a ocupação da A4 ao DANFE de referência.
 const originalBuildTransport = buildTransport;
 
+const FERNANDO_KLEIN_PRODUCT_CODES = Object.freeze({
+  'ALFACE': '73457',
+  'ALFACE CRESPA': '73457',
+  'ALFACE LISA': '104128',
+  'ALFACE ROXA': '104129',
+  'ALFACE AMERICANA': '30228',
+  'AMERICANA': '30228',
+  'ALFAVACA': '104130',
+  'AGRIAO': '104109',
+  'BROCOLIS': '104108',
+  'CEBOLA': '104106',
+  'CEBOLINHA': '104106',
+  'COENTRO': '104113',
+  'COUVE': '104107',
+  'CHICORIA': '104104',
+  'ESPINAFRE': '104110',
+  'HORTELA': '104115',
+  'MANJERICAO': '104114',
+  'RUCULA': '104111',
+  'RADITE': '104112',
+  'SALSA': '104105',
+  'SALSINHA': '104105'
+});
+
+function normalizeFernandoKleinText(text) {
+  return String(text || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .replace(/^VERDURAS\s*[-:]\s*/, '')
+    .replace(/[^A-Z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+function isFernandoKleinInvoice(det) {
+  const document = det?.ownerDocument;
+  const infNFe = firstElement(document, 'infNFe');
+  const emit = firstElement(infNFe, 'emit');
+  const transp = firstElement(infNFe, 'transp');
+  const transporta = firstElement(transp, 'transporta');
+  const names = [value(emit, 'xNome'), value(transporta, 'xNome')];
+  return names.some(name => normalizeFernandoKleinText(name).includes('FERNANDO KLEIN'));
+}
+
+function displayProductCode(det, prod) {
+  const originalCode = value(prod, 'cProd');
+  if (!isFernandoKleinInvoice(det)) return originalCode;
+
+  const productName = normalizeFernandoKleinText(value(prod, 'xProd'));
+  return FERNANDO_KLEIN_PRODUCT_CODES[productName] || originalCode;
+}
+
 function hasTransportData(infNFe) {
   const transp = firstElement(infNFe, 'transp');
   if (!transp) return false;
@@ -32,7 +85,7 @@ buildProductsTable = function compactProductsTable(products) {
     const itemNumber = attr(det, 'det', 'nItem');
     return `<tr>
       <td class="center item-col">${escapeHtml(itemNumber)}</td>
-      <td class="code-col">${escapeHtml(value(prod, 'cProd'))}</td>
+      <td class="code-col">${escapeHtml(displayProductCode(det, prod))}</td>
       <td class="description">${description}</td>
       <td class="center">${escapeHtml(value(prod, 'NCM'))}</td>
       <td class="center">${escapeHtml(tax.cst)}</td>
