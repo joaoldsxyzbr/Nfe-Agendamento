@@ -14,6 +14,7 @@ const bridge = read(bridgePath);
 assert.ok(bridge.includes('workflow_dispatch:'), 'Release Bridge deve continuar manual.');
 assert.ok(bridge.includes('node tests/js/product-mapping-regression.test.js'), 'Release deve validar o mapeamento Fernando Klein.');
 assert.ok(bridge.includes('node tests/js/lookup-feedback-regression.test.js'), 'Release deve validar o feedback fiscal.');
+assert.ok(bridge.includes('node tests/js/release-readiness-regression.test.js'), 'Release deve validar a própria prontidão.');
 assert.ok(!fs.existsSync(path.join(root, legacyTagPath)), 'Workflow legado por tag deve ser removido para existir um único caminho de release.');
 
 const workflowText = `${ci}\n${bridge}`;
@@ -28,9 +29,11 @@ for (const pattern of forbiddenWorkflowPatterns) {
   assert.ok(!pattern.test(workflowText), `Workflow não pode depender de credencial/endpoint fiscal real: ${pattern}`);
 }
 
+const ignoredDirectories = new Set(['.git', 'bin', 'obj', 'artifacts']);
 function walk(directory) {
   const entries = fs.readdirSync(directory, { withFileTypes: true });
   return entries.flatMap((entry) => {
+    if (entry.isDirectory() && ignoredDirectories.has(entry.name)) return [];
     const full = path.join(directory, entry.name);
     return entry.isDirectory() ? walk(full) : [full];
   });
