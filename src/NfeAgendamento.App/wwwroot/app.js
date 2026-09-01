@@ -96,12 +96,12 @@ async function lookup() {
     }
 
     const error = await response.json().catch(() => ({ message: 'Falha na consulta.' }));
-    if (response.status === 429 && error.blockedUntilUtc) {
-      const until = new Date(error.blockedUntilUtc).toLocaleString('pt-BR');
-      setStatus(`Consultas temporariamente bloqueadas até ${until}.`, true);
-      return;
-    }
-    setStatus(error.message || 'Falha na consulta.', true);
+    const message = NfeLookupFeedback.buildLookupErrorMessage({
+      statusCode: response.status,
+      error,
+      retryAfter: response.headers.get('Retry-After')
+    });
+    setStatus(message, true);
   } catch {
     setStatus('Não foi possível conectar ao aplicativo local.', true);
   } finally {
