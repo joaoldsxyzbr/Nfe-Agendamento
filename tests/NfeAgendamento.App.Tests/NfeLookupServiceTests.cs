@@ -125,6 +125,53 @@ public sealed class NfeLookupServiceTests
     }
 
     [Fact]
+    public async Task Lookup_returns_busy_when_fiscal_queue_is_full()
+    {
+        using var temp = new TemporaryDirectory();
+        var gate = new FiscalOperationGate(maxPendingOperations: 1);
+        var coordinator = new FiscalRequestCoordinator();
+        var transport = new BlockingTransport();
+        var service1 = CreateService(Path.Combine(temp.Path, "a"), null, transport, gate: gate, coordinator: coordinator);
+        var service2 = CreateService(Path.Combine(temp.Path, "b"), null, transport, gate: gate, coordinator: coordinator);
+
+        var first = service1.LookupAsync(ValidKey);
+        await transport.FirstCallEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var second = await service2.LookupAsync(ValidKey2).WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.Equal(NfeLookupStatus.Busy, second.Status);
+        Assert.Equal(1, transport.CallCount);
+        Assert.Contains("fila", second.Message!, StringComparison.OrdinalIgnoreCase);
+
+        transport.ReleaseFirstCall.SetResult();
+        await first;
+    }
+
+    [Fact]
+    public async Task Lookup_queued_after_656_is_blocked_before_second_transport_call()
+    {
+        using var temp = new TemporaryDirectory();
+        var gate = new FiscalOperationGate(maxPendingOperations: 2);
+        var coordinator = new FiscalRequestCoordinator();
+        var cooldown = new FiscalCooldownStore(Path.Combine(temp.Path, "cooldown.bin"));
+        var transport = new Blocking656Transport();
+        var service1 = CreateService(Path.Combine(temp.Path, "a"), null, transport, cooldown, gate, coordinator);
+        var service2 = CreateService(Path.Combine(temp.Path, "b"), null, transport, cooldown, gate, coordinator);
+
+        var first = service1.LookupAsync(ValidKey);
+        await transport.FirstCallEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var second = service2.LookupAsync(ValidKey2);
+        await Task.Delay(100);
+
+        Assert.Equal(1, transport.CallCount);
+        transport.ReleaseFirstCall.SetResult();
+
+        var results = await Task.WhenAll(first, second).WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.All(results, result => Assert.Equal(NfeLookupStatus.Blocked, result.Status));
+        Assert.Equal(1, transport.CallCount);
+    }
+
+    [Fact]
     public async Task Lookup_returns_failed_after_final_network_error()
     {
         using var temp = new TemporaryDirectory();
@@ -197,6 +244,26 @@ public sealed class NfeLookupServiceTests
                 FirstCallEntered.SetResult();
                 await ReleaseFirstCall.Task.WaitAsync(cancellationToken);
             }
+            return new NfeDistributionResponse("137", "Nenhum documento localizado", null);
+        }
+    }
+
+    private sealed class Blocking656Transport : INfeDistributionTransport
+    {
+        public int CallCount;
+        public TaskCompletionSource FirstCallEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource ReleaseFirstCall { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task<NfeDistributionResponse> QueryByAccessKeyAsync(string accessKey, CancellationToken cancellationToken = default)
+        {
+            var call = Interlocked.Increment(ref CallCount);
+            if (call == 1)
+            {
+                FirstCallEntered.SetResult();
+                await ReleaseFirstCall.Task.WaitAsync(cancellationToken);
+                return new NfeDistributionResponse("656", "Consumo indevido", null);
+            }
+
             return new NfeDistributionResponse("137", "Nenhum documento localizado", null);
         }
     }
