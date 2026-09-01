@@ -5,8 +5,8 @@
 - Windows no PC central;
 - certificado A1 instalado no usuário que executará o app;
 - PC central e clientes na mesma rede privada;
-- porta TCP 17345 liberada apenas na rede privada;
-- UDP 5353 liberado se a descoberta mDNS for usada.
+- permissão para autorizar a regra TCP 17345 no Firewall do Windows;
+- UDP 5353 somente se a descoberta mDNS for usada.
 
 ## Primeira configuração
 
@@ -14,13 +14,15 @@
 2. Execute `NfeAgendamento.App.exe`.
 3. Confirme no painel Windows que o status está **Central ativa**.
 4. Confira o IPv4 e o endereço de acesso mostrados na janela.
-5. Clique em **Abrir sistema**.
-6. Selecione o certificado A1.
-7. Informe a UF autora.
-8. Faça uma consulta individual de teste.
-9. Teste o download do XML e a visualização do DANFE.
+5. Confira os indicadores **Rede**, **Servidor** e **Firewall**.
+6. Se o firewall indicar **Precisa configurar**, clique em **Configurar firewall** e autorize o UAC do Windows.
+7. Clique em **Abrir sistema**.
+8. Selecione o certificado A1.
+9. Informe a UF autora.
+10. Faça uma consulta individual de teste.
+11. Teste o download do XML e a visualização do DANFE.
 
-Não é mais necessário iniciar o aplicativo com `--lan`. A aplicação Windows controla o acesso remoto diretamente.
+Não é necessário iniciar o aplicativo com `--lan`. A aplicação Windows mantém o servidor preparado para a LAN e a camada de segurança libera ou bloqueia clientes remotos conforme o estado da Central.
 
 Em uma instalação nova, a Central inicia habilitada. O estado fica persistido em:
 
@@ -35,13 +37,20 @@ A janela principal mostra:
 - status da Central;
 - IPv4 detectado;
 - porta `17345`;
-- URL para os demais computadores.
+- URL para os demais computadores;
+- status da interface de rede;
+- status do listener do servidor na LAN;
+- status da regra do Firewall do Windows;
+- resumo do problema quando alguma etapa precisa de atenção.
+
+A seleção de IPv4 prioriza interfaces utilizáveis com gateway, endereços privados e adaptadores Ethernet/Wi-Fi, evitando escolher primeiro interfaces de túnel, loopback ou endereços APIPA.
 
 Ações:
 
 - **Iniciar Central**: permite novas conexões vindas da rede;
 - **Parar Central**: bloqueia conexões remotas, mas mantém o acesso local funcionando;
-- **Abrir sistema**: abre `http://127.0.0.1:17345` no PC central.
+- **Abrir sistema**: abre `http://127.0.0.1:17345` no PC central;
+- **Configurar firewall**: cria ou corrige a regra de entrada necessária para a Central.
 
 Fechar a janela apenas minimiza a operação para a bandeja. Para encerrar o servidor, use **Sair** no menu da bandeja.
 
@@ -68,6 +77,7 @@ O cliente só precisa de navegador. Não instale o certificado A1 nos clientes e
 - mantenha o PC central ligado;
 - mantenha o aplicativo aberto ou na bandeja;
 - confirme que o painel mostra **Central ativa**;
+- confirme **Rede: OK**, **Servidor: OK** e **Firewall: OK** antes do primeiro uso em outro PC;
 - use nos clientes o endereço informado pela janela;
 - não abra cópias independentes do app em outros PCs;
 - use uma chave por consulta;
@@ -77,20 +87,26 @@ A consulta em lote foi removida. As consultas fiscais são coordenadas no PC cen
 
 ## Firewall
 
-O Bloco 1 não cria regras do Firewall do Windows automaticamente.
+O painel verifica se existe uma regra compatível com o executável atual. O botão **Configurar firewall** solicita elevação pelo UAC e recria a regra da Central com estas restrições:
 
-A regra recomendada no PC central deve limitar:
+- direção de entrada;
+- protocolo TCP;
+- porta local `17345`;
+- perfil **Privado**;
+- vinculada ao caminho atual do `NfeAgendamento.App.exe`;
+- sem liberação no perfil Público.
 
-- TCP 17345 ao perfil de rede privada;
-- UDP 5353 ao perfil de rede privada apenas quando necessário para mDNS.
+Se o executável for movido para outra pasta, o painel pode pedir a configuração novamente porque a regra fica vinculada ao caminho do programa.
+
+Em computadores administrados por política corporativa, o Windows pode impedir alterações locais. Nessa situação, a regra deve ser aplicada pelo administrador da rede.
+
+O UDP `5353` continua opcional e serve apenas para `nfeagendamento.local`. O acesso por IPv4 não depende dele.
 
 Não abra a porta no roteador e não permita o aplicativo em redes públicas.
 
-A automação, verificação e diagnóstico do firewall pertencem ao próximo bloco de rede.
-
 ## Segurança
 
-O servidor fica escutando a porta local necessária para a Central, mas a camada de segurança bloqueia clientes remotos sempre que o painel estiver em **Central parada**.
+O servidor fica ouvindo em `0.0.0.0:17345` para poder atender a rede, mas a camada de segurança bloqueia clientes remotos sempre que o painel estiver em **Central parada**.
 
 Continuam sendo aplicados:
 
@@ -99,7 +115,8 @@ Continuam sendo aplicados:
 - validação de Origin;
 - limite de tamanho das requisições;
 - certificado A1 somente no PC central;
-- cache criptografado por DPAPI.
+- cache criptografado por DPAPI;
+- regra de firewall limitada ao perfil Privado e ao executável atual.
 
 O aplicativo não possui autenticação própria. Enquanto a Central estiver ativa, o acesso deve permanecer restrito à rede interna da empresa.
 
@@ -109,17 +126,27 @@ O app anuncia `nfeagendamento.local` por mDNS. A descoberta pode falhar quando a
 
 ## Diagnóstico
 
-### IP exibido no painel não abre em outro PC
+### Rede não está OK
 
-1. confirme que o painel mostra **Central ativa**;
-2. confirme que o outro PC está na mesma rede;
-3. confirme o IP atual mostrado pelo painel;
-4. teste a porta TCP 17345 no Firewall do Windows;
-5. verifique se existe isolamento entre os computadores na rede.
+O app não encontrou um IPv4 utilizável para a Central. Verifique se Ethernet ou Wi-Fi estão conectados e se o PC recebeu um endereço válido da rede.
+
+### Servidor não está OK
+
+A porta `17345` não foi encontrada ouvindo em uma interface de rede. Feche outras instâncias do NFe Agendamento e reinicie o aplicativo. Se a porta já estiver ocupada por outro programa, o app informa o conflito ao iniciar.
+
+### Firewall mostra Precisa configurar
+
+Clique em **Configurar firewall** e confirme o UAC. Se continuar igual, a máquina provavelmente possui política corporativa de firewall e a liberação precisa ser feita pelo administrador.
+
+### IP exibido no painel não abre em outro PC mesmo com tudo OK
+
+1. confirme que o outro PC está na mesma rede ou VLAN com comunicação permitida;
+2. execute no cliente `Test-NetConnection IP-DO-CENTRAL -Port 17345`;
+3. se o teste falhar apesar dos três indicadores OK, investigue isolamento entre clientes, ACL de rede ou política corporativa fora do computador central.
 
 ### `nfeagendamento.local` não abre, mas o IP funciona
 
-O servidor está acessível e o problema está na descoberta mDNS. Continue usando o IP até o bloco de rede tratar o diagnóstico de descoberta.
+O servidor está acessível e o problema está somente na descoberta mDNS. Continue usando o IPv4 mostrado no painel.
 
 ### Retorno 429
 
@@ -142,8 +169,9 @@ O cache e o estado fiscal são protegidos pelo DPAPI do usuário do Windows. Tro
 ## Limitações atuais
 
 - o PC central precisa permanecer ligado;
-- o Bloco 1 ainda não configura o firewall automaticamente;
+- a configuração automática do firewall depende de autorização do Windows e pode ser bloqueada por política corporativa;
 - o domínio depende de mDNS ou do fallback por IP;
 - o acesso é HTTP dentro da rede interna;
 - não há publicação na internet;
+- o diagnóstico local não detecta isolamento de VLAN/ACL existente fora do PC central;
 - a consulta fiscal continua sujeita às regras da SEFAZ.
