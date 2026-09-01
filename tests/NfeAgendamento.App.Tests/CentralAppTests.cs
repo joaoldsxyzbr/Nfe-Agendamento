@@ -27,6 +27,48 @@ public sealed class CentralAppTests
     }
 
     [Fact]
+    public void Corrupt_existing_settings_fail_closed()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"nfe-central-{Guid.NewGuid():N}");
+        var path = Path.Combine(root, "central.json");
+
+        try
+        {
+            Directory.CreateDirectory(root);
+            File.WriteAllText(path, "{ arquivo corrompido");
+
+            var settings = new CentralSettingsStore(path).Load();
+
+            Assert.False(settings.Enabled);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Empty_existing_settings_fail_closed()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"nfe-central-{Guid.NewGuid():N}");
+        var path = Path.Combine(root, "central.json");
+
+        try
+        {
+            Directory.CreateDirectory(root);
+            File.WriteAllText(path, "null");
+
+            var settings = new CentralSettingsStore(path).Load();
+
+            Assert.False(settings.Enabled);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void Central_enabled_state_is_persisted()
     {
         var root = Path.Combine(Path.GetTempPath(), $"nfe-central-{Guid.NewGuid():N}");
