@@ -18,6 +18,11 @@ async function loadCertificates() {
     fetch('/api/certificates', { cache: 'no-store' }),
     fetch('/api/certificate/current', { cache: 'no-store' })
   ]);
+  if (listResponse.status === 403) {
+    const certificatePanel = document.querySelector('.certificate-panel');
+    if (certificatePanel) certificatePanel.hidden = true;
+    return;
+  }
   if (!listResponse.ok) throw new Error('Não foi possível carregar os certificados locais.');
 
   const certificates = await listResponse.json();
