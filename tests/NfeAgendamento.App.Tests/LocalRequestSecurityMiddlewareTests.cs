@@ -52,6 +52,44 @@ public sealed class LocalRequestSecurityMiddlewareTests
         Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
     }
 
+    [Theory]
+    [InlineData(HttpMethods.Get, "/api/certificates")]
+    [InlineData(HttpMethods.Get, "/api/certificate/current")]
+    [InlineData(HttpMethods.Post, "/api/certificate/select")]
+    public async Task Certificate_administration_is_rejected_for_remote_clients(string method, string path)
+    {
+        var csrf = new CsrfTokenService();
+        var middleware = CreateMiddleware(csrf, centralEnabled: true);
+        var context = CreateContext(method, "10.0.0.29:17345", "http://10.0.0.29:17345");
+        context.Connection.RemoteIpAddress = IPAddress.Parse("10.0.0.30");
+        context.Request.Path = path;
+        if (HttpMethods.IsPost(method))
+        {
+            context.Request.ContentLength = 2;
+            context.Request.Headers["X-CSRF-Token"] = csrf.CurrentToken;
+        }
+
+        await middleware.InvokeAsync(context);
+
+        Assert.Equal(StatusCodes.Status403Forbidden, context.Response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Fiscal_lookup_remains_allowed_for_remote_clients_when_central_is_active()
+    {
+        var csrf = new CsrfTokenService();
+        var middleware = CreateMiddleware(csrf, centralEnabled: true);
+        var context = CreateContext(HttpMethods.Post, "10.0.0.29:17345", "http://10.0.0.29:17345");
+        context.Connection.RemoteIpAddress = IPAddress.Parse("10.0.0.30");
+        context.Request.Path = "/api/nfe/lookup";
+        context.Request.ContentLength = 2;
+        context.Request.Headers["X-CSRF-Token"] = csrf.CurrentToken;
+
+        await middleware.InvokeAsync(context);
+
+        Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+    }
+
     [Fact]
     public async Task Post_without_csrf_is_rejected()
     {
