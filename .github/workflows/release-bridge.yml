@@ -1,56 +1,90 @@
 name: Release Bridge
 
 on:
-  issue_comment:
-    types: [created]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Versão da release (ex.: v0.1.15)'
+        required: true
+        type: string
 
 permissions:
   contents: write
-  issues: write
+
+concurrency:
+  group: release-nfe-agendamento
+  cancel-in-progress: false
 
 jobs:
   release:
-    if: >
-      github.event.issue.pull_request &&
-      (github.event.comment.author_association == 'OWNER' ||
-       github.event.comment.author_association == 'COLLABORATOR' ||
-       github.event.comment.author_association == 'MEMBER') &&
-      startsWith(github.event.comment.body, '/release ')
     runs-on: windows-latest
     steps:
-      - name: Interpretar comando
-        id: command
-        shell: pwsh
-        env:
-          COMMENT: ${{ github.event.comment.body }}
-        run: |
-          $parts = $env:COMMENT -split '\s+'
-          if ($parts.Count -ne 2) { throw 'Use: /release v1.0.0' }
-          $version = $parts[1]
-          if ($version -notmatch '^v?[0-9]+\.[0-9]+\.[0-9]+$') { throw 'Versão inválida. Use v1.0.0.' }
-          $normalized = $version.TrimStart('v','V')
-          "version=$normalized" >> $env:GITHUB_OUTPUT
-          "tag=v$normalized" >> $env:GITHUB_OUTPUT
-
       - uses: actions/checkout@v4
         with:
           ref: main
+          fetch-depth: 0
 
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
 
-      - name: Testar e publicar
+      - name: Validar versão
+        id: version
+        shell: pwsh
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          $raw = $env:INPUT_VERSION.Trim()
+          if ($raw -notmatch '^v?[0-9]+\.[0-9]+\.[0-9]+$') {
+            throw 'Versão inválida. Use o formato v1.2.3.'
+          }
+
+          $normalized = $raw.TrimStart('v','V')
+          $requested = [version]$normalized
+          $tag = "v$normalized"
+
+          git fetch --tags --force
+          if (git tag --list $tag) {
+            throw "A versão $tag já existe."
+          }
+
+          $versions = git tag --list 'v*.*.*' | ForEach-Object {
+            $candidate = $_.TrimStart('v','V')
+            $parsed = $null
+            if ([version]::TryParse($candidate, [ref]$parsed)) { $parsed }
+          }
+
+          if ($versions) {
+            $latest = $versions | Sort-Object -Descending | Select-Object -First 1
+            if ($requested -le $latest) {
+              throw "A nova versão deve ser maior que v$latest. Solicitada: $tag."
+            }
+          }
+
+          "version=$normalized" >> $env:GITHUB_OUTPUT
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+
+      - name: Restaurar dependências
+        run: dotnet restore Nfe-Agendamento.sln
+
+      - name: Executar testes .NET
+        run: dotnet test Nfe-Agendamento.sln -c Release --no-restore
+
+      - name: Testar regressão de produtos Fernando Klein
+        run: node tests/js/product-mapping-regression.test.js
+
+      - name: Compilar solução
+        run: dotnet build Nfe-Agendamento.sln -c Release --no-restore
+
+      - name: Publicar pacote Windows
         shell: pwsh
         run: |
-          dotnet restore Nfe-Agendamento.sln
-          dotnet test Nfe-Agendamento.sln -c Release --no-restore
-          dotnet publish src/NfeAgendamento.App/NfeAgendamento.App.csproj -c Release -r win-x64 --self-contained true -p:Version=${{ steps.command.outputs.version }} -p:AssemblyVersion=${{ steps.command.outputs.version }}.0 -p:FileVersion=${{ steps.command.outputs.version }}.0 -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o artifacts/nfe-agendamento
+          dotnet publish src/NfeAgendamento.App/NfeAgendamento.App.csproj -c Release -r win-x64 --self-contained true -p:Version=${{ steps.version.outputs.version }} -p:AssemblyVersion=${{ steps.version.outputs.version }}.0 -p:FileVersion=${{ steps.version.outputs.version }}.0 -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o artifacts/nfe-agendamento
           Compress-Archive -Path artifacts/nfe-agendamento/* -DestinationPath artifacts/Nfe-Agendamento-win-x64.zip
 
-      - name: Criar Release
+      - name: Criar release
         env:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
-          gh release create "${{ steps.command.outputs.tag }}" artifacts/Nfe-Agendamento-win-x64.zip --target main --title "NFe Agendamento v${{ steps.command.outputs.version }}" --notes "Pacote Windows autocontido para teste do NFe Agendamento."
+          gh release create "${{ steps.version.outputs.tag }}" artifacts/Nfe-Agendamento-win-x64.zip --target main --title "NFe Agendamento ${{ steps.version.outputs.tag }}" --notes "Pacote Windows autocontido do NFe Agendamento."
