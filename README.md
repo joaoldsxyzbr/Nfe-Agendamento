@@ -1,118 +1,178 @@
 # NFe Agendamento
 
-Ferramenta interna para consultar, visualizar e baixar NF-e por chave usando o certificado A1 já instalado no Windows.
+Aplicativo Windows interno para consultar, visualizar e baixar NF-e usando o certificado A1 instalado no PC central.
 
-## Versão atual
+## Versão publicada
 
 **v0.1.9**
 
-A versão atual consolida a aplicação Windows portátil, execução local pela bandeja e a visualização do DANFE em um popup dedicado.
+- [Baixar o pacote Windows x64](https://github.com/joaoldsxyzbr/Nfe-Agendamento/releases/download/v0.1.9/Nfe-Agendamento-win-x64.zip)
+- [Ver a release v0.1.9](https://github.com/joaoldsxyzbr/Nfe-Agendamento/releases/tag/v0.1.9)
 
-## Objetivo
+O pacote é autocontido e não exige instalação do .NET.
 
-O projeto permanece simples e direto. Por padrão, o navegador acessa somente `http://127.0.0.1:17345`. Para uso da equipe, o PC central pode ser iniciado explicitamente com `--lan`; nesse modo, os demais computadores acessam `http://nfeagendamento.local:17345` e entram com a senha numérica da central.
+## Como o sistema funciona
 
-## Funcionalidades atuais
+O NFe Agendamento deve ser executado em um único PC central da empresa. Esse computador mantém:
 
-- host local fixo em loopback por padrão, com modo LAN explícito no PC central;
-- autenticação local por senha numérica para acessos pela LAN;
-- proteção por `Host`, `Origin` e CSRF;
-- seleção de certificado A1 no Windows Certificate Store;
-- identidade fiscal derivada do certificado;
-- consulta única por chave via `consChNFe`;
-- cache de XML criptografado com DPAPI e retenção de 24 horas;
-- tratamento persistente de `cStat=656`;
-- tratamento de `137`, `138` com XML e `138` sem XML;
-- retry limitado para falhas transitórias de rede;
-- consulta em lote sequencial de até 100 chaves com download em ZIP;
-- download do XML da NF-e;
-- visualização do DANFE;
-- DANFE aberto em popup/modal dedicado, sem ocupar a tela principal;
-- fechamento do popup pelo botão, tecla `Esc` ou clique no fundo;
-- popup adaptado para ocupar a tela no celular;
-- impressão e salvamento em PDF mostrando somente o DANFE;
-- ações de bandeja para abrir o sistema, configurar certificado e verificar atualização;
-- atualização do aplicativo pelo fluxo de releases do GitHub;
-- pacote Windows x64 autocontido e portátil;
-- CI sem acesso à SEFAZ real.
+- o certificado A1 no Windows Certificate Store;
+- o cache criptografado dos XMLs;
+- a fila de consultas;
+- o estado de bloqueio fiscal da SEFAZ;
+- o site interno acessado pelos demais computadores.
 
-## DANFE
+Os outros PCs não precisam ter o certificado instalado. Eles acessam a central pelo navegador.
 
-O DANFE atual já possui visualização isolada em popup e impressão própria.
+```text
+Computadores da equipe
+        ↓
+http://nfeagendamento.local:17345
+        ↓
+PC central com o NFe Agendamento
+        ↓
+Certificado A1 + SEFAZ
+```
 
-Está especificada a evolução para um DANFE fiscal mais completo, inspirado na organização e riqueza de informações do FSist, sem copiar marca ou conteúdo proprietário. O objetivo é incluir, conforme os dados realmente existentes no XML:
+Nenhum certificado, chave privada ou XML é enviado para a nuvem.
 
-- canhoto;
-- cabeçalho fiscal tradicional;
-- chave de acesso e código de barras Code 128;
-- protocolo de autorização;
-- emitente e destinatário completos;
-- pagamentos;
-- cálculo de impostos mais completo;
-- ICMS, ICMS-ST, IPI, PIS e COFINS quando presentes;
-- CST/CSOSN, NCM e CFOP nos produtos;
-- transporte, volumes e pesos;
-- informações adicionais e área reservada ao fisco;
-- paginação automática com `Folha X/Y` e continuação dos produtos.
+## Recursos
 
-Essa evolução completa do layout fiscal ainda é trabalho planejado e não deve ser considerada concluída na v0.1.9.
+- consulta única por chave de acesso de 44 dígitos;
+- consulta em lote de até 100 chaves;
+- download de XML individual;
+- download dos XMLs em ZIP;
+- visualização do DANFE em popup;
+- impressão e salvamento do DANFE em PDF;
+- cache local criptografado por DPAPI;
+- validade do cache de 24 horas;
+- fila fiscal única;
+- deduplicação de consultas simultâneas para a mesma chave;
+- tratamento de `137`, `138` e `656`;
+- cooldown persistente de uma hora após `cStat=656`;
+- retry limitado apenas para falhas transitórias de rede;
+- proteção CSRF, validação de Host e Origin;
+- autenticação por senha numérica no modo LAN;
+- domínio interno via mDNS.
 
-## Teste real no Windows
+## Instalação no PC central
 
-1. Baixe `Nfe-Agendamento-win-x64.zip` na release mais recente do GitHub.
-2. Extraia o ZIP em uma pasta local, por exemplo `C:\NfeAgendamento`.
+1. Baixe o ZIP da release.
+2. Extraia, por exemplo, em `C:\NfeAgendamento`.
 3. Execute `NfeAgendamento.App.exe`.
-4. Abra `http://127.0.0.1:17345` no mesmo PC, caso o navegador não seja aberto automaticamente.
-5. No primeiro uso do PC central, crie a senha numérica de seis dígitos.
-6. Selecione o certificado A1 instalado no usuário atual.
-7. Consulte uma chave conhecida.
-8. Teste o download do XML.
-9. Clique em `Visualizar DANFE` e confirme que a nota abre no popup dedicado.
-10. Teste `Imprimir / Salvar PDF` e confirme que somente o DANFE aparece na impressão.
-11. Teste o lote somente com chaves conhecidas e confirme o ZIP.
+4. Para uso apenas nesse PC, abra `http://127.0.0.1:17345`.
+5. Selecione o certificado A1 válido.
+6. Informe a UF autora correta.
+7. Faça uma consulta de teste com uma chave conhecida.
 
-### Acesso pelos demais computadores
+O certificado deve estar instalado no perfil do Windows que executará o aplicativo. O app não exporta nem copia a chave privada.
 
-1. No PC central, crie um atalho que execute `NfeAgendamento.App.exe --lan`.
-2. Permita no Firewall do Windows somente a porta TCP `17345` na rede privada da empresa.
-3. Nos demais PCs, abra `http://nfeagendamento.local:17345` e informe a senha numérica criada no central.
-4. Se a rede bloquear mDNS, use o endereço IPv4 do PC central, por exemplo `http://192.168.1.50:17345`.
-5. Não copie o certificado A1 nem a pasta de dados para os demais computadores.
+## Ativar o modo central pela rede
 
-O pacote não instala serviço e não envia certificado ou XML para a nuvem. Sem `--lan`, a interface fiscal continua restrita ao próprio PC. Para encerrar, use `Sair` no ícone da bandeja.
+No PC central, execute:
 
-## Segurança
+```text
+NfeAgendamento.App.exe --lan
+```
 
-- certificado e chave privada permanecem no Windows Certificate Store;
-- o modo LAN só deve ser ativado na rede privada da empresa;
-- acessos pela LAN exigem sessão autenticada;
-- XMLs em repouso são criptografados localmente;
-- o conteúdo do XML exibido no DANFE deve ser escapado antes de entrar no HTML;
-- o DANFE completo planejado não deve depender de serviço externo para gerar código de barras ou processar dados fiscais;
-- CI nunca consulta a SEFAZ real nem usa certificado/XML fiscal real.
+O modo LAN é opt-in. Sem `--lan`, o app escuta somente em `127.0.0.1`.
 
-## Releases
+No primeiro acesso local em modo LAN:
 
-A versão atual publicada é **v0.1.9**, com pacote `Nfe-Agendamento-win-x64.zip`.
+1. Abra `http://127.0.0.1:17345`.
+2. Crie uma senha numérica de seis dígitos.
+3. Configure o certificado A1.
+4. Mantenha o aplicativo aberto na bandeja.
 
-As releases são geradas pelo fluxo automatizado do GitHub após as alterações entrarem na `main`.
+## Acesso pelos demais computadores
 
-## Próximos passos
+Abra:
 
-- implementar o DANFE fiscal completo conforme a especificação aprovada;
-- validar o layout com XMLs reais conhecidos sem armazenar dados fiscais reais no repositório;
-- manter os testes e CI verdes antes de novas releases;
-- instalador assinado e piloto nos PCs permanecem como marcos separados.
+```text
+http://nfeagendamento.local:17345
+```
+
+Informe a senha numérica criada no PC central.
+
+Se o domínio não resolver, use o IPv4 do PC central:
+
+```text
+http://192.168.1.50:17345
+```
+
+O domínio depende de mDNS na rede. O firewall e a política de rede precisam permitir TCP 17345 e, para a descoberta automática, UDP 5353 na rede privada.
+
+## Firewall do Windows
+
+No PC central, permita somente na rede privada:
+
+- TCP 17345 para o aplicativo;
+- UDP 5353 para descoberta mDNS, se o domínio `nfeagendamento.local` não for resolvido.
+
+Não publique essa porta na internet e não habilite regra para redes públicas.
+
+## Segurança e dados
+
+- o certificado A1 permanece no Windows Certificate Store;
+- a chave privada não é enviada aos navegadores;
+- os XMLs ficam no PC central;
+- o cache é criptografado com DPAPI do usuário do Windows;
+- acessos LAN exigem sessão autenticada;
+- operações de consulta exigem CSRF válido;
+- o modo padrão continua restrito ao loopback;
+- o acesso por IP é apenas fallback do domínio interno;
+- não há banco externo nem hospedagem em nuvem.
+
+A senha numérica é armazenada como um verificador protegido por DPAPI, não em texto puro.
+
+## Consultas e erro 429
+
+O retorno HTTP 429 representa o bloqueio fiscal causado por `cStat=656`, chamado pela SEFAZ de consumo indevido. Nesse caso:
+
+1. não repita a consulta;
+2. aguarde o horário informado na tela;
+3. verifique se outro sistema não está consultando o mesmo CNPJ;
+4. confirme que todos os usuários estão usando a central, e não cópias independentes do aplicativo.
+
+A central impede chamadas simultâneas duplicadas da mesma chave, mas não pode impedir outro sistema externo de consultar o mesmo CNPJ.
+
+## Atualização
+
+Para atualizar:
+
+1. encerre a versão antiga pelo menu da bandeja;
+2. baixe a nova release;
+3. extraia em uma pasta de aplicação;
+4. execute a nova versão;
+5. confirme o certificado e a UF autora.
+
+Não substitua a pasta de dados do usuário. O cache e o estado fiscal ficam em:
+
+```text
+%LOCALAPPDATA%\NfeAgendamento
+```
+
+## Parar a central
+
+Use `Sair` no menu do ícone da bandeja. Isso encerra o servidor e o anúncio mDNS.
+
+## Desenvolvimento e validação
+
+A solução usa .NET 8, Windows Forms, ASP.NET Core minimal APIs, xUnit e JavaScript sem framework.
+
+Antes de publicar uma alteração:
+
+```bash
+dotnet restore Nfe-Agendamento.sln
+dotnet test Nfe-Agendamento.sln -c Release
+dotnet build Nfe-Agendamento.sln -c Release
+```
+
+O CI executa testes e build em Windows. Ele não usa certificado real, XML real nem consulta a SEFAZ.
 
 ## Documentação técnica
 
-### Aplicação local
-
-- Design: `docs/superpowers/specs/2026-08-31-local-browser-nfe-design.md`
-- Plano: `docs/superpowers/plans/2026-08-31-foundation-single-lookup.md`
-
-### DANFE completo
-
-- Design aprovado: `docs/superpowers/specs/2026-08-31-danfe-fsist-design.md`
-
-A documentação deve acompanhar as alterações do projeto para que a `main` represente sempre o comportamento efetivamente publicado.
+- [Guia operacional da central](docs/CENTRAL-LAN.md)
+- [Especificação da arquitetura](docs/superpowers/specs/2026-09-01-central-lan-architecture-design.md)
+- [Plano de implementação](docs/superpowers/plans/2026-09-01-central-lan-architecture.md)
+- [Design do navegador local](docs/superpowers/specs/2026-08-31-local-browser-nfe-design.md)
+- [Design do DANFE](docs/superpowers/specs/2026-08-31-danfe-fsist-design.md)
