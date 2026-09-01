@@ -12,6 +12,7 @@ public sealed class UpdateServiceTests
     [Fact]
     public async Task CheckAsync_detects_newer_release_and_official_windows_package()
     {
+        var publishedDigest = new string('a', 64);
         using var client = new HttpClient(new Handler(_ => new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = JsonContent.Create(new
@@ -23,7 +24,7 @@ public sealed class UpdateServiceTests
                     {
                         name = "Nfe-Agendamento-win-x64.zip",
                         size = 1234,
-                        digest = "sha256:abcdef",
+                        digest = $"sha256:{publishedDigest}",
                         browser_download_url = "https://github.com/joaoldsxyzbr/Nfe-Agendamento/releases/download/v1.2.0/Nfe-Agendamento-win-x64.zip"
                     }
                 }
@@ -37,7 +38,7 @@ public sealed class UpdateServiceTests
         Assert.True(result.CanInstall);
         Assert.Equal(new Version(1, 2, 0), result.LatestVersion);
         Assert.Equal(1234, result.Package!.Size);
-        Assert.Equal("abcdef", result.Package.Sha256);
+        Assert.Equal(publishedDigest, result.Package.Sha256);
         Assert.Equal("github.com", result.Package.DownloadUrl.Host);
     }
 
