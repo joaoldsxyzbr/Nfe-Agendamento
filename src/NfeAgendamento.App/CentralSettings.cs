@@ -23,17 +23,17 @@ public sealed class CentralSettingsStore
 
     public CentralSettings Load()
     {
+        if (!File.Exists(_path))
+            return new CentralSettings(true);
+
         try
         {
-            if (!File.Exists(_path))
-                return new CentralSettings(true);
-
             var json = File.ReadAllText(_path);
-            return JsonSerializer.Deserialize<CentralSettings>(json) ?? new CentralSettings(true);
+            return JsonSerializer.Deserialize<CentralSettings>(json) ?? new CentralSettings(false);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
-            return new CentralSettings(true);
+            return new CentralSettings(false);
         }
     }
 
