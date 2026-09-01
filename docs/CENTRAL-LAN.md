@@ -85,6 +85,68 @@ O cliente só precisa de navegador. Não instale o certificado A1 nos clientes e
 
 A consulta em lote foi removida. As consultas fiscais são coordenadas no PC central, consultas simultâneas da mesma chave são deduplicadas e o acesso à SEFAZ é serializado.
 
+## Fila fiscal
+
+A Central admite no máximo **12 operações fiscais únicas** ao mesmo tempo: uma em execução e até 11 aguardando. O limite evita que vários computadores acumulem um número indefinido de consultas na memória.
+
+A deduplicação acontece antes da fila. Se dois ou mais computadores pedirem a mesma chave enquanto a primeira consulta ainda estiver em andamento, todos compartilham a mesma operação fiscal e apenas uma chamada pode chegar à SEFAZ.
+
+Quando as 12 vagas estão ocupadas, uma chave diferente recebe:
+
+```text
+HTTP 429
+status: fila_ocupada
+Retry-After: 5
+```
+
+Esse retorno significa somente que a Central está ocupada. Ele não representa `cStat=656`.
+
+## Proteção contra cStat=656
+
+Quando a SEFAZ retorna `656`, a Central persiste um cooldown de uma hora. Durante esse período nenhuma nova operação fiscal é enviada à SEFAZ.
+
+Consultas que já estavam aguardando na fila também verificam o cooldown novamente depois de obter a vez de execução. Se uma consulta anterior tiver recebido `656`, as demais são bloqueadas localmente antes de qualquer nova chamada externa.
+
+O estado de cooldown é protegido por DPAPI. Se esse arquivo estiver corrompido ou não puder ser validado, a Central falha de forma segura: retorna um erro controlado e não envia uma nova consulta à SEFAZ.
+
+## Limites da comunicação fiscal
+
+A consulta individual aplica:
+
+- no máximo 3 tentativas para falhas transitórias de comunicação;
+- 2 segundos antes da segunda tentativa;
+- 5 segundos antes da terceira tentativa;
+- timeout de 45 segundos na chamada externa;
+- máximo de 10 MB para a resposta fiscal;
+- máximo de 256 KB para o corpo das requisições locais.
+
+Falha de rede após a última tentativa, timeout final ou resposta fiscal inválida são convertidos em erro controlado. Esses casos não deixam exceções de transporte escaparem como erro interno genérico da aplicação.
+
+## Auditoria fiscal
+
+Cada operação fiscal compartilhada gera um registro operacional em:
+
+```text
+%LOCALAPPDATA%\NfeAgendamento\logs\fiscal-audit.jsonl
+```
+
+O arquivo atual gira ao atingir aproximadamente 2 MB e mantém somente um backup:
+
+```text
+fiscal-audit.jsonl.1
+```
+
+Cada linha contém apenas:
+
+- horário UTC;
+- fingerprint SHA-256 de 12 caracteres da chave;
+- status interno da operação;
+- `cStat`, quando disponível;
+- indicação de cache;
+- duração em milissegundos.
+
+A auditoria não contém XML, chave de acesso completa, certificado, chave privada, CPF/CNPJ nem mensagem integral da SEFAZ. Se o log não puder ser gravado, a operação fiscal continua normalmente.
+
 ## Firewall
 
 O painel verifica se existe uma regra compatível com o executável atual. O botão **Configurar firewall** solicita elevação pelo UAC e recria a regra da Central com estas restrições:
@@ -115,7 +177,10 @@ Continuam sendo aplicados:
 - validação de Origin;
 - limite de tamanho das requisições;
 - certificado A1 somente no PC central;
-- cache criptografado por DPAPI;
+- cache e cooldown criptografados por DPAPI;
+- fila fiscal serializada, limitada e deduplicada;
+- bloqueio persistente após `cStat=656`;
+- auditoria sem dados fiscais completos;
 - regra de firewall limitada ao perfil Privado e ao executável atual.
 
 O aplicativo não possui autenticação própria. Enquanto a Central estiver ativa, o acesso deve permanecer restrito à rede interna da empresa.
@@ -148,9 +213,17 @@ Clique em **Configurar firewall** e confirme o UAC. Se continuar igual, a máqui
 
 O servidor está acessível e o problema está somente na descoberta mDNS. Continue usando o IPv4 mostrado no painel.
 
-### Retorno 429
+### HTTP 429 com `fila_ocupada`
 
-É o tratamento do `cStat=656`. Aguarde o horário exibido e verifique se outro sistema consulta o mesmo CNPJ.
+A Central está no limite de 12 operações fiscais únicas. Aguarde os 5 segundos indicados em `Retry-After` e tente novamente. Não é necessário aguardar uma hora e esse retorno não veio da SEFAZ.
+
+### HTTP 429 com `consumo_indevido`
+
+É o tratamento do `cStat=656`. Não force novas tentativas. Aguarde o horário informado e verifique se outro sistema consulta o mesmo CNPJ.
+
+### Estado fiscal local inválido
+
+A Central não conseguiu validar o arquivo persistido de cooldown. Por segurança, ela não envia uma nova consulta à SEFAZ. Encerre o app e investigue o estado em `%LOCALAPPDATA%\NfeAgendamento\state` antes de continuar a operação.
 
 ### Certificado não aparece
 
@@ -165,6 +238,8 @@ O app armazena dados em:
 ```
 
 O cache e o estado fiscal são protegidos pelo DPAPI do usuário do Windows. Trocar o usuário do Windows pode impedir o acesso ao cache antigo; isso é esperado pelo modelo de proteção.
+
+A auditoria operacional fica em `logs\fiscal-audit.jsonl` e não contém XML nem identificadores fiscais completos.
 
 ## Limitações atuais
 
