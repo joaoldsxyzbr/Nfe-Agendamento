@@ -22,8 +22,8 @@ async function ensureAuth() {
   const gate = $('authGate');
   gate.hidden = false;
   $('authMessage').textContent = auth.configured
-    ? 'Informe a senha numérica da central.'
-    : 'Crie a senha numérica da central neste computador.';
+    ? 'Informe a senha padrão da central.'
+    : 'Use a senha padrão da central.';
   $('authForm').onsubmit = async (event) => {
     event.preventDefault();
     const password = $('authPassword').value;
