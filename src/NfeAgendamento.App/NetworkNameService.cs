@@ -1,5 +1,4 @@
 using System.Net;
-using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Text;
 
@@ -24,9 +23,11 @@ public sealed class NetworkNameService : IDisposable
         _worker = Task.Run(RespondAsync);
     }
 
+    public static IPAddress? GetAdvertisedAddress() => CentralNetworkInfo.FindLanIPv4();
+
     public static NetworkNameService? Start()
     {
-        var address = FindLanAddress();
+        var address = GetAdvertisedAddress();
         if (address is null)
             return null;
 
@@ -105,13 +106,4 @@ public sealed class NetworkNameService : IDisposable
         queryType = (ushort)((packet[offset] << 8) | packet[offset + 1]);
         return true;
     }
-
-    private static IPAddress? FindLanAddress() =>
-        NetworkInterface.GetAllNetworkInterfaces()
-            .Where(network => network.OperationalStatus == OperationalStatus.Up)
-            .SelectMany(network => network.GetIPProperties().UnicastAddresses)
-            .Select(address => address.Address)
-            .FirstOrDefault(address => address.AddressFamily == AddressFamily.InterNetwork
-                && !IPAddress.IsLoopback(address)
-                && !address.ToString().StartsWith("169.254.", StringComparison.Ordinal));
 }
