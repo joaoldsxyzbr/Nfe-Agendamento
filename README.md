@@ -51,7 +51,7 @@ Nenhum certificado, chave privada ou XML é enviado para a nuvem.
 - cooldown persistente de uma hora após `cStat=656`;
 - retry limitado apenas para falhas transitórias de rede;
 - proteção CSRF, validação de Host e Origin;
-- autenticação por senha numérica no modo LAN;
+- autenticação pela senha padrão `agendamentoprado` no modo LAN;
 - domínio interno via mDNS.
 
 ## Instalação no PC central
@@ -79,7 +79,7 @@ O modo LAN é opt-in. Sem `--lan`, o app escuta somente em `127.0.0.1`.
 No primeiro acesso local em modo LAN:
 
 1. Abra `http://127.0.0.1:17345`.
-2. Crie uma senha numérica de seis dígitos.
+2. Use a senha padrão `agendamentoprado`.
 3. Configure o certificado A1.
 4. Mantenha o aplicativo aberto na bandeja.
 
@@ -91,7 +91,7 @@ Abra:
 http://nfeagendamento.local:17345
 ```
 
-Informe a senha numérica criada no PC central.
+Informe a senha padrão `agendamentoprado`.
 
 Se o domínio não resolver, use o IPv4 do PC central:
 
