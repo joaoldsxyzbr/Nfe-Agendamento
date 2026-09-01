@@ -76,12 +76,12 @@ public sealed class EncryptedXmlCache
         catch (InvalidDataException)
         {
             TryDelete(path);
-            throw;
+            return null;
         }
         catch (Exception ex) when (ex is CryptographicException or JsonException)
         {
             TryDelete(path);
-            throw new InvalidDataException("O cache local não pôde ser validado com segurança.", ex);
+            return null;
         }
     }
 
