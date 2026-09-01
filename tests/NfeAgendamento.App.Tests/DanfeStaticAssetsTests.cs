@@ -36,6 +36,15 @@ public sealed class DanfeStaticAssetsTests
     }
 
     [Fact]
+    public void Auth_gate_respects_hidden_attribute_after_successful_login()
+    {
+        var css = Fixture("styles.css");
+
+        Assert.Contains(".auth-gate[hidden]", css);
+        Assert.Contains("display: none !important", css);
+    }
+
+    [Fact]
     public void Lookup_button_is_guarded_against_duplicate_requests()
     {
         var script = Fixture("app.js");
