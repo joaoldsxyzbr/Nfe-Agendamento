@@ -19,8 +19,6 @@ public sealed class FiscalOperationGate
     public int PendingOperations => Volatile.Read(ref _pendingOperations);
     public int MaxPendingOperations => _maxPendingOperations;
 
-    internal SemaphoreSlim Semaphore => _semaphore;
-
     public async Task<FiscalOperationLease> EnterAsync(CancellationToken cancellationToken = default)
     {
         if (!TryReserve())
