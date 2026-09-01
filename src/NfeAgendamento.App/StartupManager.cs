@@ -13,7 +13,24 @@ public static class StartupManager
         return key?.GetValue(ValueName) is string value && !string.IsNullOrWhiteSpace(value);
     }
 
-    public static void SetEnabled(bool enabled)
+    public static string BuildStartupCommand(string executable, bool lanMode)
+    {
+        if (string.IsNullOrWhiteSpace(executable))
+            throw new ArgumentException("Executável inválido.", nameof(executable));
+
+        return lanMode ? $"\"{executable}\" --lan" : $"\"{executable}\"";
+    }
+
+    public static string[] ResolveLaunchArguments(string[]? args, bool startupEnabled)
+    {
+        var current = args ?? [];
+        if (!startupEnabled || current.Any(argument => string.Equals(argument, "--lan", StringComparison.OrdinalIgnoreCase)))
+            return current;
+
+        return [.. current, "--lan"];
+    }
+
+    public static void SetEnabled(bool enabled, bool lanMode = true)
     {
         using var key = Registry.CurrentUser.CreateSubKey(RunKey);
         if (key is null) throw new InvalidOperationException("Não foi possível configurar a inicialização do Windows.");
@@ -22,7 +39,7 @@ public static class StartupManager
         {
             var executable = Environment.ProcessPath
                 ?? throw new InvalidOperationException("Não foi possível localizar o executável do aplicativo.");
-            key.SetValue(ValueName, $"\"{executable}\"");
+            key.SetValue(ValueName, BuildStartupCommand(executable, lanMode));
         }
         else
         {
