@@ -50,6 +50,25 @@ const unknown = mapping.resolveFernandoKleinProduct({ emitterTaxId: emitterCpf, 
 assert.equal(unknown.sourceCode, 'FK999');
 assert.equal(unknown.internalCode, '', 'Produto desconhecido não pode receber código interno por aproximação.');
 
+const summary = mapping.summarizeFernandoKleinProducts({ emitterTaxId: emitterCpf, products });
+assert.equal(summary.applies, true, 'A NF Fernando Klein deve ativar o resumo de mapeamento.');
+assert.equal(summary.total, 18);
+assert.equal(summary.mapped, 17);
+assert.equal(summary.unmapped, 1);
+assert.equal(summary.unknownProducts.length, 1);
+assert.equal(summary.unknownProducts[0].cProd, 'FK999');
+assert.equal(summary.unknownProducts[0].xProd, 'VERDURAS - PRODUTO NOVO');
+
+const otherSummary = mapping.summarizeFernandoKleinProducts({
+  emitterTaxId: '12.345.678/0001-90',
+  products: [{ cProd: 'OUT001', xProd: 'ALFACE' }]
+});
+assert.equal(otherSummary.applies, false, 'Outro fornecedor não deve gerar resumo Fernando Klein.');
+assert.equal(otherSummary.total, 1);
+assert.equal(otherSummary.mapped, 0);
+assert.equal(otherSummary.unmapped, 0);
+assert.equal(otherSummary.unknownProducts.length, 0);
+
 for (const variant of ['RÚCULA', 'rucula', ' VERDURAS - RÚCULA ', 'VERDURAS: RUCULA']) {
   assert.equal(resolve(variant).internalCode, '104111', `Normalização falhou para ${variant}.`);
 }
@@ -74,4 +93,4 @@ assert.throws(
   'Aliases equivalentes após normalização devem gerar conflito.'
 );
 
-console.log(`OK: ${products.length} itens da NF de regressão + aliases, normalização e isolamento por fornecedor.`);
+console.log(`OK: ${products.length} itens da NF de regressão + aliases, normalização, isolamento e resumo de mapeamento.`);
