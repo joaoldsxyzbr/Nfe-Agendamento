@@ -64,7 +64,7 @@ Não abra a porta no roteador e não use perfil de rede pública.
 
 ## Senha
 
-A senha é criada no primeiro acesso local do PC central em modo LAN. Ela tem exatamente seis números e é usada pelos navegadores da equipe.
+A senha padrão é `agendamentoprado` e é usada pelos navegadores da equipe. O acesso deve ficar restrito à rede privada da empresa.
 
 Se a senha for esquecida, não há recuperação remota. A redefinição deve ser feita localmente no PC central, preservando o cuidado com os arquivos de estado e com o certificado.
 
