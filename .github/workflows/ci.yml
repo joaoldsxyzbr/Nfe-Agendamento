@@ -15,6 +15,8 @@ jobs:
           dotnet-version: 8.0.x
       - run: dotnet restore Nfe-Agendamento.sln
       - run: dotnet test Nfe-Agendamento.sln -c Release --no-restore
+      - name: Testar regressão de produtos Fernando Klein
+        run: node tests/js/product-mapping-regression.test.js
       - run: dotnet build Nfe-Agendamento.sln -c Release --no-restore
       - name: Publicar pacote de teste Windows
         run: dotnet publish src/NfeAgendamento.App/NfeAgendamento.App.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o artifacts/nfe-agendamento
