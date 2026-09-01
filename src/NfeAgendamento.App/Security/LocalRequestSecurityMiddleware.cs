@@ -39,6 +39,12 @@ public sealed class LocalRequestSecurityMiddleware
             return;
         }
 
+        if (!isLoopback && IsCertificateAdministrationPath(context.Request.Path))
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            return;
+        }
+
         if (!AllowedHosts.Contains(context.Request.Host.Value)
             && !(_centralState.IsEnabled && IsLanHost(context.Request.Host)))
         {
@@ -70,6 +76,10 @@ public sealed class LocalRequestSecurityMiddleware
 
         await _next(context);
     }
+
+    private static bool IsCertificateAdministrationPath(PathString path) =>
+        path.StartsWithSegments("/api/certificates", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWithSegments("/api/certificate", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsLanHost(HostString host) =>
         host.Port == LocalHost.Port && !string.IsNullOrWhiteSpace(host.Host);
