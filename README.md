@@ -4,10 +4,10 @@ Aplicativo Windows interno para consultar, visualizar e baixar NF-e usando o cer
 
 ## Versão publicada
 
-**v0.1.9**
+**v0.1.10**
 
-- [Baixar o pacote Windows x64](https://github.com/joaoldsxyzbr/Nfe-Agendamento/releases/download/v0.1.9/Nfe-Agendamento-win-x64.zip)
-- [Ver a release v0.1.9](https://github.com/joaoldsxyzbr/Nfe-Agendamento/releases/tag/v0.1.9)
+- [Baixar o pacote Windows x64](https://github.com/joaoldsxyzbr/Nfe-Agendamento/releases/download/v0.1.10/Nfe-Agendamento-win-x64.zip)
+- [Ver a release v0.1.10](https://github.com/joaoldsxyzbr/Nfe-Agendamento/releases/tag/v0.1.10)
 
 O pacote é autocontido e não exige instalação do .NET.
 
