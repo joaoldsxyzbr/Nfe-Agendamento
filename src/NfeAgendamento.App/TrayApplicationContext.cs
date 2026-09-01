@@ -36,7 +36,7 @@ public sealed class TrayApplicationContext : ApplicationContext
         var startup = new ToolStripMenuItem("Iniciar com o Windows") { CheckOnClick = true, Checked = StartupManager.IsEnabled() };
         startup.CheckedChanged += (_, _) =>
         {
-            try { StartupManager.SetEnabled(startup.Checked, lanMode: false); }
+            try { StartupManager.SetEnabled(startup.Checked); }
             catch { startup.Checked = !startup.Checked; }
         };
         var exit = new ToolStripMenuItem("Sair");
