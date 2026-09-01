@@ -36,19 +36,22 @@ public sealed class NfeLookupService
     private readonly FiscalCooldownStore _cooldown;
     private readonly Func<TimeSpan, CancellationToken, Task> _delay;
     private readonly FiscalOperationGate _gate;
+    private readonly FiscalRequestCoordinator _coordinator;
 
     public NfeLookupService(
         INfeDistributionTransport transport,
         EncryptedXmlCache cache,
         FiscalCooldownStore cooldown,
         Func<TimeSpan, CancellationToken, Task>? delay = null,
-        FiscalOperationGate? gate = null)
+        FiscalOperationGate? gate = null,
+        FiscalRequestCoordinator? coordinator = null)
     {
         _transport = transport ?? throw new ArgumentNullException(nameof(transport));
         _cache = cache ?? throw new ArgumentNullException(nameof(cache));
         _cooldown = cooldown ?? throw new ArgumentNullException(nameof(cooldown));
         _delay = delay ?? Task.Delay;
         _gate = gate ?? new FiscalOperationGate();
+        _coordinator = coordinator ?? new FiscalRequestCoordinator();
     }
 
     public async Task<NfeLookupResult> LookupAsync(
@@ -57,6 +60,16 @@ public sealed class NfeLookupService
     {
         if (!AccessKeyValidator.IsValid(accessKey))
             throw new ArgumentException("Chave NF-e inválida.", nameof(accessKey));
+
+        return await _coordinator.ExecuteAsync(
+            accessKey,
+            () => LookupCoreAsync(accessKey),
+            cancellationToken);
+    }
+
+    private async Task<NfeLookupResult> LookupCoreAsync(string accessKey)
+    {
+        var cancellationToken = CancellationToken.None;
 
         var cached = await _cache.TryGetAsync(accessKey, cancellationToken);
         if (cached is not null)
