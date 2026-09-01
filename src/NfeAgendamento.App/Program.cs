@@ -13,12 +13,14 @@ internal static class Program
         ApplicationConfiguration.Initialize();
 
         var builder = WebApplication.CreateBuilder(args);
-        LocalHost.Configure(builder);
+        LocalHost.Configure(builder, args);
         builder.Services.AddSingleton<CsrfTokenService>();
+        builder.Services.AddSingleton<LocalSessionService>();
         builder.Services.AddSingleton<CertificateService>();
         builder.Services.AddSingleton<EncryptedXmlCache>();
         builder.Services.AddSingleton<FiscalCooldownStore>();
         builder.Services.AddSingleton<FiscalOperationGate>();
+        builder.Services.AddSingleton<FiscalRequestCoordinator>();
         builder.Services.AddScoped<NfeLookupService>();
         builder.Services.AddScoped<BatchLookupService>();
         builder.Services.AddScoped<INfeDistributionTransport>(sp =>
@@ -36,7 +38,44 @@ internal static class Program
         app.UseStaticFiles();
 
         app.MapGet("/api/bootstrap", (CsrfTokenService csrf) =>
-            Results.Ok(new { csrfToken = csrf.CurrentToken }));
+            Results.Ok(new { csrfToken = csrf.CurrentToken, lanMode = LocalHost.IsLanMode, accessUrl = LocalHost.GetBrowserUrl(args) }));
+        app.MapGet("/api/auth/status", (HttpContext context, LocalSessionService sessions) =>
+            Results.Ok(new { configured = sessions.IsConfigured, authenticated = sessions.IsAuthenticated(context.Request.Cookies[LocalSessionService.CookieName]) }));
+        app.MapPost("/api/auth/setup", (AuthRequest? request, HttpContext context, LocalSessionService sessions) =>
+        {
+            if (context.Connection.RemoteIpAddress is null || !System.Net.IPAddress.IsLoopback(context.Connection.RemoteIpAddress))
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+            if (request is null)
+                return Results.BadRequest(new { message = "Informe a senha numérica." });
+            try
+            {
+                sessions.Configure(request.Password);
+                return Results.NoContent();
+            }
+            catch (ArgumentException ex) { return Results.BadRequest(new { message = ex.Message }); }
+            catch (InvalidOperationException ex) { return Results.Conflict(new { message = ex.Message }); }
+        });
+        app.MapPost("/api/auth/login", (AuthRequest? request, HttpContext context, LocalSessionService sessions) =>
+        {
+            if (request is null || !sessions.Verify(request.Password))
+                return Results.Json(new { message = "Senha inválida." }, statusCode: StatusCodes.Status401Unauthorized);
+            var token = sessions.CreateSession();
+            context.Response.Cookies.Append(LocalSessionService.CookieName, token, new CookieOptions
+            {
+                HttpOnly = true,
+                SameSite = SameSiteMode.Lax,
+                Secure = false,
+                MaxAge = TimeSpan.FromHours(8),
+                Path = "/"
+            });
+            return Results.NoContent();
+        });
+        app.MapPost("/api/auth/logout", (HttpContext context, LocalSessionService sessions) =>
+        {
+            sessions.Revoke(context.Request.Cookies[LocalSessionService.CookieName]);
+            context.Response.Cookies.Delete(LocalSessionService.CookieName);
+            return Results.NoContent();
+        });
         app.MapGet("/api/certificates", (CertificateService certificates) =>
             Results.Ok(certificates.ListValidCertificates()));
         app.MapGet("/api/certificate/current", async (CertificateService certificates, CancellationToken cancellationToken) =>
@@ -73,7 +112,7 @@ internal static class Program
                     NfeLookupStatus.Found => Results.Text(result.Xml!, "application/xml; charset=utf-8"),
                     NfeLookupStatus.NotFound => Results.Json(new { status = "not_found", message = result.Message, cStat = result.CStat }, statusCode: 404),
                     NfeLookupStatus.ManifestationRequired => Results.Json(new { status = "manifestation_required", message = result.Message, cStat = result.CStat }, statusCode: 409),
-                    NfeLookupStatus.Blocked => Results.Json(new { status = "consumo_indevido", message = result.Message, cStat = result.CStat, blockedUntilUtc = result.BlockedUntilUtc }, statusCode: 429),
+                    NfeLookupStatus.Blocked => BlockedResult(result),
                     _ => Results.Json(new { status = "network_error", message = result.Message ?? "Não foi possível concluir a consulta." }, statusCode: 502)
                 };
             }
@@ -120,8 +159,10 @@ internal static class Program
             return;
         }
 
-        OpenBrowser(LocalHost.ListenUrl);
-        Application.Run(new TrayApplicationContext(LocalHost.ListenUrl));
+        var browserUrl = LocalHost.GetBrowserUrl(args);
+        using var networkName = LocalHost.IsLanMode ? NetworkNameService.Start() : null;
+        OpenBrowser(browserUrl);
+        Application.Run(new TrayApplicationContext(browserUrl));
         await app.StopAsync();
     }
 
@@ -135,8 +176,28 @@ internal static class Program
         {
         }
     }
+
+    private static IResult BlockedResult(NfeLookupResult result)
+    {
+        var response = Results.Json(new { status = "consumo_indevido", message = result.Message, cStat = result.CStat, blockedUntilUtc = result.BlockedUntilUtc }, statusCode: StatusCodes.Status429TooManyRequests);
+        return new HeaderResult(response, result.BlockedUntilUtc);
+    }
+
+    private sealed class HeaderResult(IResult inner, DateTimeOffset? blockedUntilUtc) : IResult
+    {
+        public async Task ExecuteAsync(HttpContext httpContext)
+        {
+            if (blockedUntilUtc is { } until)
+            {
+                var seconds = Math.Max(1, (int)Math.Ceiling((until - DateTimeOffset.UtcNow).TotalSeconds));
+                httpContext.Response.Headers.RetryAfter = seconds.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            }
+            await inner.ExecuteAsync(httpContext);
+        }
+    }
 }
 
 internal sealed record CertificateSelectRequest(string Thumbprint, string UfAutor);
 internal sealed record LookupRequest(string AccessKey);
 internal sealed record BatchLookupRequest(string[]? AccessKeys);
+internal sealed record AuthRequest(string Password);
