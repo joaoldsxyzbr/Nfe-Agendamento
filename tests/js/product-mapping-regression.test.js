@@ -57,7 +57,7 @@ assert.equal(summary.mapped, 17);
 assert.equal(summary.unmapped, 1);
 assert.equal(summary.unknownProducts.length, 1);
 assert.equal(summary.unknownProducts[0].cProd, 'FK999');
-assert.equal(summary.unknownProducts[0].xProd, 'VERDURAS - PRODUTO NOVO');
+assert.equal(summary.unknownProducts[0].xProd, 'PRODUTO NOVO SEM MAPA');
 
 const otherSummary = mapping.summarizeFernandoKleinProducts({
   emitterTaxId: '12.345.678/0001-90',
