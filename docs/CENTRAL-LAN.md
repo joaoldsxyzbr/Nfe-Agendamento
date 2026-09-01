@@ -13,14 +13,15 @@
 1. Extraia o pacote em uma pasta permanente.
 2. Execute `NfeAgendamento.App.exe --lan`.
 3. Abra `http://127.0.0.1:17345` no próprio PC.
-4. Crie a senha numérica de seis dígitos.
+4. Use a senha padrão `agendamentoprado`.
 5. Selecione o certificado A1.
 6. Informe a UF autora.
-7. Faça uma consulta única de teste.
+7. Faça uma consulta individual de teste.
 8. Teste o download do XML e a visualização do DANFE.
-9. Teste um lote pequeno com chaves conhecidas.
 
 O modo `--lan` faz o servidor escutar nas interfaces de rede. O modo sem argumento continua restrito a `127.0.0.1`.
+
+A consulta em lote foi removida. A central trabalha apenas com consultas individuais para manter o consumo fiscal previsível quando vários computadores usam o mesmo certificado e o mesmo CNPJ.
 
 ## Uso nos clientes
 
@@ -44,8 +45,11 @@ O cliente só precisa de navegador. Não instale o certificado A1 nos clientes e
 - mantenha o aplicativo aberto na bandeja;
 - faça as consultas pelo endereço central;
 - não abra cópias independentes do app em outros PCs;
+- use uma chave por consulta;
 - não repita consultas enquanto uma consulta estiver em andamento;
 - após `cStat=656`, aguarde o cooldown indicado.
+
+As consultas fiscais são coordenadas no PC central. Consultas simultâneas da mesma chave são deduplicadas e o acesso à SEFAZ é serializado.
 
 ## Domínio interno
 
@@ -65,8 +69,6 @@ Não abra a porta no roteador e não use perfil de rede pública.
 ## Senha
 
 A senha padrão é `agendamentoprado` e é usada pelos navegadores da equipe. O acesso deve ficar restrito à rede privada da empresa.
-
-Se a senha for esquecida, não há recuperação remota. A redefinição deve ser feita localmente no PC central, preservando o cuidado com os arquivos de estado e com o certificado.
 
 ## Dados locais
 
@@ -112,7 +114,7 @@ O certificado precisa estar instalado no Windows Certificate Store do usuário q
 
 Sempre encerre o app antes de substituir os arquivos da aplicação. Baixe somente releases oficiais do repositório e mantenha a pasta de dados do usuário intacta.
 
-## Limitações da v0.1.9
+## Limitações atuais
 
 - o servidor central precisa permanecer ligado;
 - o domínio depende de mDNS ou do fallback por IP;
