@@ -1,0 +1,42 @@
+.workspace-grid {
+  align-items: stretch;
+}
+
+.workspace-grid > .panel {
+  height: 100%;
+}
+
+.lookup-key-row {
+  display: block;
+}
+
+.lookup-actions-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.lookup-actions-row .primary,
+.lookup-actions-row .secondary {
+  width: 100%;
+  min-height: 48px;
+}
+
+.new-lookup-button {
+  color: #82b3ff;
+  background: transparent;
+  border-color: #3b72b7;
+}
+
+.new-lookup-button:hover {
+  color: #dcebff;
+  background: rgba(75, 141, 255, .1);
+  border-color: #4b8dff;
+}
+
+@media (max-width: 620px) {
+  .lookup-actions-row {
+    grid-template-columns: 1fr;
+  }
+}
