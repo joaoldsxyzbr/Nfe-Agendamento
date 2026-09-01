@@ -15,7 +15,6 @@ internal static class Program
         var builder = WebApplication.CreateBuilder(args);
         LocalHost.Configure(builder, args);
         builder.Services.AddSingleton<CsrfTokenService>();
-        builder.Services.AddSingleton<LocalSessionService>();
         builder.Services.AddSingleton<CertificateService>();
         builder.Services.AddSingleton<EncryptedXmlCache>();
         builder.Services.AddSingleton<FiscalCooldownStore>();
@@ -38,43 +37,6 @@ internal static class Program
 
         app.MapGet("/api/bootstrap", (CsrfTokenService csrf) =>
             Results.Ok(new { csrfToken = csrf.CurrentToken, lanMode = LocalHost.IsLanMode, accessUrl = LocalHost.GetBrowserUrl(args) }));
-        app.MapGet("/api/auth/status", (HttpContext context, LocalSessionService sessions) =>
-            Results.Ok(new { configured = sessions.IsConfigured, authenticated = sessions.IsAuthenticated(context.Request.Cookies[LocalSessionService.CookieName]) }));
-        app.MapPost("/api/auth/setup", (AuthRequest? request, HttpContext context, LocalSessionService sessions) =>
-        {
-            if (context.Connection.RemoteIpAddress is null || !System.Net.IPAddress.IsLoopback(context.Connection.RemoteIpAddress))
-                return Results.StatusCode(StatusCodes.Status403Forbidden);
-            if (request is null)
-                return Results.BadRequest(new { message = "Informe a senha numérica." });
-            try
-            {
-                sessions.Configure(request.Password);
-                return Results.NoContent();
-            }
-            catch (ArgumentException ex) { return Results.BadRequest(new { message = ex.Message }); }
-            catch (InvalidOperationException ex) { return Results.Conflict(new { message = ex.Message }); }
-        });
-        app.MapPost("/api/auth/login", (AuthRequest? request, HttpContext context, LocalSessionService sessions) =>
-        {
-            if (request is null || !sessions.Verify(request.Password))
-                return Results.Json(new { message = "Senha inválida." }, statusCode: StatusCodes.Status401Unauthorized);
-            var token = sessions.CreateSession();
-            context.Response.Cookies.Append(LocalSessionService.CookieName, token, new CookieOptions
-            {
-                HttpOnly = true,
-                SameSite = SameSiteMode.Lax,
-                Secure = false,
-                MaxAge = TimeSpan.FromHours(8),
-                Path = "/"
-            });
-            return Results.NoContent();
-        });
-        app.MapPost("/api/auth/logout", (HttpContext context, LocalSessionService sessions) =>
-        {
-            sessions.Revoke(context.Request.Cookies[LocalSessionService.CookieName]);
-            context.Response.Cookies.Delete(LocalSessionService.CookieName);
-            return Results.NoContent();
-        });
         app.MapGet("/api/certificates", (CertificateService certificates) =>
             Results.Ok(certificates.ListValidCertificates()));
         app.MapGet("/api/certificate/current", async (CertificateService certificates, CancellationToken cancellationToken) =>
@@ -179,4 +141,3 @@ internal static class Program
 
 internal sealed record CertificateSelectRequest(string Thumbprint, string UfAutor);
 internal sealed record LookupRequest(string AccessKey);
-internal sealed record AuthRequest(string Password);
