@@ -46,7 +46,7 @@ public sealed class LocalRequestSecurityMiddleware
         }
 
         if (!AllowedHosts.Contains(context.Request.Host.Value)
-            && !(_centralState.IsEnabled && IsLanHost(context.Request.Host)))
+            && !(_centralState.IsEnabled && CentralNetworkInfo.IsLocalLanHost(context.Request.Host)))
         {
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
             return;
@@ -80,9 +80,6 @@ public sealed class LocalRequestSecurityMiddleware
     private static bool IsCertificateAdministrationPath(PathString path) =>
         path.StartsWithSegments("/api/certificates", StringComparison.OrdinalIgnoreCase)
         || path.StartsWithSegments("/api/certificate", StringComparison.OrdinalIgnoreCase);
-
-    private static bool IsLanHost(HostString host) =>
-        host.Port == LocalHost.Port && !string.IsNullOrWhiteSpace(host.Host);
 
     private static bool IsAllowedOrigin(string origin, HostString requestHost, bool centralEnabled)
     {
