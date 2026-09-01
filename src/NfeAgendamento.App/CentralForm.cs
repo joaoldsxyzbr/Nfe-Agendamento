@@ -279,7 +279,7 @@ public sealed class CentralForm : Form
         };
     }
 
-    private static Color SummaryColor(CentralNetworkDiagnosticsSnapshot snapshot)
+    private static Color SummaryColor(NetworkDiagnosticSnapshot snapshot)
     {
         if (snapshot.NetworkStatus == NetworkHealthStatus.Error
             || snapshot.ListenerStatus == NetworkHealthStatus.Error
