@@ -49,7 +49,7 @@ Nenhum certificado, chave privada ou XML é enviado para a nuvem.
 - cooldown persistente de uma hora após `cStat=656`;
 - retry limitado apenas para falhas transitórias de rede;
 - proteção CSRF, validação de Host e Origin;
-- autenticação pela senha padrão `agendamentoprado` no modo LAN;
+- modo LAN habilitado somente com `--lan`;
 - domínio interno via mDNS.
 
 A consulta em lote foi removida para reduzir risco de consumo indevido e manter a operação da central simples e previsível para vários computadores.
@@ -79,9 +79,8 @@ O modo LAN é opt-in. Sem `--lan`, o app escuta somente em `127.0.0.1`.
 No primeiro acesso local em modo LAN:
 
 1. Abra `http://127.0.0.1:17345`.
-2. Use a senha padrão `agendamentoprado`.
-3. Configure o certificado A1.
-4. Mantenha o aplicativo aberto na bandeja.
+2. Configure o certificado A1.
+3. Mantenha o aplicativo aberto na bandeja.
 
 ## Acesso pelos demais computadores
 
@@ -91,7 +90,7 @@ Abra:
 http://nfeagendamento.local:17345
 ```
 
-Informe a senha padrão `agendamentoprado`.
+Não há tela de login. O acesso é direto porque o serviço foi projetado exclusivamente para a rede privada interna.
 
 Se o domínio não resolver, use o IPv4 do PC central:
 
@@ -116,13 +115,14 @@ Não publique essa porta na internet e não habilite regra para redes públicas.
 - a chave privada não é enviada aos navegadores;
 - os XMLs ficam no PC central;
 - o cache é criptografado com DPAPI do usuário do Windows;
-- acessos LAN exigem sessão autenticada;
-- operações de consulta exigem CSRF válido;
+- operações de alteração e consulta fiscal exigem CSRF válido;
+- Host e Origin são validados;
 - o modo padrão continua restrito ao loopback;
+- o modo LAN precisa ser habilitado explicitamente com `--lan`;
 - o acesso por IP é apenas fallback do domínio interno;
 - não há banco externo nem hospedagem em nuvem.
 
-A senha padrão da central é `agendamentoprado`. O acesso deve ficar restrito à rede privada da empresa.
+O aplicativo não possui autenticação própria. Portanto, qualquer computador que consiga alcançar a porta 17345 na rede privada poderá acessar a interface. Mantenha a porta restrita à rede interna e nunca a publique na internet.
 
 ## Consultas e erro 429
 
