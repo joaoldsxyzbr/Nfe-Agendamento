@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net.Http;
 using NfeAgendamento.App.Storage;
 
@@ -38,6 +39,7 @@ public sealed class NfeLookupService
     private readonly Func<TimeSpan, CancellationToken, Task> _delay;
     private readonly FiscalOperationGate _gate;
     private readonly FiscalRequestCoordinator _coordinator;
+    private readonly FiscalAuditLog? _audit;
 
     public NfeLookupService(
         INfeDistributionTransport transport,
@@ -45,7 +47,8 @@ public sealed class NfeLookupService
         FiscalCooldownStore cooldown,
         Func<TimeSpan, CancellationToken, Task>? delay = null,
         FiscalOperationGate? gate = null,
-        FiscalRequestCoordinator? coordinator = null)
+        FiscalRequestCoordinator? coordinator = null,
+        FiscalAuditLog? audit = null)
     {
         _transport = transport ?? throw new ArgumentNullException(nameof(transport));
         _cache = cache ?? throw new ArgumentNullException(nameof(cache));
@@ -53,6 +56,7 @@ public sealed class NfeLookupService
         _delay = delay ?? Task.Delay;
         _gate = gate ?? new FiscalOperationGate();
         _coordinator = coordinator ?? new FiscalRequestCoordinator();
+        _audit = audit;
     }
 
     public async Task<NfeLookupResult> LookupAsync(
@@ -64,8 +68,19 @@ public sealed class NfeLookupService
 
         return await _coordinator.ExecuteAsync(
             accessKey,
-            () => LookupCoreAsync(accessKey),
+            () => LookupAuditedAsync(accessKey),
             cancellationToken);
+    }
+
+    private async Task<NfeLookupResult> LookupAuditedAsync(string accessKey)
+    {
+        var started = Stopwatch.GetTimestamp();
+        var result = await LookupCoreAsync(accessKey);
+
+        if (_audit is not null)
+            await _audit.RecordAsync(accessKey, result, Stopwatch.GetElapsedTime(started), CancellationToken.None);
+
+        return result;
     }
 
     private async Task<NfeLookupResult> LookupCoreAsync(string accessKey)
@@ -99,6 +114,10 @@ public sealed class NfeLookupService
             catch (FiscalCooldownException blocked)
             {
                 return new NfeLookupResult(NfeLookupStatus.Blocked, null, "656", blocked.Message, false, blocked.BlockedUntilUtc);
+            }
+            catch (InvalidDataException)
+            {
+                return InvalidFiscalStateResult();
             }
 
             NfeDistributionResponse? response = null;
@@ -138,9 +157,16 @@ public sealed class NfeLookupService
             {
                 if (string.Equals(response.CStat, "656", StringComparison.Ordinal))
                 {
-                    await _cooldown.BlockFor656Async(DateTimeOffset.UtcNow, cancellationToken);
-                    var state = await _cooldown.ReadAsync(cancellationToken);
-                    return new NfeLookupResult(NfeLookupStatus.Blocked, null, response.CStat, response.Message, false, state.BlockedUntilUtc);
+                    try
+                    {
+                        await _cooldown.BlockFor656Async(DateTimeOffset.UtcNow, cancellationToken);
+                        var state = await _cooldown.ReadAsync(cancellationToken);
+                        return new NfeLookupResult(NfeLookupStatus.Blocked, null, response.CStat, response.Message, false, state.BlockedUntilUtc);
+                    }
+                    catch (InvalidDataException)
+                    {
+                        return InvalidFiscalStateResult();
+                    }
                 }
 
                 if (string.Equals(response.CStat, "137", StringComparison.Ordinal))
@@ -163,4 +189,12 @@ public sealed class NfeLookupService
             }
         }
     }
+
+    private static NfeLookupResult InvalidFiscalStateResult() =>
+        new(
+            NfeLookupStatus.Failed,
+            null,
+            null,
+            "O estado fiscal local não pôde ser validado. Nenhuma nova consulta foi enviada à SEFAZ.",
+            false);
 }
