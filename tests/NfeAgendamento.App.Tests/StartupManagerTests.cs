@@ -19,4 +19,20 @@ public sealed class StartupManagerTests
 
         Assert.Equal("\"C:\\Apps\\NfeAgendamento.App.exe\" --lan", command);
     }
+
+    [Fact]
+    public void Existing_windows_startup_enables_lan_for_current_launch()
+    {
+        var launchArgs = StartupManager.ResolveLaunchArguments([], startupEnabled: true);
+
+        Assert.Contains("--lan", launchArgs, StringComparer.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Manual_local_launch_without_windows_startup_stays_local()
+    {
+        var launchArgs = StartupManager.ResolveLaunchArguments([], startupEnabled: false);
+
+        Assert.DoesNotContain("--lan", launchArgs, StringComparer.OrdinalIgnoreCase);
+    }
 }
