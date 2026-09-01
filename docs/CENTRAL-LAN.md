@@ -54,9 +54,21 @@ Ações:
 
 Fechar a janela apenas minimiza a operação para a bandeja. Para encerrar o servidor, use **Sair** no menu da bandeja.
 
+## Bandeja do Windows
+
+O menu da bandeja mantém as ações rápidas da Central e passa a mostrar o endereço de rede atual. Quando o acesso remoto está disponível, aparece uma linha como:
+
+```text
+Acesso: http://10.0.0.29:17345
+```
+
+A ação **Copiar endereço da Central** envia esse endereço para a área de transferência para que ele possa ser passado aos outros computadores sem redigitação.
+
+Se a Central estiver parada, o menu mostra **Acesso pela rede: desativado**. Se estiver ativa mas nenhum IPv4 utilizável tiver sido identificado, mostra **Acesso pela rede: IP não identificado** e o botão de copiar fica desativado.
+
 ## Uso nos clientes
 
-Use preferencialmente o endereço exibido pelo painel. Exemplo:
+Use preferencialmente o endereço exibido pelo painel ou copiado pelo menu da bandeja. Exemplo:
 
 ```text
 http://10.0.0.29:17345
@@ -78,7 +90,7 @@ O cliente só precisa de navegador. Não instale o certificado A1 nos clientes e
 - mantenha o aplicativo aberto ou na bandeja;
 - confirme que o painel mostra **Central ativa**;
 - confirme **Rede: OK**, **Servidor: OK** e **Firewall: OK** antes do primeiro uso em outro PC;
-- use nos clientes o endereço informado pela janela;
+- use nos clientes o endereço informado pela janela ou copiado pela bandeja;
 - não abra cópias independentes do app em outros PCs;
 - use uma chave por consulta;
 - após `cStat=656`, aguarde o cooldown indicado.
@@ -101,11 +113,15 @@ Retry-After: 5
 
 Esse retorno significa somente que a Central está ocupada. Ele não representa `cStat=656`.
 
+No navegador, esse cenário é exibido como **Central ocupada**, usando o valor real do cabeçalho `Retry-After` para informar em quantos segundos tentar novamente.
+
 ## Proteção contra cStat=656
 
 Quando a SEFAZ retorna `656`, a Central persiste um cooldown de uma hora. Durante esse período nenhuma nova operação fiscal é enviada à SEFAZ.
 
 Consultas que já estavam aguardando na fila também verificam o cooldown novamente depois de obter a vez de execução. Se uma consulta anterior tiver recebido `656`, as demais são bloqueadas localmente antes de qualquer nova chamada externa.
+
+No navegador, esse retorno é apresentado separadamente da fila cheia: a mensagem informa que o bloqueio veio da **SEFAZ**, mostra o horário exato de liberação e orienta a não repetir a consulta antes desse momento.
 
 O estado de cooldown é protegido por DPAPI. Se esse arquivo estiver corrompido ou não puder ser validado, a Central falha de forma segura: retorna um erro controlado e não envia uma nova consulta à SEFAZ.
 
@@ -215,11 +231,11 @@ O servidor está acessível e o problema está somente na descoberta mDNS. Conti
 
 ### HTTP 429 com `fila_ocupada`
 
-A Central está no limite de 12 operações fiscais únicas. Aguarde os 5 segundos indicados em `Retry-After` e tente novamente. Não é necessário aguardar uma hora e esse retorno não veio da SEFAZ.
+A tela informa que a **Central está ocupada** e mostra o tempo indicado em `Retry-After`. Aguarde esse intervalo e tente novamente. Não é necessário aguardar uma hora e esse retorno não veio da SEFAZ.
 
 ### HTTP 429 com `consumo_indevido`
 
-É o tratamento do `cStat=656`. Não force novas tentativas. Aguarde o horário informado e verifique se outro sistema consulta o mesmo CNPJ.
+É o tratamento do `cStat=656`. A tela identifica a **SEFAZ**, mostra o horário de liberação e orienta a não repetir a consulta antes dele. Verifique também se outro sistema consulta o mesmo CNPJ.
 
 ### Estado fiscal local inválido
 
