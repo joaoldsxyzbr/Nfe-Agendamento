@@ -175,21 +175,58 @@ public sealed class TrayApplicationContext : ApplicationContext
         ExitThread();
     }
 
-    private static async Task CheckForUpdatesAsync()
+    private async Task CheckForUpdatesAsync()
     {
         try
         {
             using var service = new Updates.UpdateService();
             var result = await service.CheckAsync();
-            var message = result.IsUpdateAvailable
-                ? $"Há uma versão nova disponível: {result.LatestVersion}. Abra o repositório para baixar."
-                : "Você já está usando a versão mais recente disponível.";
-            MessageBox.Show(message, "NFe Agendamento", MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+            if (!result.IsUpdateAvailable)
+            {
+                MessageBox.Show(
+                    "Você já está usando a versão mais recente disponível.",
+                    "NFe Agendamento",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                return;
+            }
+
+            if (!result.CanInstall)
+            {
+                MessageBox.Show(
+                    $"A versão {result.LatestVersion} foi encontrada, mas o pacote oficial não pôde ser validado para instalação automática. Faça a atualização manual pela release oficial do projeto.",
+                    "NFe Agendamento",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return;
+            }
+
+            var confirmation = MessageBox.Show(
+                $"A versão {result.LatestVersion} está disponível.\n\nDeseja baixar, verificar, instalar e reiniciar o NFe Agendamento agora?",
+                "Atualização disponível",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Information,
+                MessageBoxDefaultButton.Button1);
+            if (confirmation != DialogResult.Yes)
+                return;
+
+            var prepared = await service.PrepareUpdateAsync(
+                result,
+                AppContext.BaseDirectory,
+                Environment.ProcessId);
+
+            Updates.UpdateService.LaunchPreparedUpdate(prepared);
+            ExitApplication();
         }
-        catch (Exception ex) when (ex is HttpRequestException or InvalidDataException)
+        catch (Exception ex) when (ex is HttpRequestException
+            or InvalidDataException
+            or InvalidOperationException
+            or IOException
+            or UnauthorizedAccessException)
         {
             MessageBox.Show(
-                "Não foi possível verificar atualizações agora. Tente novamente mais tarde.",
+                $"Não foi possível concluir a atualização agora.\n\n{ex.Message}",
                 "NFe Agendamento",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Warning);
