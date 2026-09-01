@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.NetworkInformation;
+using Microsoft.AspNetCore.Http;
 using NfeAgendamento.App;
 using Xunit;
 
@@ -20,6 +21,21 @@ public sealed class CentralNetworkDiagnosticsTests
         var selected = CentralNetworkInfo.SelectPreferredIPv4(candidates);
 
         Assert.Equal(IPAddress.Parse("10.0.0.29"), selected);
+    }
+
+    [Fact]
+    public void Lan_host_matches_only_an_actual_local_ipv4_on_the_expected_port()
+    {
+        var addresses = new[]
+        {
+            IPAddress.Parse("10.0.0.29"),
+            IPAddress.Parse("192.168.10.8")
+        };
+
+        Assert.True(CentralNetworkInfo.MatchesLanHost(new HostString("10.0.0.29", LocalHost.Port), addresses));
+        Assert.False(CentralNetworkInfo.MatchesLanHost(new HostString("10.0.0.30", LocalHost.Port), addresses));
+        Assert.False(CentralNetworkInfo.MatchesLanHost(new HostString("evil.example", LocalHost.Port), addresses));
+        Assert.False(CentralNetworkInfo.MatchesLanHost(new HostString("10.0.0.29", 9999), addresses));
     }
 
     [Fact]
