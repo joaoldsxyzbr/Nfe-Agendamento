@@ -36,12 +36,17 @@ public sealed class DanfeStaticAssetsTests
     }
 
     [Fact]
-    public void Auth_gate_respects_hidden_attribute_after_successful_login()
+    public void Application_does_not_require_password_or_authentication_routes()
     {
-        var css = Fixture("styles.css");
+        var html = Fixture("index.html");
+        var script = Fixture("app.js");
+        var program = Fixture("Program.cs");
 
-        Assert.Contains(".auth-gate[hidden]", css);
-        Assert.Contains("display: none !important", css);
+        Assert.DoesNotContain("authGate", html, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("authPassword", html, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("/api/auth", script, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("/api/auth", program, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("LocalSessionService", program, StringComparison.Ordinal);
     }
 
     [Fact]
