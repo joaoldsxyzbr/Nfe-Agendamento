@@ -6,7 +6,7 @@ Aplicativo Windows interno para consultar, visualizar e baixar NF-e usando o cer
 
 **v0.1.16**
 
-A `main` já contém os **Blocos 1 a 5** da evolução da Central Windows. Essas mudanças ainda não estão em uma nova release pública.
+A `main` contém a evolução completa da Central Windows até o **Bloco 6**. A próxima release de teste será a primeira a reunir o fechamento desta etapa, incluindo atualização pelo próprio aplicativo e o acabamento final da Central.
 
 ## Arquitetura atual
 
@@ -19,6 +19,8 @@ Central NFe Agendamento
     ↓
 Certificado A1 + cache + fila + SEFAZ
 ```
+
+O aplicativo Windows é a Central/administrador. O sistema de consulta continua web para os computadores clientes.
 
 O certificado A1 e a chave privada permanecem no Windows Certificate Store do PC central. XMLs, cache, cooldown e auditoria também permanecem locais; nada disso é enviado para GitHub, nuvem ou navegadores clientes.
 
@@ -70,9 +72,22 @@ O certificado A1 e a chave privada permanecem no Windows Certificate Store do PC
 - teste comprova que o cooldown `656` continua válido em uma nova instância do serviço e bloqueia o transporte;
 - teste comprova que `/api/bootstrap` expõe somente dados operacionais (`csrfToken`, `lanMode`, `accessUrl`), sem XML ou dados de certificado.
 
-A última verificação automatizada do Bloco 5 passou com **90/90 testes .NET**, regressão Fernando Klein, regressão do feedback fiscal, regressão de prontidão de release, build e pacote Windows.
+### Bloco 6 — Testes, atualização e acabamento
 
-> A aceitação física da LAN continua obrigatória após gerar a próxima release: instalar no PC central e abrir o endereço exibido pelo painel a partir de um segundo computador. O CI não consegue substituir esse teste da rede real da empresa.
+- cobertura específica do modo Central, persistência e acesso local/remoto;
+- testes de inicialização automática sem dependência da flag legada `--lan`;
+- testes do diagnóstico de rede/listener e da regra restrita do Firewall do Windows;
+- testes de segurança para Host, Origin, CSRF, tamanho de requisição e bloqueio remoto com a Central parada;
+- testes da fila fiscal, liberação de capacidade e rejeição quando cheia;
+- testes de concorrência e deduplicação: a mesma chave compartilha uma única operação em andamento e chaves diferentes podem ser coordenadas independentemente;
+- atualizador integrado ao menu da bandeja;
+- pacote de atualização aceito somente pela release oficial do GitHub, com validação de tamanho e SHA-256;
+- extração protegida contra escrita fora da pasta temporária;
+- instalação acontece após o encerramento da instância atual e o aplicativo é reaberto;
+- interface Windows simples, com identidade azul/amarelo e sem alterar o fluxo operacional;
+- CI obrigatório continua executando testes, regressões, build e geração do pacote Windows.
+
+> A aceitação física da LAN continua obrigatória após gerar a release: instalar no PC central e abrir o endereço exibido pelo painel a partir de outro computador. O CI não consegue reproduzir VLAN, ACL, isolamento Wi-Fi ou políticas reais da rede da empresa.
 
 ## Uso no PC central
 
@@ -85,6 +100,12 @@ A última verificação automatizada do Bloco 5 passou com **90/90 testes .NET**
 7. Faça uma consulta individual de teste.
 
 Fechar a janela mantém o aplicativo na bandeja. Para encerrar completamente, use **Sair**.
+
+### Iniciar com o Windows
+
+A opção **Iniciar com o Windows** registra apenas o executável da Central no perfil do usuário atual. Não é mais necessário usar nem preservar `--lan`.
+
+O estado **Central ativa/parada** é salvo separadamente. Assim, iniciar automaticamente o programa não depende de argumentos especiais de linha de comando.
 
 ## Uso nos outros PCs
 
@@ -103,6 +124,25 @@ http://nfeagendamento.local:17345
 ```
 
 Os computadores clientes precisam apenas de navegador. Não copie nem instale o certificado A1 neles.
+
+## Atualização pelo próprio aplicativo
+
+No menu da bandeja, use **Verificar atualização**.
+
+Quando existir uma versão nova, o aplicativo:
+
+1. consulta a release oficial do projeto;
+2. exige o pacote `Nfe-Agendamento-win-x64.zip` e um digest SHA-256 válido;
+3. pede confirmação antes do download;
+4. baixa o pacote via HTTPS;
+5. confere tamanho e SHA-256;
+6. valida as entradas do ZIP para impedir path traversal;
+7. prepara a atualização em diretório temporário;
+8. inicia o atualizador, encerra a Central, substitui os arquivos e reabre o executável.
+
+Se o pacote oficial não puder ser validado, a instalação automática não prossegue e o usuário é orientado a usar a release oficial manualmente.
+
+A **v0.1.16 não possui esse novo updater**. Portanto, a primeira instalação da release que introduzir o Bloco 6 deve ser feita manualmente. Depois disso, as versões seguintes poderão validar o fluxo de atualização pelo próprio app de ponta a ponta.
 
 ## Consulta fiscal
 
@@ -137,6 +177,7 @@ A auditoria guarda somente horário UTC, fingerprint curta da chave, status, `cS
 - requisições possuem limite de tamanho;
 - conexões remotas são rejeitadas quando a Central está parada;
 - firewall automático é restrito a rede Privada, TCP `17345` e executável atual;
+- atualizações automáticas exigem pacote oficial com SHA-256 válido;
 - a porta não deve ser publicada na internet;
 - o aplicativo não possui autenticação própria: a segurança de acesso depende da rede interna e do estado ativa/parada da Central.
 
@@ -171,20 +212,26 @@ Existe um único fluxo oficial:
 
 Antes de publicar, o workflow valida a versão, executa testes e todas as regressões, compila e gera o pacote Windows x64 autocontido.
 
-## Checklist de aceitação da próxima release
+## Checklist de aceitação da release do Bloco 6
 
 - [ ] instalar/extrair a nova versão no PC central;
+- [ ] painel Windows abre com identidade azul/amarelo e sem perda dos controles operacionais;
 - [ ] painel mostra **Central ativa**;
 - [ ] **Rede: OK**;
 - [ ] **Servidor: OK**;
 - [ ] **Firewall: OK**;
 - [ ] acesso local em `http://127.0.0.1:17345` funciona;
 - [ ] segundo PC abre o endereço `http://IP-DO-CENTRAL:17345`;
+- [ ] terceiro PC também consegue acessar a mesma Central;
 - [ ] certificado continua somente no PC central;
 - [ ] consulta de uma NF-e conhecida funciona;
-- [ ] download XML e DANFE funcionam no cliente.
+- [ ] duas consultas simultâneas não quebram a fila;
+- [ ] consultas simultâneas da mesma chave não geram chamadas fiscais duplicadas;
+- [ ] download XML e DANFE funcionam no cliente;
+- [ ] **Iniciar com o Windows** relança o aplicativo sem `--lan`;
+- [ ] em uma versão futura à primeira release com updater, **Verificar atualização** instala e reinicia o app corretamente.
 
-Não provoque um `656` real apenas para testar o cooldown; a persistência e o bloqueio após reinício já possuem cobertura automatizada.
+Não provoque um `656` real apenas para testar o cooldown; persistência e bloqueio após reinício possuem cobertura automatizada.
 
 ## Documentação técnica
 
