@@ -10,45 +10,7 @@ async function boot() {
   if (!response.ok) throw new Error('Não foi possível inicializar a sessão local.');
   const bootstrap = await response.json();
   csrfToken = bootstrap.csrfToken;
-  if (bootstrap.lanMode && !(await ensureAuth())) return;
   await loadCertificates();
-}
-
-async function ensureAuth() {
-  const statusResponse = await fetch('/api/auth/status', { cache: 'no-store' });
-  const auth = await statusResponse.json();
-  if (auth.authenticated) return true;
-
-  const gate = $('authGate');
-  gate.hidden = false;
-  $('authMessage').textContent = auth.configured
-    ? 'Informe a senha padrão da central.'
-    : 'Use a senha padrão da central.';
-  $('authForm').onsubmit = async (event) => {
-    event.preventDefault();
-    const password = $('authPassword').value;
-    const endpoint = auth.configured ? '/api/auth/login' : '/api/auth/setup';
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'X-CSRF-Token': csrfToken },
-      body: JSON.stringify({ password })
-    });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ message: 'Não foi possível autenticar.' }));
-      $('authStatus').textContent = error.message;
-      $('authStatus').className = 'status error';
-      return;
-    }
-    if (!auth.configured) {
-      auth.configured = true;
-      $('authMessage').textContent = 'Senha criada. Informe-a para entrar.';
-      $('authPassword').value = '';
-      return;
-    }
-    gate.hidden = true;
-    await loadCertificates();
-  };
-  return false;
 }
 
 async function loadCertificates() {
@@ -621,10 +583,6 @@ $('saveCertificate').addEventListener('click', () => saveCertificate().catch(err
 $('accessKey').addEventListener('keydown', (event) => { if (event.key === 'Enter') lookup(); });
 $('viewDanfe').addEventListener('click', () => { try { renderDanfe(); } catch (error) { setStatus(error.message, true); } });
 $('printDanfe').addEventListener('click', () => { try { renderDanfe(); setTimeout(() => window.print(), 50); } catch (error) { setStatus(error.message, true); } });
-$('view').addEventListener('click', () => {
-  const blob = new Blob([currentXml], { type: 'application/xml' });
-  window.open(URL.createObjectURL(blob), '_blank', 'noopener');
-});
 $('download').addEventListener('click', () => {
   const blob = new Blob([currentXml], { type: 'application/xml' });
   const url = URL.createObjectURL(blob);
@@ -633,34 +591,6 @@ $('download').addEventListener('click', () => {
   anchor.download = `${currentKey}.xml`;
   anchor.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
-});
-
-$('batchLookup').addEventListener('click', async () => {
-  const accessKeys = $('batchKeys').value.split(/\s+/).map(key => key.replace(/\D/g, '')).filter(Boolean);
-  $('batchStatus').textContent = 'Consultando lote...';
-  try {
-    const response = await fetch('/api/nfe/batch', {
-      method: 'POST',
-      cache: 'no-store',
-      headers: { 'content-type': 'application/json', 'X-CSRF-Token': csrfToken },
-      body: JSON.stringify({ accessKeys })
-    });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ message: 'Falha no lote.' }));
-      $('batchStatus').textContent = error.message || 'Falha no lote.';
-      return;
-    }
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = 'nfe-agendamento.zip';
-    anchor.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-    $('batchStatus').textContent = 'Lote concluído. O ZIP foi baixado.';
-  } catch {
-    $('batchStatus').textContent = 'Não foi possível conectar ao aplicativo local.';
-  }
 });
 
 boot().catch(error => setStatus(error.message, true));
