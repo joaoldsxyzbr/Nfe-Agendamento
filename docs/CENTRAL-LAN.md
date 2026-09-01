@@ -11,93 +11,115 @@
 ## Primeira configuração
 
 1. Extraia o pacote em uma pasta permanente.
-2. Execute `NfeAgendamento.App.exe --lan`.
-3. Abra `http://127.0.0.1:17345` no próprio PC.
-4. Selecione o certificado A1.
-5. Informe a UF autora.
-6. Faça uma consulta individual de teste.
-7. Teste o download do XML e a visualização do DANFE.
+2. Execute `NfeAgendamento.App.exe`.
+3. Confirme no painel Windows que o status está **Central ativa**.
+4. Confira o IPv4 e o endereço de acesso mostrados na janela.
+5. Clique em **Abrir sistema**.
+6. Selecione o certificado A1.
+7. Informe a UF autora.
+8. Faça uma consulta individual de teste.
+9. Teste o download do XML e a visualização do DANFE.
 
-O modo `--lan` faz o servidor escutar nas interfaces de rede. O modo sem argumento continua restrito a `127.0.0.1`.
+Não é mais necessário iniciar o aplicativo com `--lan`. A aplicação Windows controla o acesso remoto diretamente.
 
-A consulta em lote foi removida. A central trabalha apenas com consultas individuais para manter o consumo fiscal previsível quando vários computadores usam o mesmo certificado e o mesmo CNPJ.
+Em uma instalação nova, a Central inicia habilitada. O estado fica persistido em:
+
+```text
+%LOCALAPPDATA%\NfeAgendamento\state\central.json
+```
+
+## Painel Windows
+
+A janela principal mostra:
+
+- status da Central;
+- IPv4 detectado;
+- porta `17345`;
+- URL para os demais computadores.
+
+Ações:
+
+- **Iniciar Central**: permite novas conexões vindas da rede;
+- **Parar Central**: bloqueia conexões remotas, mas mantém o acesso local funcionando;
+- **Abrir sistema**: abre `http://127.0.0.1:17345` no PC central.
+
+Fechar a janela apenas minimiza a operação para a bandeja. Para encerrar o servidor, use **Sair** no menu da bandeja.
 
 ## Uso nos clientes
 
-O endereço principal é:
+Use preferencialmente o endereço exibido pelo painel. Exemplo:
+
+```text
+http://10.0.0.29:17345
+```
+
+Nunca use `127.0.0.1` nos clientes: esse endereço sempre aponta para o próprio computador que está acessando.
+
+Quando a descoberta mDNS funcionar, também pode ser usado:
 
 ```text
 http://nfeagendamento.local:17345
 ```
 
-O acesso é direto, sem senha. Se não funcionar, descubra o IPv4 do PC central com `ipconfig` e use:
-
-```text
-http://IP-DO-CENTRAL:17345
-```
-
-O cliente só precisa de navegador. Não instale o certificado A1 nos clientes e não copie a pasta `%LOCALAPPDATA%\\NfeAgendamento`.
+O cliente só precisa de navegador. Não instale o certificado A1 nos clientes e não copie a pasta `%LOCALAPPDATA%\NfeAgendamento`.
 
 ## Operação diária
 
 - mantenha o PC central ligado;
-- mantenha o aplicativo aberto na bandeja;
-- faça as consultas pelo endereço central;
+- mantenha o aplicativo aberto ou na bandeja;
+- confirme que o painel mostra **Central ativa**;
+- use nos clientes o endereço informado pela janela;
 - não abra cópias independentes do app em outros PCs;
 - use uma chave por consulta;
-- não repita consultas enquanto uma consulta estiver em andamento;
 - após `cStat=656`, aguarde o cooldown indicado.
 
-As consultas fiscais são coordenadas no PC central. Consultas simultâneas da mesma chave são deduplicadas e o acesso à SEFAZ é serializado.
-
-## Domínio interno
-
-O app anuncia `nfeagendamento.local` por mDNS. A descoberta pode falhar quando a rede bloqueia multicast, separa clientes por VLAN ou aplica isolamento Wi-Fi. Nesses casos, use o IP do central.
-
-O domínio não é público e não exige compra de domínio ou configuração na internet.
+A consulta em lote foi removida. As consultas fiscais são coordenadas no PC central, consultas simultâneas da mesma chave são deduplicadas e o acesso à SEFAZ é serializado.
 
 ## Firewall
 
+O Bloco 1 não cria regras do Firewall do Windows automaticamente.
+
 A regra recomendada no PC central deve limitar:
 
-- protocolo TCP, porta 17345, perfil Rede privada;
-- protocolo UDP, porta 5353, perfil Rede privada, apenas quando necessário para mDNS.
+- TCP 17345 ao perfil de rede privada;
+- UDP 5353 ao perfil de rede privada apenas quando necessário para mDNS.
 
-Não abra a porta no roteador e não use perfil de rede pública.
+Não abra a porta no roteador e não permita o aplicativo em redes públicas.
 
-## Acesso interno
+A automação, verificação e diagnóstico do firewall pertencem ao próximo bloco de rede.
 
-O aplicativo não possui autenticação própria. Qualquer computador que consiga alcançar a porta 17345 poderá abrir a interface, por isso o acesso deve ficar restrito à rede privada da empresa.
+## Segurança
 
-Não publique a porta 17345 na internet e não permita o aplicativo no perfil de rede pública do Windows.
+O servidor fica escutando a porta local necessária para a Central, mas a camada de segurança bloqueia clientes remotos sempre que o painel estiver em **Central parada**.
 
-## Dados locais
+Continuam sendo aplicados:
 
-O app armazena dados em:
+- CSRF;
+- validação de Host;
+- validação de Origin;
+- limite de tamanho das requisições;
+- certificado A1 somente no PC central;
+- cache criptografado por DPAPI.
 
-```text
-%LOCALAPPDATA%\\NfeAgendamento
-```
+O aplicativo não possui autenticação própria. Enquanto a Central estiver ativa, o acesso deve permanecer restrito à rede interna da empresa.
 
-O cache e o estado fiscal são protegidos pelo DPAPI do usuário do Windows. Trocar o usuário do Windows pode impedir o acesso ao cache antigo; isso é esperado pelo modelo de proteção.
+## Domínio interno
+
+O app anuncia `nfeagendamento.local` por mDNS. A descoberta pode falhar quando a rede bloqueia multicast, separa clientes por VLAN ou aplica isolamento Wi-Fi. Nesses casos, use o IPv4 exibido no painel.
 
 ## Diagnóstico
 
-### Domínio não abre
+### IP exibido no painel não abre em outro PC
 
-1. teste o IP do central;
-2. confirme que o app foi iniciado com `--lan`;
-3. confirme que os PCs estão na mesma rede;
-4. verifique se UDP 5353 não está bloqueado;
-5. confirme que o perfil do Windows é Rede privada.
+1. confirme que o painel mostra **Central ativa**;
+2. confirme que o outro PC está na mesma rede;
+3. confirme o IP atual mostrado pelo painel;
+4. teste a porta TCP 17345 no Firewall do Windows;
+5. verifique se existe isolamento entre os computadores na rede.
 
-### IP também não abre
+### `nfeagendamento.local` não abre, mas o IP funciona
 
-1. confirme que o app está em execução;
-2. confirme a porta TCP 17345 no firewall;
-3. teste a conectividade entre os PCs;
-4. confirme o IP atual do PC central;
-5. verifique se o PC entrou em outra rede.
+O servidor está acessível e o problema está na descoberta mDNS. Continue usando o IP até o bloco de rede tratar o diagnóstico de descoberta.
 
 ### Retorno 429
 
@@ -107,16 +129,21 @@ O cache e o estado fiscal são protegidos pelo DPAPI do usuário do Windows. Tro
 
 O certificado precisa estar instalado no Windows Certificate Store do usuário que executa o app, dentro da validade e com chave privada acessível.
 
-## Atualização
+## Dados locais
 
-Sempre encerre o app antes de substituir os arquivos da aplicação. Baixe somente releases oficiais do repositório e mantenha a pasta de dados do usuário intacta.
+O app armazena dados em:
+
+```text
+%LOCALAPPDATA%\NfeAgendamento
+```
+
+O cache e o estado fiscal são protegidos pelo DPAPI do usuário do Windows. Trocar o usuário do Windows pode impedir o acesso ao cache antigo; isso é esperado pelo modelo de proteção.
 
 ## Limitações atuais
 
-- o servidor central precisa permanecer ligado;
+- o PC central precisa permanecer ligado;
+- o Bloco 1 ainda não configura o firewall automaticamente;
 - o domínio depende de mDNS ou do fallback por IP;
-- o app não cria automaticamente regras do firewall;
 - o acesso é HTTP dentro da rede interna;
 - não há publicação na internet;
-- a consulta fiscal continua sujeita às regras da SEFAZ;
-- o DANFE completo continua em evolução.
+- a consulta fiscal continua sujeita às regras da SEFAZ.
