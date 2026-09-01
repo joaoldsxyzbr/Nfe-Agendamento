@@ -1,0 +1,20 @@
+<nfeProc><NFe><infNFe><emit><CPF>067.277.939-05</CPF><xNome>FERNANDO KLEIN</xNome></emit>
+<det nItem="1"><prod><cProd>FK001</cProd><xProd>ALFACE</xProd></prod></det>
+<det nItem="2"><prod><cProd>FK002</cProd><xProd>ALFACE LISA</xProd></prod></det>
+<det nItem="3"><prod><cProd>FK003</cProd><xProd>ALFACE ROXA</xProd></prod></det>
+<det nItem="4"><prod><cProd>FK004</cProd><xProd>AMERICANA</xProd></prod></det>
+<det nItem="5"><prod><cProd>FK005</cProd><xProd>ALFAVACA</xProd></prod></det>
+<det nItem="6"><prod><cProd>FK006</cProd><xProd>AGRIAO</xProd></prod></det>
+<det nItem="7"><prod><cProd>FK007</cProd><xProd>BROCOLIS</xProd></prod></det>
+<det nItem="8"><prod><cProd>FK008</cProd><xProd>CEBOLA</xProd></prod></det>
+<det nItem="9"><prod><cProd>FK009</cProd><xProd>COENTRO</xProd></prod></det>
+<det nItem="10"><prod><cProd>FK010</cProd><xProd>COUVE</xProd></prod></det>
+<det nItem="11"><prod><cProd>FK011</cProd><xProd>CHICORIA</xProd></prod></det>
+<det nItem="12"><prod><cProd>FK012</cProd><xProd>ESPINAFRE</xProd></prod></det>
+<det nItem="13"><prod><cProd>FK013</cProd><xProd>HORTELA</xProd></prod></det>
+<det nItem="14"><prod><cProd>FK014</cProd><xProd>MANJERICAO</xProd></prod></det>
+<det nItem="15"><prod><cProd>FK015</cProd><xProd>RUCULA</xProd></prod></det>
+<det nItem="16"><prod><cProd>FK016</cProd><xProd>RADITE</xProd></prod></det>
+<det nItem="17"><prod><cProd>FK017</cProd><xProd>SALSA</xProd></prod></det>
+<det nItem="18"><prod><cProd>FK999</cProd><xProd>PRODUTO NOVO SEM MAPA</xProd></prod></det>
+</infNFe></NFe></nfeProc>
