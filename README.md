@@ -4,10 +4,10 @@ Aplicativo Windows interno para consultar, visualizar e baixar NF-e usando o cer
 
 ## Versão publicada
 
-**v0.1.10**
+**v0.1.11**
 
-- [Baixar o pacote Windows x64](https://github.com/joaoldsxyzbr/Nfe-Agendamento/releases/download/v0.1.10/Nfe-Agendamento-win-x64.zip)
-- [Ver a release v0.1.10](https://github.com/joaoldsxyzbr/Nfe-Agendamento/releases/tag/v0.1.10)
+- [Baixar o pacote Windows x64](https://github.com/joaoldsxyzbr/Nfe-Agendamento/releases/download/v0.1.11/Nfe-Agendamento-win-x64.zip)
+- [Ver a release v0.1.11](https://github.com/joaoldsxyzbr/Nfe-Agendamento/releases/tag/v0.1.11)
 
 O pacote é autocontido e não exige instalação do .NET.
 
@@ -17,7 +17,7 @@ O NFe Agendamento deve ser executado em um único PC central da empresa. Esse co
 
 - o certificado A1 no Windows Certificate Store;
 - o cache criptografado dos XMLs;
-- a fila de consultas;
+- a coordenação das consultas fiscais;
 - o estado de bloqueio fiscal da SEFAZ;
 - o site interno acessado pelos demais computadores.
 
@@ -37,15 +37,13 @@ Nenhum certificado, chave privada ou XML é enviado para a nuvem.
 
 ## Recursos
 
-- consulta única por chave de acesso de 44 dígitos;
-- consulta em lote de até 100 chaves;
+- consulta individual por chave de acesso de 44 dígitos;
 - download de XML individual;
-- download dos XMLs em ZIP;
 - visualização do DANFE em popup;
 - impressão e salvamento do DANFE em PDF;
 - cache local criptografado por DPAPI;
 - validade do cache de 24 horas;
-- fila fiscal única;
+- coordenação fiscal única no PC central;
 - deduplicação de consultas simultâneas para a mesma chave;
 - tratamento de `137`, `138` e `656`;
 - cooldown persistente de uma hora após `cStat=656`;
@@ -53,6 +51,8 @@ Nenhum certificado, chave privada ou XML é enviado para a nuvem.
 - proteção CSRF, validação de Host e Origin;
 - autenticação pela senha padrão `agendamentoprado` no modo LAN;
 - domínio interno via mDNS.
+
+A consulta em lote foi removida para reduzir risco de consumo indevido e manter a operação da central simples e previsível para vários computadores.
 
 ## Instalação no PC central
 
@@ -133,7 +133,7 @@ O retorno HTTP 429 representa o bloqueio fiscal causado por `cStat=656`, chamado
 3. verifique se outro sistema não está consultando o mesmo CNPJ;
 4. confirme que todos os usuários estão usando a central, e não cópias independentes do aplicativo.
 
-A central impede chamadas simultâneas duplicadas da mesma chave, mas não pode impedir outro sistema externo de consultar o mesmo CNPJ.
+A central impede chamadas simultâneas duplicadas da mesma chave e serializa o acesso fiscal, mas não pode impedir outro sistema externo de consultar o mesmo CNPJ.
 
 ## Atualização
 
