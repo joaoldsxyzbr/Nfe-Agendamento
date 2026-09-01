@@ -4,7 +4,7 @@ Ferramenta interna para consultar, visualizar e baixar NF-e por chave usando o c
 
 ## Versão atual
 
-**v0.1.5**
+**v0.1.9**
 
 A versão atual consolida a aplicação Windows portátil, execução local pela bandeja e a visualização do DANFE em um popup dedicado.
 
@@ -55,7 +55,7 @@ Está especificada a evolução para um DANFE fiscal mais completo, inspirado na
 - informações adicionais e área reservada ao fisco;
 - paginação automática com `Folha X/Y` e continuação dos produtos.
 
-Essa evolução completa do layout fiscal ainda é trabalho planejado e não deve ser considerada concluída na v0.1.5.
+Essa evolução completa do layout fiscal ainda é trabalho planejado e não deve ser considerada concluída na v0.1.9.
 
 ## Teste real no Windows
 
@@ -93,7 +93,7 @@ O pacote não instala serviço e não envia certificado ou XML para a nuvem. Sem
 
 ## Releases
 
-A versão atual publicada é **v0.1.5**, com pacote `Nfe-Agendamento-win-x64.zip`.
+A versão atual publicada é **v0.1.9**, com pacote `Nfe-Agendamento-win-x64.zip`.
 
 As releases são geradas pelo fluxo automatizado do GitHub após as alterações entrarem na `main`.
 

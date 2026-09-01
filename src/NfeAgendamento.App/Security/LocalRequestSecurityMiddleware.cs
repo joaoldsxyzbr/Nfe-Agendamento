@@ -39,7 +39,8 @@ public sealed class LocalRequestSecurityMiddleware
             return;
         }
 
-        if (!isLoopback && !IsLanHost(context.Request.Host))
+        if (!AllowedHosts.Contains(context.Request.Host.Value)
+            && !(LocalHost.IsLanMode && IsLanHost(context.Request.Host)))
         {
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
             return;
