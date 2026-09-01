@@ -7,6 +7,7 @@ namespace NfeAgendamento.App.Security;
 public sealed class LocalSessionService
 {
     public const string CookieName = "nfe_agendamento_session";
+    public const string DefaultPassword = "agendamentoprado";
     private const int SaltSize = 16;
     private const int HashSize = 32;
     private const int Iterations = 120_000;
@@ -27,7 +28,7 @@ public sealed class LocalSessionService
             : path;
     }
 
-    public bool IsConfigured => File.Exists(_path);
+    public bool IsConfigured => true;
 
     public void Configure(string password)
     {
@@ -47,8 +48,13 @@ public sealed class LocalSessionService
 
     public bool Verify(string password)
     {
-        if (!IsConfigured || string.IsNullOrWhiteSpace(password))
+        if (string.IsNullOrWhiteSpace(password))
             return false;
+
+        if (!File.Exists(_path))
+            return CryptographicOperations.FixedTimeEquals(
+                System.Text.Encoding.UTF8.GetBytes(password),
+                System.Text.Encoding.UTF8.GetBytes(DefaultPassword));
 
         PasswordRecord record;
         lock (_fileGate)
