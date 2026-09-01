@@ -1,29 +1,25 @@
 const NfeProductMapping = (() => {
   const FERNANDO_KLEIN_TAX_ID = '06727793905';
 
-  const FERNANDO_KLEIN_PRODUCT_CODES = Object.freeze({
-    'ALFACE': '73457',
-    'ALFACE CRESPA': '73457',
-    'ALFACE LISA': '104128',
-    'ALFACE ROXA': '104129',
-    'ALFACE AMERICANA': '30228',
-    'AMERICANA': '30228',
-    'ALFAVACA': '104130',
-    'AGRIAO': '104109',
-    'BROCOLIS': '104108',
-    'CEBOLA': '104106',
-    'CEBOLINHA': '104106',
-    'COENTRO': '104113',
-    'COUVE': '104107',
-    'CHICORIA': '104104',
-    'ESPINAFRE': '104110',
-    'HORTELA': '104115',
-    'MANJERICAO': '104114',
-    'RUCULA': '104111',
-    'RADITE': '104112',
-    'SALSA': '104105',
-    'SALSINHA': '104105'
-  });
+  const FERNANDO_KLEIN_CATALOG = Object.freeze([
+    Object.freeze({ internalCode: '73457', name: 'ALFACE CRESPA', aliases: Object.freeze(['ALFACE', 'ALFACE CRESPA']) }),
+    Object.freeze({ internalCode: '104128', name: 'ALFACE LISA', aliases: Object.freeze(['ALFACE LISA']) }),
+    Object.freeze({ internalCode: '104129', name: 'ALFACE ROXA', aliases: Object.freeze(['ALFACE ROXA']) }),
+    Object.freeze({ internalCode: '30228', name: 'ALFACE AMERICANA', aliases: Object.freeze(['ALFACE AMERICANA', 'AMERICANA']) }),
+    Object.freeze({ internalCode: '104130', name: 'ALFAVACA', aliases: Object.freeze(['ALFAVACA']) }),
+    Object.freeze({ internalCode: '104109', name: 'AGRIAO', aliases: Object.freeze(['AGRIAO']) }),
+    Object.freeze({ internalCode: '104108', name: 'BROCOLIS', aliases: Object.freeze(['BROCOLIS']) }),
+    Object.freeze({ internalCode: '104106', name: 'CEBOLINHA', aliases: Object.freeze(['CEBOLA', 'CEBOLINHA']) }),
+    Object.freeze({ internalCode: '104113', name: 'COENTRO', aliases: Object.freeze(['COENTRO']) }),
+    Object.freeze({ internalCode: '104107', name: 'COUVE', aliases: Object.freeze(['COUVE']) }),
+    Object.freeze({ internalCode: '104104', name: 'CHICORIA', aliases: Object.freeze(['CHICORIA']) }),
+    Object.freeze({ internalCode: '104110', name: 'ESPINAFRE', aliases: Object.freeze(['ESPINAFRE']) }),
+    Object.freeze({ internalCode: '104115', name: 'HORTELA', aliases: Object.freeze(['HORTELA']) }),
+    Object.freeze({ internalCode: '104114', name: 'MANJERICAO', aliases: Object.freeze(['MANJERICAO']) }),
+    Object.freeze({ internalCode: '104111', name: 'RUCULA', aliases: Object.freeze(['RUCULA']) }),
+    Object.freeze({ internalCode: '104112', name: 'RADITE', aliases: Object.freeze(['RADITE']) }),
+    Object.freeze({ internalCode: '104105', name: 'SALSINHA', aliases: Object.freeze(['SALSA', 'SALSINHA']) })
+  ]);
 
   function normalizeTaxId(value) {
     return String(value || '')
@@ -32,16 +28,47 @@ const NfeProductMapping = (() => {
   }
 
   function normalizeProductName(value) {
-    return String(value || '')
+    const normalized = String(value || '')
       .trim()
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
       .toUpperCase()
-      .replace(/^VERDURAS\s*[-:]\s*/, '')
       .replace(/[^A-Z0-9]+/g, ' ')
       .trim()
       .replace(/\s+/g, ' ');
+
+    return normalized.replace(/^VERDURAS(?:\s+|$)/, '').trim();
   }
+
+  function buildAliasIndex(catalog) {
+    const aliases = {};
+
+    for (const item of catalog || []) {
+      const internalCode = String(item?.internalCode || '').trim();
+      if (!internalCode) throw new Error('Produto do catálogo sem código interno.');
+
+      for (const rawAlias of item?.aliases || []) {
+        const alias = normalizeProductName(rawAlias);
+        if (!alias) throw new Error(`Alias vazio no código interno ${internalCode}.`);
+
+        const existingCode = aliases[alias];
+        if (existingCode && existingCode !== internalCode) {
+          throw new Error(`Alias conflitante ${alias}: códigos internos ${existingCode} e ${internalCode}.`);
+        }
+
+        aliases[alias] = internalCode;
+      }
+    }
+
+    return Object.freeze(aliases);
+  }
+
+  function validateCatalog(catalog) {
+    buildAliasIndex(catalog);
+    return true;
+  }
+
+  const FERNANDO_KLEIN_ALIAS_INDEX = buildAliasIndex(FERNANDO_KLEIN_CATALOG);
 
   function resolveFernandoKleinProduct({ emitterTaxId, xProd, cProd }) {
     const sourceCode = String(cProd || '');
@@ -52,13 +79,14 @@ const NfeProductMapping = (() => {
     const productName = normalizeProductName(xProd);
     return {
       sourceCode,
-      internalCode: FERNANDO_KLEIN_PRODUCT_CODES[productName] || ''
+      internalCode: FERNANDO_KLEIN_ALIAS_INDEX[productName] || ''
     };
   }
 
   return Object.freeze({
     normalizeTaxId,
     normalizeProductName,
-    resolveFernandoKleinProduct
+    resolveFernandoKleinProduct,
+    validateCatalog
   });
 })();
