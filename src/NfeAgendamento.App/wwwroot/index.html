@@ -9,6 +9,19 @@
   <link rel="stylesheet" href="/danfe-compact.css">
 </head>
 <body>
+  <section id="authGate" class="auth-gate" hidden>
+    <div class="auth-card">
+      <p class="panel-kicker">ACESSO INTERNO</p>
+      <h1>NFe Agendamento</h1>
+      <p id="authMessage">Informe a senha numérica para acessar a central.</p>
+      <form id="authForm">
+        <label for="authPassword">Senha</label>
+        <input id="authPassword" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" type="password" autocomplete="current-password" required>
+        <button class="primary" type="submit">Entrar</button>
+      </form>
+      <p id="authStatus" class="status" aria-live="polite"></p>
+    </div>
+  </section>
   <main class="app-shell">
     <header class="app-header">
       <div class="brand">
