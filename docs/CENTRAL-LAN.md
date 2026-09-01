@@ -30,6 +30,8 @@ Em uma instalação nova, a Central inicia habilitada. O estado fica persistido 
 %LOCALAPPDATA%\NfeAgendamento\state\central.json
 ```
 
+Se esse arquivo já existir mas estiver corrompido, ilegível ou inválido, a Central adota **desabilitado** para o acesso remoto. Esse fallback é intencionalmente fail-closed; somente a ausência do arquivo em uma instalação nova assume o estado inicial habilitado.
+
 ## Painel Windows
 
 A janela principal mostra:
@@ -84,6 +86,10 @@ http://nfeagendamento.local:17345
 
 O cliente só precisa de navegador. Não instale o certificado A1 nos clientes e não copie a pasta `%LOCALAPPDATA%\NfeAgendamento`.
 
+A administração do certificado é deliberadamente local: clientes remotos recebem `403` ao tentar acessar as rotas de listagem, estado atual ou seleção de certificado. O painel web remoto oculta essa configuração e mantém somente o fluxo operacional de consulta, visualização e download.
+
+O certificado e a chave privada não trafegam para os clientes. Porém, quando um usuário remoto consulta, visualiza ou baixa uma NF-e, o XML correspondente é entregue pela Central ao navegador através da rede interna HTTP. Portanto, a porta `17345` deve permanecer somente em uma LAN corporativa confiável; o aplicativo não fornece TLS para esse tráfego e não deve ser exposto à internet.
+
 ## Operação diária
 
 - mantenha o PC central ligado;
@@ -117,19 +123,23 @@ No navegador, esse cenário é exibido como **Central ocupada**, usando o valor 
 
 ## Proteção contra cStat=656
 
-Quando a SEFAZ retorna `656`, a Central persiste um cooldown de uma hora. Durante esse período nenhuma nova operação fiscal é enviada à SEFAZ.
+Quando a SEFAZ retorna `656`, a Central aplica imediatamente um cooldown de uma hora **em memória** e depois tenta persistir o mesmo estado. A ordem é intencional: uma falha de disco ou permissão não pode liberar novas consultas dentro do processo atual.
+
+Quando a persistência funciona, o cooldown também sobrevive ao encerramento e reinício do aplicativo. Se a persistência falhar após um `656` real, a consulta ainda retorna bloqueada e as próximas consultas no mesmo processo permanecem bloqueadas; somente a durabilidade após reinício depende da gravação bem-sucedida.
 
 Consultas que já estavam aguardando na fila também verificam o cooldown novamente depois de obter a vez de execução. Se uma consulta anterior tiver recebido `656`, as demais são bloqueadas localmente antes de qualquer nova chamada externa.
 
 No navegador, esse retorno é apresentado separadamente da fila cheia: a mensagem informa que o bloqueio veio da **SEFAZ**, mostra o horário exato de liberação e orienta a não repetir a consulta antes desse momento.
 
-O estado de cooldown é protegido por DPAPI. Se esse arquivo estiver corrompido ou não puder ser validado, a Central falha de forma segura: retorna um erro controlado e não envia uma nova consulta à SEFAZ.
+O estado de cooldown persistido é protegido por DPAPI. Se um arquivo de cooldown existente estiver corrompido ou não puder ser validado, a Central falha de forma segura: retorna um erro controlado e não envia uma nova consulta à SEFAZ.
 
 ## Limites da comunicação fiscal
 
 A consulta individual aplica:
 
 - no máximo 3 tentativas para falhas transitórias de comunicação;
+- são consideradas transitórias: falha de rede sem status HTTP, HTTP `408`, HTTP `429`, respostas HTTP `5xx` e timeout da chamada externa;
+- erros HTTP permanentes de cliente, como `400`, `401`, `403` e `404`, não são repetidos automaticamente;
 - 2 segundos antes da segunda tentativa;
 - 5 segundos antes da terceira tentativa;
 - timeout de 45 segundos na chamada externa;
@@ -137,6 +147,14 @@ A consulta individual aplica:
 - máximo de 256 KB para o corpo das requisições locais.
 
 Falha de rede após a última tentativa, timeout final ou resposta fiscal inválida são convertidos em erro controlado. Esses casos não deixam exceções de transporte escaparem como erro interno genérico da aplicação.
+
+## Cache XML
+
+O XML obtido com sucesso pode ser mantido no cache local por até 24 horas. O conteúdo é protegido por DPAPI e fica no perfil do usuário do Windows do PC central.
+
+Uma entrada de cache que não puder ser descriptografada, desserializada ou validada contra a chave solicitada é considerada inválida, apagada e tratada como **cache miss**. A primeira consulta não falha apenas porque um arquivo antigo do cache está corrompido; o fluxo segue normalmente para a fila fiscal e, se permitido, para a SEFAZ.
+
+Erros reais de acesso ao sistema de arquivos não são mascarados como cache miss. A autocorreção é limitada ao conteúdo de cache inválido.
 
 ## Auditoria fiscal
 
@@ -188,14 +206,18 @@ O servidor fica ouvindo em `0.0.0.0:17345` para poder atender a rede, mas a cama
 
 Continuam sendo aplicados:
 
-- CSRF;
+- CSRF em operações mutáveis;
 - validação de Host;
-- validação de Origin;
+- Host remoto na porta `17345` aceito somente para um IPv4 realmente atribuído ao PC central ou para o nome interno explicitamente permitido `nfeagendamento.local`;
+- validação de Origin consistente com o Host permitido;
 - limite de tamanho das requisições;
-- certificado A1 somente no PC central;
+- administração de certificado exclusiva de conexão loopback no PC central;
+- certificado A1 e chave privada somente no PC central;
+- arquivo de estado da Central existente e inválido desabilita acesso remoto;
 - cache e cooldown criptografados por DPAPI;
+- cache inválido descartado antes de reutilização;
 - fila fiscal serializada, limitada e deduplicada;
-- bloqueio persistente após `cStat=656`;
+- bloqueio imediato em memória após `cStat=656`, com persistência quando possível;
 - auditoria sem dados fiscais completos;
 - regra de firewall limitada ao perfil Privado e ao executável atual.
 
@@ -203,7 +225,15 @@ O aplicativo não possui autenticação própria. Enquanto a Central estiver ati
 
 ## Domínio interno
 
-O app anuncia `nfeagendamento.local` por mDNS. A descoberta pode falhar quando a rede bloqueia multicast, separa clientes por VLAN ou aplica isolamento Wi-Fi. Nesses casos, use o IPv4 exibido no painel.
+O app anuncia `nfeagendamento.local` por mDNS. O endereço anunciado é obtido pela **mesma seleção de IPv4 usada pelo painel da Central**, evitando que o nome interno aponte para uma interface diferente daquela apresentada ao operador.
+
+A descoberta pode falhar quando a rede bloqueia multicast, separa clientes por VLAN ou aplica isolamento Wi-Fi. Nesses casos, use o IPv4 exibido no painel.
+
+## Release e rastreabilidade
+
+O fluxo oficial de publicação é o **Release Bridge** manual. O workflow trabalha com o SHA imutável associado ao disparo (`github.sha`): o mesmo commit é obtido, testado, compilado, empacotado e usado como destino da tag/release.
+
+Assim, se a `main` receber outro commit enquanto uma publicação estiver em andamento, esse avanço não altera silenciosamente o conteúdo daquela release. A versão publicada corresponde ao código efetivamente validado no próprio workflow.
 
 ## Diagnóstico
 
@@ -241,9 +271,13 @@ A tela informa que a **Central está ocupada** e mostra o tempo indicado em `Ret
 
 A Central não conseguiu validar o arquivo persistido de cooldown. Por segurança, ela não envia uma nova consulta à SEFAZ. Encerre o app e investigue o estado em `%LOCALAPPDATA%\NfeAgendamento\state` antes de continuar a operação.
 
+### Cache XML corrompido
+
+A entrada inválida é descartada automaticamente e a consulta segue como se não houvesse cache. Não é necessário apagar manualmente todo o diretório por causa de uma única entrada corrompida.
+
 ### Certificado não aparece
 
-O certificado precisa estar instalado no Windows Certificate Store do usuário que executa o app, dentro da validade e com chave privada acessível.
+O certificado precisa estar instalado no Windows Certificate Store do usuário que executa o app, dentro da validade e com chave privada acessível. Essa configuração deve ser feita no próprio PC central; a interface remota não possui permissão para administrar certificados.
 
 ## Dados locais
 
@@ -253,7 +287,7 @@ O app armazena dados em:
 %LOCALAPPDATA%\NfeAgendamento
 ```
 
-O cache e o estado fiscal são protegidos pelo DPAPI do usuário do Windows. Trocar o usuário do Windows pode impedir o acesso ao cache antigo; isso é esperado pelo modelo de proteção.
+O cache e o estado fiscal são protegidos pelo DPAPI do usuário do Windows. Trocar o usuário do Windows pode impedir o acesso ao cache antigo; nesse caso a entrada de cache que não puder ser validada é descartada, enquanto um estado fiscal persistido inválido continua seguindo a política fail-closed.
 
 A auditoria operacional fica em `logs\fiscal-audit.jsonl` e não contém XML nem identificadores fiscais completos.
 
@@ -262,7 +296,7 @@ A auditoria operacional fica em `logs\fiscal-audit.jsonl` e não contém XML nem
 - o PC central precisa permanecer ligado;
 - a configuração automática do firewall depende de autorização do Windows e pode ser bloqueada por política corporativa;
 - o domínio depende de mDNS ou do fallback por IP;
-- o acesso é HTTP dentro da rede interna;
-- não há publicação na internet;
+- o acesso é HTTP dentro da rede interna e o conteúdo solicitado da NF-e trafega sem TLS fornecido pelo aplicativo;
+- não há publicação na internet e a porta `17345` não deve ser exposta externamente;
 - o diagnóstico local não detecta isolamento de VLAN/ACL existente fora do PC central;
 - a consulta fiscal continua sujeita às regras da SEFAZ.
