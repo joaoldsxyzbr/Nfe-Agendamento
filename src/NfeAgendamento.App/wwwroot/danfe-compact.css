@@ -46,6 +46,13 @@
   word-break: normal;
   overflow-wrap: normal;
 }
+.source-product-code { display: block; }
+.internal-product-code {
+  display: block;
+  margin-top: 1px;
+  font-size: 0.88em;
+  font-weight: 700;
+}
 .additional-grid { min-height: 72px; }
 .additional-grid > div { padding: 3px 4px; }
 .additional-grid p { font-size: 6px; line-height: 1.12; }

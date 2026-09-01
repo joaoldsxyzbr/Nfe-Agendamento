@@ -1,57 +1,17 @@
 // Ajustes de impressão para aproximar a ocupação da A4 ao DANFE de referência.
 const originalBuildTransport = buildTransport;
 
-const FERNANDO_KLEIN_PRODUCT_CODES = Object.freeze({
-  'ALFACE': '73457',
-  'ALFACE CRESPA': '73457',
-  'ALFACE LISA': '104128',
-  'ALFACE ROXA': '104129',
-  'ALFACE AMERICANA': '30228',
-  'AMERICANA': '30228',
-  'ALFAVACA': '104130',
-  'AGRIAO': '104109',
-  'BROCOLIS': '104108',
-  'CEBOLA': '104106',
-  'CEBOLINHA': '104106',
-  'COENTRO': '104113',
-  'COUVE': '104107',
-  'CHICORIA': '104104',
-  'ESPINAFRE': '104110',
-  'HORTELA': '104115',
-  'MANJERICAO': '104114',
-  'RUCULA': '104111',
-  'RADITE': '104112',
-  'SALSA': '104105',
-  'SALSINHA': '104105'
-});
-
-function normalizeFernandoKleinText(text) {
-  return String(text || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toUpperCase()
-    .replace(/^VERDURAS\s*[-:]\s*/, '')
-    .replace(/[^A-Z0-9]+/g, ' ')
-    .trim()
-    .replace(/\s+/g, ' ');
-}
-
-function isFernandoKleinInvoice(det) {
+function resolveProductCodes(det, prod) {
   const document = det?.ownerDocument;
   const infNFe = firstElement(document, 'infNFe');
   const emit = firstElement(infNFe, 'emit');
-  const transp = firstElement(infNFe, 'transp');
-  const transporta = firstElement(transp, 'transporta');
-  const names = [value(emit, 'xNome'), value(transporta, 'xNome')];
-  return names.some(name => normalizeFernandoKleinText(name).includes('FERNANDO KLEIN'));
-}
+  const emitterTaxId = value(emit, 'CNPJ') || value(emit, 'CPF');
 
-function displayProductCode(det, prod) {
-  const originalCode = value(prod, 'cProd');
-  if (!isFernandoKleinInvoice(det)) return originalCode;
-
-  const productName = normalizeFernandoKleinText(value(prod, 'xProd'));
-  return FERNANDO_KLEIN_PRODUCT_CODES[productName] || originalCode;
+  return NfeProductMapping.resolveFernandoKleinProduct({
+    emitterTaxId,
+    xProd: value(prod, 'xProd'),
+    cProd: value(prod, 'cProd')
+  });
 }
 
 function hasTransportData(infNFe) {
@@ -83,9 +43,11 @@ buildProductsTable = function compactProductsTable(products) {
     const tax = buildProductTaxData(det);
     const description = `${escapeHtml(value(prod, 'xProd'))}${tax.taxNote ? `<small class="tax-detail">${escapeHtml(tax.taxNote)}</small>` : ''}`;
     const itemNumber = attr(det, 'det', 'nItem');
+    const productCodes = resolveProductCodes(det, prod);
+    const codeDisplay = `<span class="source-product-code">${escapeHtml(productCodes.sourceCode)}</span>${productCodes.internalCode ? `<small class="internal-product-code">Int.: ${escapeHtml(productCodes.internalCode)}</small>` : ''}`;
     return `<tr>
       <td class="center item-col">${escapeHtml(itemNumber)}</td>
-      <td class="code-col">${escapeHtml(displayProductCode(det, prod))}</td>
+      <td class="code-col">${codeDisplay}</td>
       <td class="description">${description}</td>
       <td class="center">${escapeHtml(value(prod, 'NCM'))}</td>
       <td class="center">${escapeHtml(tax.cst)}</td>
