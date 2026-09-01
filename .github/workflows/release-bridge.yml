@@ -21,7 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
       - uses: actions/setup-dotnet@v4
@@ -93,4 +93,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
-          gh release create "${{ steps.version.outputs.tag }}" artifacts/Nfe-Agendamento-win-x64.zip --target main --title "NFe Agendamento ${{ steps.version.outputs.tag }}" --notes "Pacote Windows autocontido do NFe Agendamento."
+          gh release create "${{ steps.version.outputs.tag }}" artifacts/Nfe-Agendamento-win-x64.zip --target "${{ github.sha }}" --title "NFe Agendamento ${{ steps.version.outputs.tag }}" --notes "Pacote Windows autocontido do NFe Agendamento."
