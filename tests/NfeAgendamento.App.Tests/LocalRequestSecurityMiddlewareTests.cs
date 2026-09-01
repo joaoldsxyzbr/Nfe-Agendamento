@@ -53,9 +53,9 @@ public sealed class LocalRequestSecurityMiddlewareTests
     }
 
     [Theory]
-    [InlineData(HttpMethods.Get, "/api/certificates")]
-    [InlineData(HttpMethods.Get, "/api/certificate/current")]
-    [InlineData(HttpMethods.Post, "/api/certificate/select")]
+    [InlineData("GET", "/api/certificates")]
+    [InlineData("GET", "/api/certificate/current")]
+    [InlineData("POST", "/api/certificate/select")]
     public async Task Certificate_administration_is_rejected_for_remote_clients(string method, string path)
     {
         var csrf = new CsrfTokenService();
