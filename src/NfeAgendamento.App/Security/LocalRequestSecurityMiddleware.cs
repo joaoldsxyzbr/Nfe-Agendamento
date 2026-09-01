@@ -20,13 +20,11 @@ public sealed class LocalRequestSecurityMiddleware
 
     private readonly RequestDelegate _next;
     private readonly CsrfTokenService _csrf;
-    private readonly LocalSessionService _sessions;
 
-    public LocalRequestSecurityMiddleware(RequestDelegate next, CsrfTokenService csrf, LocalSessionService? sessions = null)
+    public LocalRequestSecurityMiddleware(RequestDelegate next, CsrfTokenService csrf)
     {
         _next = next ?? throw new ArgumentNullException(nameof(next));
         _csrf = csrf ?? throw new ArgumentNullException(nameof(csrf));
-        _sessions = sessions ?? new LocalSessionService();
     }
 
     public async Task InvokeAsync(HttpContext context)
@@ -68,16 +66,6 @@ public sealed class LocalRequestSecurityMiddleware
             }
         }
 
-        if (!isLoopback && RequiresAuthentication(context.Request))
-        {
-            var session = context.Request.Cookies[LocalSessionService.CookieName];
-            if (!_sessions.IsAuthenticated(session))
-            {
-                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-                return;
-            }
-        }
-
         await _next(context);
     }
 
@@ -95,11 +83,6 @@ public sealed class LocalRequestSecurityMiddleware
             && string.Equals(parsed.Host, requestHost.Host, StringComparison.OrdinalIgnoreCase)
             && parsed.Port == 17345;
     }
-
-    private static bool RequiresAuthentication(HttpRequest request) =>
-        request.Path.StartsWithSegments("/api")
-        && !request.Path.StartsWithSegments("/api/bootstrap")
-        && !request.Path.StartsWithSegments("/api/auth");
 
     private static bool IsMutating(string method) =>
         HttpMethods.IsPost(method)
