@@ -11,7 +11,7 @@ Aplicativo Windows interno para consultar, visualizar e baixar NF-e usando o cer
 
 O pacote é autocontido e não exige instalação do .NET.
 
-> A `main` já contém o novo painel Windows da Central. Essas mudanças ainda precisam de uma nova release para chegar ao pacote publicado.
+> A `main` já contém o painel Windows da Central e o diagnóstico de rede/firewall. Essas mudanças ainda precisam de uma nova release para chegar ao pacote publicado.
 
 ## Como o sistema funciona
 
@@ -47,13 +47,18 @@ Ela informa:
 - se a Central está ativa ou parada;
 - IPv4 detectado no PC;
 - porta `17345`;
-- endereço que deve ser usado pelos outros computadores.
+- endereço que deve ser usado pelos outros computadores;
+- status da interface de rede;
+- se o servidor está realmente ouvindo na LAN;
+- status da regra do Firewall do Windows;
+- um resumo objetivo do que precisa ser corrigido quando a rede não está pronta.
 
 Ações principais:
 
 - **Iniciar Central**: libera o acesso pela rede interna;
 - **Parar Central**: bloqueia novas conexões remotas, mantendo o sistema local disponível;
-- **Abrir sistema**: abre a interface web local em `http://127.0.0.1:17345`.
+- **Abrir sistema**: abre a interface web local em `http://127.0.0.1:17345`;
+- **Configurar firewall**: solicita elevação do Windows e cria a regra necessária somente para TCP `17345`, somente no perfil **Privado** e vinculada ao executável atual.
 
 O estado da Central é persistido em `%LOCALAPPDATA%\NfeAgendamento\state\central.json`. Em uma instalação nova, a Central inicia habilitada.
 
@@ -74,6 +79,9 @@ Fechar a janela não encerra o aplicativo: ele continua na bandeja. Use **Sair**
 - retry limitado apenas para falhas transitórias de rede;
 - proteção CSRF, validação de Host e Origin;
 - controle do acesso remoto pelo painel Windows da Central;
+- seleção mais robusta do IPv4 da interface de rede;
+- diagnóstico de listener TCP `17345`;
+- verificação e configuração da regra privada do Firewall do Windows;
 - domínio interno via mDNS;
 - mapeamento interno de produtos da Fernando Klein sem alterar o XML original.
 
@@ -95,10 +103,12 @@ Esses logs não incluem XML completo, certificado, chave privada nem CPF/CNPJ do
 2. Extraia, por exemplo, em `C:\NfeAgendamento`.
 3. Execute `NfeAgendamento.App.exe`.
 4. No painel da Central, confirme que o status está **Central ativa**.
-5. Clique em **Abrir sistema**.
-6. Selecione o certificado A1 válido.
-7. Informe a UF autora correta.
-8. Faça uma consulta de teste com uma chave conhecida.
+5. Confira os indicadores **Rede**, **Servidor** e **Firewall**.
+6. Se o Firewall indicar **Precisa configurar**, clique em **Configurar firewall** e autorize o UAC do Windows.
+7. Clique em **Abrir sistema**.
+8. Selecione o certificado A1 válido.
+9. Informe a UF autora correta.
+10. Faça uma consulta de teste com uma chave conhecida.
 
 O certificado deve estar instalado no perfil do Windows que executará o aplicativo. O app não exporta nem copia a chave privada.
 
@@ -122,14 +132,19 @@ O acesso remoto só é aceito enquanto o painel indicar **Central ativa**.
 
 ## Firewall do Windows
 
-O Bloco 1 não cria nem altera regras de firewall automaticamente. No PC central, a rede ainda precisa permitir:
+O painel verifica a regra usada pela Central. Quando necessário, o botão **Configurar firewall** cria uma regra com estas restrições:
 
-- TCP `17345` para o aplicativo;
-- UDP `5353` para descoberta mDNS, se o domínio `nfeagendamento.local` for usado.
+- entrada TCP;
+- porta local `17345`;
+- perfil de rede **Privado**;
+- somente o executável atual do `NfeAgendamento.App.exe`;
+- nenhuma regra para o perfil Público.
 
-A automação e o diagnóstico de firewall pertencem ao próximo bloco de rede.
+A configuração exige autorização do UAC porque altera o Firewall do Windows. Se o computador for administrado por política corporativa e a alteração for bloqueada, o painel continuará indicando que o firewall precisa de atenção; nesse caso, a liberação deve ser feita pelo administrador da rede.
 
-Não publique essas portas na internet e não habilite regras amplas para redes públicas.
+O UDP `5353` usado pelo nome `nfeagendamento.local` continua opcional. Se o mDNS for bloqueado pela rede, use diretamente o IPv4 mostrado no painel.
+
+Não publique a porta `17345` na internet e não crie regra ampla para redes públicas.
 
 ## Segurança e dados
 
@@ -141,6 +156,7 @@ Não publique essas portas na internet e não habilite regras amplas para redes 
 - Host e Origin são validados;
 - conexões remotas são bloqueadas imediatamente quando a Central é parada;
 - o sistema local continua disponível em `127.0.0.1:17345`;
+- a regra automática do firewall fica limitada à rede privada, porta `17345` e executável atual;
 - não há banco externo nem hospedagem em nuvem.
 
 O aplicativo não possui autenticação própria. Portanto, enquanto a Central estiver ativa, qualquer computador autorizado pela rede interna que consiga alcançar a porta 17345 poderá acessar a interface. Mantenha a porta restrita à rede da empresa.
@@ -165,6 +181,8 @@ Para atualizar:
 3. extraia em uma pasta de aplicação;
 4. execute a nova versão;
 5. confirme o certificado e a UF autora.
+
+Como a regra do firewall é vinculada ao caminho do executável, se a aplicação for movida para outra pasta o painel pode pedir para configurar a regra novamente. Isso é esperado e evita liberar executáveis diferentes pela mesma regra.
 
 Não substitua a pasta de dados do usuário. O cache, o estado fiscal e a configuração da Central ficam em:
 
