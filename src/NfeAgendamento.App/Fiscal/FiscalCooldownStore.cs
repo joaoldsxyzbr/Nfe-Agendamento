@@ -14,6 +14,7 @@ public sealed class FiscalCooldownStore
     private static readonly byte[] Entropy = Encoding.UTF8.GetBytes("NfeAgendamento.FiscalCooldown.v1");
     private readonly string _path;
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private DateTimeOffset? _volatileBlockedUntilUtc;
 
     public FiscalCooldownStore()
         : this(Path.Combine(AppPaths.StateRoot, "fiscal-cooldown.bin"))
@@ -32,7 +33,8 @@ public sealed class FiscalCooldownStore
         await _gate.WaitAsync(cancellationToken);
         try
         {
-            return await ReadCoreAsync(cancellationToken);
+            var persisted = await ReadCoreAsync(cancellationToken);
+            return MergeWithVolatile(persisted);
         }
         finally
         {
@@ -48,7 +50,7 @@ public sealed class FiscalCooldownStore
         await _gate.WaitAsync(cancellationToken);
         try
         {
-            var state = await ReadCoreAsync(cancellationToken);
+            var state = MergeWithVolatile(await ReadCoreAsync(cancellationToken));
             if (state.BlockedUntilUtc is null)
                 return;
 
@@ -57,6 +59,7 @@ public sealed class FiscalCooldownStore
             if (now < blockedUntil)
                 throw new FiscalCooldownException(blockedUntil);
 
+            _volatileBlockedUntilUtc = null;
             TryDelete(_path);
         }
         finally
@@ -73,18 +76,41 @@ public sealed class FiscalCooldownStore
         await _gate.WaitAsync(cancellationToken);
         try
         {
-            var current = await ReadCoreAsync(cancellationToken);
+            var current = MergeWithVolatile(await ReadCoreAsync(cancellationToken));
             var candidate = receivedAtUtc.ToUniversalTime().AddHours(1);
             var blockedUntil = current.BlockedUntilUtc is { } existing && existing.ToUniversalTime() > candidate
                 ? existing.ToUniversalTime()
                 : candidate;
 
-            await WriteCoreAsync(new FiscalCooldownState(blockedUntil), cancellationToken);
+            // O bloqueio em memória é aplicado antes da persistência. Assim, uma falha de disco/permissão
+            // após um cStat=656 nunca libera novas consultas durante a vida deste processo.
+            _volatileBlockedUntilUtc = blockedUntil;
+
+            try
+            {
+                await WriteCoreAsync(new FiscalCooldownState(blockedUntil), cancellationToken);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // A proteção fiscal é prioritária. A persistência pode ser recuperada depois,
+                // mas o processo atual permanece bloqueado até o horário calculado.
+            }
         }
         finally
         {
             _gate.Release();
         }
+    }
+
+    private FiscalCooldownState MergeWithVolatile(FiscalCooldownState persisted)
+    {
+        if (_volatileBlockedUntilUtc is not { } volatileUntil)
+            return persisted;
+
+        if (persisted.BlockedUntilUtc is { } persistedUntil && persistedUntil.ToUniversalTime() > volatileUntil.ToUniversalTime())
+            return persisted;
+
+        return new FiscalCooldownState(volatileUntil.ToUniversalTime());
     }
 
     private async Task<FiscalCooldownState> ReadCoreAsync(CancellationToken cancellationToken)
