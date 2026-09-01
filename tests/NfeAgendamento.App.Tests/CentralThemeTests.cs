@@ -1,3 +1,4 @@
+using System.Drawing;
 using NfeAgendamento.App;
 using Xunit;
 
