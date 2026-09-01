@@ -127,7 +127,7 @@ public sealed class UpdateService : IDisposable
         startInfo.ArgumentList.Add("-File");
         startInfo.ArgumentList.Add(prepared.ScriptPath);
 
-        Process.Start(startInfo)
+        _ = Process.Start(startInfo)
             ?? throw new InvalidOperationException("Não foi possível iniciar o instalador da atualização.");
     }
 
