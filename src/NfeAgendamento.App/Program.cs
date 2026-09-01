@@ -22,7 +22,6 @@ internal static class Program
         builder.Services.AddSingleton<FiscalOperationGate>();
         builder.Services.AddSingleton<FiscalRequestCoordinator>();
         builder.Services.AddScoped<NfeLookupService>();
-        builder.Services.AddScoped<BatchLookupService>();
         builder.Services.AddScoped<INfeDistributionTransport>(sp =>
         {
             var certificates = sp.GetRequiredService<CertificateService>();
@@ -125,25 +124,6 @@ internal static class Program
                 return Results.Json(new { status = "configuration_error", message = ex.Message }, statusCode: 409);
             }
         });
-        app.MapPost("/api/nfe/batch", async (BatchLookupRequest? request, HttpContext context, CancellationToken cancellationToken) =>
-        {
-            if (request is null)
-                return Results.BadRequest(new { status = "invalid_batch", message = "Informe as chaves do lote." });
-            try
-            {
-                var batch = context.RequestServices.GetRequiredService<BatchLookupService>();
-                var result = await batch.LookupAsync(request.AccessKeys ?? [], cancellationToken);
-                return Results.File(BatchLookupService.CreateZip(result), "application/zip", "nfe-agendamento.zip");
-            }
-            catch (ArgumentException ex)
-            {
-                return Results.BadRequest(new { status = "invalid_batch", message = ex.Message });
-            }
-            catch (InvalidOperationException ex)
-            {
-                return Results.Json(new { status = "configuration_error", message = ex.Message }, statusCode: 409);
-            }
-        });
 
         try
         {
@@ -199,5 +179,4 @@ internal static class Program
 
 internal sealed record CertificateSelectRequest(string Thumbprint, string UfAutor);
 internal sealed record LookupRequest(string AccessKey);
-internal sealed record BatchLookupRequest(string[]? AccessKeys);
 internal sealed record AuthRequest(string Password);
