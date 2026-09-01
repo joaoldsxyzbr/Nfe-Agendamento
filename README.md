@@ -4,12 +4,14 @@ Aplicativo Windows interno para consultar, visualizar e baixar NF-e usando o cer
 
 ## Versão publicada
 
-**v0.1.14**
+**v0.1.16**
 
-- [Baixar o pacote Windows x64](https://github.com/joaoldsxyzbr/Nfe-Agendamento/releases/download/v0.1.14/Nfe-Agendamento-win-x64.zip)
-- [Ver a release v0.1.14](https://github.com/joaoldsxyzbr/Nfe-Agendamento/releases/tag/v0.1.14)
+- [Baixar o pacote Windows x64](https://github.com/joaoldsxyzbr/Nfe-Agendamento/releases/download/v0.1.16/Nfe-Agendamento-win-x64.zip)
+- [Ver a release v0.1.16](https://github.com/joaoldsxyzbr/Nfe-Agendamento/releases/tag/v0.1.16)
 
 O pacote é autocontido e não exige instalação do .NET.
+
+> A `main` já contém o novo painel Windows da Central. Essas mudanças ainda precisam de uma nova release para chegar ao pacote publicado.
 
 ## Como o sistema funciona
 
@@ -19,14 +21,15 @@ O NFe Agendamento deve ser executado em um único PC central da empresa. Esse co
 - o cache criptografado dos XMLs;
 - a coordenação das consultas fiscais;
 - o estado de bloqueio fiscal da SEFAZ;
-- o site interno acessado pelos demais computadores.
+- o servidor interno acessado pelos demais computadores;
+- o painel Windows que controla se a Central está disponível para a rede.
 
 Os outros PCs não precisam ter o certificado instalado. Eles acessam a central pelo navegador.
 
 ```text
 Computadores da equipe
         ↓
-http://nfeagendamento.local:17345
+http://IP-DO-PC-CENTRAL:17345
         ↓
 PC central com o NFe Agendamento
         ↓
@@ -34,6 +37,27 @@ Certificado A1 + SEFAZ
 ```
 
 Nenhum certificado, chave privada ou XML é enviado para a nuvem.
+
+## Painel Windows da Central
+
+Ao abrir o `NfeAgendamento.App.exe`, o aplicativo mostra a janela **Central NFe Agendamento**.
+
+Ela informa:
+
+- se a Central está ativa ou parada;
+- IPv4 detectado no PC;
+- porta `17345`;
+- endereço que deve ser usado pelos outros computadores.
+
+Ações principais:
+
+- **Iniciar Central**: libera o acesso pela rede interna;
+- **Parar Central**: bloqueia novas conexões remotas, mantendo o sistema local disponível;
+- **Abrir sistema**: abre a interface web local em `http://127.0.0.1:17345`.
+
+O estado da Central é persistido em `%LOCALAPPDATA%\NfeAgendamento\state\central.json`. Em uma instalação nova, a Central inicia habilitada.
+
+Fechar a janela não encerra o aplicativo: ele continua na bandeja. Use **Sair** no menu da bandeja para encerrar completamente.
 
 ## Recursos
 
@@ -49,7 +73,7 @@ Nenhum certificado, chave privada ou XML é enviado para a nuvem.
 - cooldown persistente de uma hora após `cStat=656`;
 - retry limitado apenas para falhas transitórias de rede;
 - proteção CSRF, validação de Host e Origin;
-- modo LAN habilitado somente com `--lan`;
+- controle do acesso remoto pelo painel Windows da Central;
 - domínio interno via mDNS;
 - mapeamento interno de produtos da Fernando Klein sem alterar o XML original.
 
@@ -61,12 +85,7 @@ O mapeamento é aplicado somente quando o CPF/CNPJ do emitente corresponde ao fo
 
 As descrições passam por normalização de acentos, espaços, pontuação e prefixos como `VERDURAS -`. O vínculo continua estrito por aliases cadastrados: não existe aproximação automática ou fuzzy matching.
 
-Se um item não existir no catálogo, o sistema mantém apenas o `cProd` original e registra no console do navegador um aviso com a descrição e o código do fornecedor. Também registra um resumo da NF, por exemplo:
-
-```text
-[NFe Agendamento] Fernando Klein: 18 itens, 17 mapeados, 1 não mapeados.
-[NFe Agendamento] Produto Fernando Klein não mapeado: VERDURAS - PRODUTO NOVO (cProd: FK999).
-```
+Se um item não existir no catálogo, o sistema mantém apenas o `cProd` original e registra no console do navegador um aviso com a descrição e o código do fornecedor. Também registra um resumo da NF.
 
 Esses logs não incluem XML completo, certificado, chave privada nem CPF/CNPJ do emitente.
 
@@ -75,55 +94,42 @@ Esses logs não incluem XML completo, certificado, chave privada nem CPF/CNPJ do
 1. Baixe o ZIP da release.
 2. Extraia, por exemplo, em `C:\NfeAgendamento`.
 3. Execute `NfeAgendamento.App.exe`.
-4. Para uso apenas nesse PC, abra `http://127.0.0.1:17345`.
-5. Selecione o certificado A1 válido.
-6. Informe a UF autora correta.
-7. Faça uma consulta de teste com uma chave conhecida.
+4. No painel da Central, confirme que o status está **Central ativa**.
+5. Clique em **Abrir sistema**.
+6. Selecione o certificado A1 válido.
+7. Informe a UF autora correta.
+8. Faça uma consulta de teste com uma chave conhecida.
 
 O certificado deve estar instalado no perfil do Windows que executará o aplicativo. O app não exporta nem copia a chave privada.
 
-## Ativar o modo central pela rede
-
-No PC central, execute:
-
-```text
-NfeAgendamento.App.exe --lan
-```
-
-O modo LAN é opt-in. Sem `--lan`, o app escuta somente em `127.0.0.1`.
-
-No primeiro acesso local em modo LAN:
-
-1. Abra `http://127.0.0.1:17345`.
-2. Configure o certificado A1.
-3. Mantenha o aplicativo aberto na bandeja.
-
 ## Acesso pelos demais computadores
 
-Abra:
+Use o endereço mostrado no painel Windows. Exemplo:
+
+```text
+http://10.0.0.29:17345
+```
+
+O endereço `127.0.0.1` nunca deve ser usado em outro PC, pois ele sempre aponta para a própria máquina que está acessando.
+
+O endereço por nome continua disponível quando o mDNS funciona na rede:
 
 ```text
 http://nfeagendamento.local:17345
 ```
 
-Não há tela de login. O acesso é direto porque o serviço foi projetado exclusivamente para a rede privada interna.
-
-Se o domínio não resolver, use o IPv4 do PC central:
-
-```text
-http://192.168.1.50:17345
-```
-
-O domínio depende de mDNS na rede. O firewall e a política de rede precisam permitir TCP 17345 e, para a descoberta automática, UDP 5353 na rede privada.
+O acesso remoto só é aceito enquanto o painel indicar **Central ativa**.
 
 ## Firewall do Windows
 
-No PC central, permita somente na rede privada:
+O Bloco 1 não cria nem altera regras de firewall automaticamente. No PC central, a rede ainda precisa permitir:
 
-- TCP 17345 para o aplicativo;
-- UDP 5353 para descoberta mDNS, se o domínio `nfeagendamento.local` não for resolvido.
+- TCP `17345` para o aplicativo;
+- UDP `5353` para descoberta mDNS, se o domínio `nfeagendamento.local` for usado.
 
-Não publique essa porta na internet e não habilite regra para redes públicas.
+A automação e o diagnóstico de firewall pertencem ao próximo bloco de rede.
+
+Não publique essas portas na internet e não habilite regras amplas para redes públicas.
 
 ## Segurança e dados
 
@@ -133,12 +139,11 @@ Não publique essa porta na internet e não habilite regra para redes públicas.
 - o cache é criptografado com DPAPI do usuário do Windows;
 - operações de alteração e consulta fiscal exigem CSRF válido;
 - Host e Origin são validados;
-- o modo padrão continua restrito ao loopback;
-- o modo LAN precisa ser habilitado explicitamente com `--lan`;
-- o acesso por IP é apenas fallback do domínio interno;
+- conexões remotas são bloqueadas imediatamente quando a Central é parada;
+- o sistema local continua disponível em `127.0.0.1:17345`;
 - não há banco externo nem hospedagem em nuvem.
 
-O aplicativo não possui autenticação própria. Portanto, qualquer computador que consiga alcançar a porta 17345 na rede privada poderá acessar a interface. Mantenha a porta restrita à rede interna e nunca a publique na internet.
+O aplicativo não possui autenticação própria. Portanto, enquanto a Central estiver ativa, qualquer computador autorizado pela rede interna que consiga alcançar a porta 17345 poderá acessar a interface. Mantenha a porta restrita à rede da empresa.
 
 ## Consultas e erro 429
 
@@ -161,15 +166,11 @@ Para atualizar:
 4. execute a nova versão;
 5. confirme o certificado e a UF autora.
 
-Não substitua a pasta de dados do usuário. O cache e o estado fiscal ficam em:
+Não substitua a pasta de dados do usuário. O cache, o estado fiscal e a configuração da Central ficam em:
 
 ```text
 %LOCALAPPDATA%\NfeAgendamento
 ```
-
-## Parar a central
-
-Use `Sair` no menu do ícone da bandeja. Isso encerra o servidor e o anúncio mDNS.
 
 ## Desenvolvimento e validação
 
@@ -193,7 +194,7 @@ A release é criada manualmente pelo GitHub Actions:
 1. abra **Actions**;
 2. escolha **Release Bridge**;
 3. clique em **Run workflow**;
-4. informe a versão, por exemplo `v0.1.15`;
+4. informe uma versão maior que a última publicada;
 5. execute.
 
 O workflow rejeita versão repetida ou menor/igual à última publicada, roda testes e regressão antes da publicação e impede duas releases simultâneas.
