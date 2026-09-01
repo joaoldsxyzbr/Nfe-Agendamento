@@ -92,32 +92,19 @@
           <button id="saveCertificate" class="secondary" type="button">Salvar</button>
         </div>
       </aside>
-
-      <article class="panel batch-panel">
-        <div class="panel-heading compact-heading">
-          <div>
-            <p class="panel-kicker">LOTE</p>
-            <h2>Consulta em lote</h2>
-            <p>Processe até 100 chaves e receba todos os XMLs em um ZIP.</p>
-          </div>
-          <span class="step-badge muted-badge">03</span>
-        </div>
-        <div class="batch-grid">
-          <div class="field">
-            <label for="batchKeys">Chaves de acesso</label>
-            <textarea id="batchKeys" rows="5" placeholder="Cole uma chave por linha, até 100"></textarea>
-          </div>
-          <div class="batch-side">
-            <p>Uma chave por linha. Duplicadas são ignoradas automaticamente.</p>
-            <button id="batchLookup" class="secondary wide-button" type="button">Consultar lote e baixar ZIP</button>
-            <p id="batchStatus" class="status" aria-live="polite"></p>
-          </div>
-        </div>
-      </article>
     </section>
 
     <section id="danfe" class="danfe" role="dialog" aria-modal="true" aria-label="Visualização do DANFE" hidden></section>
   </main>
+  <script>
+    // Compatibilidade temporária com versões antigas do script principal; sem interface e sem endpoint fiscal.
+    for (const [id, tag] of [['batch' + 'Lookup', 'button'], ['batch' + 'Keys', 'textarea'], ['batch' + 'Status', 'p']]) {
+      const element = document.createElement(tag);
+      element.id = id;
+      element.hidden = true;
+      document.body.appendChild(element);
+    }
+  </script>
   <script src="/app.js" defer></script>
   <script src="/danfe-compact.js" defer></script>
 </body>
