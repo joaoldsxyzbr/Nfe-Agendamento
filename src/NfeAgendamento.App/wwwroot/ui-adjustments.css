@@ -24,19 +24,157 @@
 }
 
 .new-lookup-button {
-  color: #82b3ff;
+  color: #f6c915;
   background: transparent;
-  border-color: #3b72b7;
+  border-color: #48698f;
 }
 
 .new-lookup-button:hover {
-  color: #dcebff;
-  background: rgba(75, 141, 255, .1);
-  border-color: #4b8dff;
+  color: #ffe77a;
+  background: rgba(246, 201, 21, .07);
+  border-color: #f6c915;
+}
+
+/* Identidade visual Prado: azul profundo, amarelo institucional e menos efeitos artificiais. */
+:root {
+  --bg: #06172c;
+  --surface: #0a2442;
+  --surface-2: #0d2c50;
+  --surface-3: #11365f;
+  --line: #284b70;
+  --line-soft: #1c3d60;
+  --text: #f5f7fb;
+  --muted: #a8b7c9;
+  --muted-2: #8398ae;
+  --blue: #164d84;
+  --blue-strong: #0d3d70;
+  --green: #39cf8a;
+  --danger: #ff7586;
+  --prado-yellow: #f6c915;
+  --prado-yellow-hover: #ffd52d;
+}
+
+html,
+body {
+  background: var(--bg);
+}
+
+body {
+  background: linear-gradient(180deg, #06172c 0%, #08223e 100%);
+}
+
+.app-header {
+  padding-bottom: 18px;
+  border-bottom: 2px solid var(--prado-yellow);
+}
+
+.eyebrow,
+.panel-kicker {
+  color: var(--prado-yellow);
+}
+
+.connection-pill {
+  border-color: #315779;
+  background: #0a2038;
+  color: #d6e0ea;
+}
+
+.connection-dot {
+  box-shadow: none;
+}
+
+.panel {
+  border-color: #244a70;
+  background: #0b2746;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, .18);
+}
+
+.primary-panel {
+  border-color: #315b84;
+  background: #0c2a4b;
+}
+
+.step-badge,
+.muted-badge {
+  border: 1px solid #52677f;
+  background: #102d4c;
+  color: var(--prado-yellow);
+}
+
+input,
+select,
+textarea {
+  border-color: #355879;
+  background: #071a2e;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--prado-yellow);
+  background: #081e35;
+  box-shadow: 0 0 0 3px rgba(246, 201, 21, .12);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #71869d;
+}
+
+.primary {
+  background: var(--prado-yellow);
+  color: #08213d;
+  box-shadow: none;
+}
+
+.primary:hover {
+  background: var(--prado-yellow-hover);
+}
+
+.secondary {
+  border-color: #355a7e;
+  background: #143555;
+}
+
+.secondary:hover {
+  border-color: #4d7397;
+  background: #193f64;
+}
+
+.action-button {
+  border-color: #355778;
+  background: #123250;
+  color: #edf3f8;
+}
+
+.featured-action {
+  border-color: #68809a;
+  background: #173a5d;
+  color: #ffffff;
+}
+
+.auth-gate {
+  background: #06172c;
+}
+
+.auth-card {
+  border-color: #315779;
+  background: #0b2746;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, .25);
+}
+
+.auth-card input {
+  border-color: #355879;
+  background: #071a2e;
 }
 
 @media (max-width: 620px) {
   .lookup-actions-row {
     grid-template-columns: 1fr;
+  }
+
+  .connection-pill {
+    margin-left: 0;
+    margin-top: -4px;
   }
 }
