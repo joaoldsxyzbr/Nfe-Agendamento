@@ -14,6 +14,27 @@ function resolveProductCodes(det, prod) {
   });
 }
 
+function logFernandoKleinMappingSummary(products) {
+  const firstDet = products?.[0];
+  if (!firstDet) return;
+
+  const document = firstDet.ownerDocument;
+  const infNFe = firstElement(document, 'infNFe');
+  const emit = firstElement(infNFe, 'emit');
+  const emitterTaxId = value(emit, 'CNPJ') || value(emit, 'CPF');
+  const productData = products.map(det => {
+    const prod = firstElement(det, 'prod');
+    return { cProd: value(prod, 'cProd'), xProd: value(prod, 'xProd') };
+  });
+  const summary = NfeProductMapping.summarizeFernandoKleinProducts({ emitterTaxId, products: productData });
+  if (!summary.applies) return;
+
+  console.info(`[NFe Agendamento] Fernando Klein: ${summary.total} itens, ${summary.mapped} mapeados, ${summary.unmapped} não mapeados.`);
+  for (const product of summary.unknownProducts) {
+    console.warn(`[NFe Agendamento] Produto Fernando Klein não mapeado: ${product.xProd} (cProd: ${product.cProd}).`);
+  }
+}
+
 function hasTransportData(infNFe) {
   const transp = firstElement(infNFe, 'transp');
   if (!transp) return false;
@@ -95,6 +116,8 @@ function estimateAdditionalPenaltyMm(additionalText) {
 
 function paginateProductsByAvailableSpace(products, additionalText) {
   if (!products.length) return [[]];
+
+  logFernandoKleinMappingSummary(products);
 
   const pages = [];
   let currentPage = [];
