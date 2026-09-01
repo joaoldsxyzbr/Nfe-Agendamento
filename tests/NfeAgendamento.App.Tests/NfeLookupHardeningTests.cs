@@ -28,6 +28,32 @@ public sealed class NfeLookupHardeningTests
     }
 
     [Fact]
+    public async Task Persistence_failure_after_656_keeps_process_blocked_without_second_transport_call()
+    {
+        using var temp = new TemporaryDirectory();
+        var invalidCooldownPath = Path.Combine(temp.Path, "cooldown.bin");
+        Directory.CreateDirectory(invalidCooldownPath);
+        var cooldown = new FiscalCooldownStore(invalidCooldownPath);
+        var transport = new SequenceTransport();
+        var service = new NfeLookupService(
+            transport,
+            new EncryptedXmlCache(Path.Combine(temp.Path, "cache"), TimeProvider.System, TimeSpan.FromHours(24)),
+            cooldown,
+            delay: (_, _) => Task.CompletedTask,
+            gate: new FiscalOperationGate(),
+            coordinator: new FiscalRequestCoordinator());
+
+        var first = await service.LookupAsync(ValidKey);
+        var second = await service.LookupAsync(ValidKey);
+
+        Assert.Equal(NfeLookupStatus.Blocked, first.Status);
+        Assert.Equal(NfeLookupStatus.Blocked, second.Status);
+        Assert.NotNull(first.BlockedUntilUtc);
+        Assert.NotNull(second.BlockedUntilUtc);
+        Assert.Equal(1, transport.CallCount);
+    }
+
+    [Fact]
     public async Task Deduplicated_lookup_writes_one_audit_record_without_full_key()
     {
         using var temp = new TemporaryDirectory();
@@ -61,6 +87,19 @@ public sealed class NfeLookupHardeningTests
         {
             CallCount++;
             return Task.FromResult(new NfeDistributionResponse("137", "Nenhum documento localizado", null));
+        }
+    }
+
+    private sealed class SequenceTransport : INfeDistributionTransport
+    {
+        public int CallCount { get; private set; }
+
+        public Task<NfeDistributionResponse> QueryByAccessKeyAsync(string accessKey, CancellationToken cancellationToken = default)
+        {
+            CallCount++;
+            return Task.FromResult(CallCount == 1
+                ? new NfeDistributionResponse("656", "Consumo indevido", null)
+                : new NfeDistributionResponse("137", "Nenhum documento localizado", null));
         }
     }
 
