@@ -11,7 +11,7 @@ Aplicativo Windows interno para consultar, visualizar e baixar NF-e usando o cer
 
 O pacote é autocontido e não exige instalação do .NET.
 
-> A `main` já contém o painel Windows da Central, o diagnóstico de rede/firewall e o reforço da fila fiscal. Essas mudanças ainda precisam de uma nova release para chegar ao pacote publicado.
+> A `main` já contém o painel Windows da Central, o diagnóstico de rede/firewall, o reforço da fila fiscal e o feedback operacional do Bloco 4. Essas mudanças ainda precisam de uma nova release para chegar ao pacote publicado.
 
 ## Como o sistema funciona
 
@@ -64,6 +64,8 @@ O estado da Central é persistido em `%LOCALAPPDATA%\NfeAgendamento\state\centra
 
 Fechar a janela não encerra o aplicativo: ele continua na bandeja. Use **Sair** no menu da bandeja para encerrar completamente.
 
+Na bandeja, o menu também mostra o endereço atual da Central no formato `Acesso: http://IP:17345` e oferece **Copiar endereço da Central**. Se a Central estiver parada ou não houver IPv4 utilizável, o menu informa isso e não oferece um endereço inválido para copiar.
+
 ## Recursos
 
 - consulta individual por chave de acesso de 44 dígitos;
@@ -80,6 +82,8 @@ Fechar a janela não encerra o aplicativo: ele continua na bandeja. Use **Sair**
 - cooldown persistente de uma hora após `cStat=656`;
 - retry limitado apenas para falhas transitórias de rede;
 - auditoria fiscal operacional local sem armazenar a chave de acesso completa;
+- feedback distinto no navegador para Central ocupada e bloqueio fiscal da SEFAZ;
+- endereço compartilhável disponível e copiável pela bandeja do Windows;
 - proteção CSRF, validação de Host e Origin;
 - controle do acesso remoto pelo painel Windows da Central;
 - seleção mais robusta do IPv4 da interface de rede;
@@ -162,7 +166,7 @@ O certificado deve estar instalado no perfil do Windows que executará o aplicat
 
 ## Acesso pelos demais computadores
 
-Use o endereço mostrado no painel Windows. Exemplo:
+Use o endereço mostrado no painel Windows ou copie-o pelo menu da bandeja. Exemplo:
 
 ```text
 http://10.0.0.29:17345
@@ -212,15 +216,17 @@ O aplicativo não possui autenticação própria. Portanto, enquanto a Central e
 
 ## Retornos HTTP 429
 
-Existem dois cenários diferentes que usam HTTP `429`:
+Existem dois cenários diferentes que usam HTTP `429`. O navegador distingue os dois e mostra uma orientação própria para cada caso.
 
 ### `fila_ocupada`
 
-A Central já possui 12 operações fiscais únicas admitidas. Aguarde pelo menos os 5 segundos indicados em `Retry-After` e tente novamente. Esse caso **não significa bloqueio da SEFAZ**.
+A Central já possui 12 operações fiscais únicas admitidas. A tela informa que **a Central está ocupada** e usa o valor de `Retry-After` para indicar em quantos segundos tentar novamente. Esse caso **não significa bloqueio da SEFAZ**.
 
 ### `consumo_indevido` / `cStat=656`
 
-A SEFAZ bloqueou temporariamente as consultas por consumo indevido. Nesse caso:
+A SEFAZ bloqueou temporariamente as consultas por consumo indevido. A tela mostra o horário exato até o qual as consultas estão bloqueadas e orienta a não repetir a operação antes desse horário.
+
+Nesse caso:
 
 1. não repita a consulta;
 2. aguarde o horário informado na tela;
@@ -257,10 +263,11 @@ Antes de publicar uma alteração:
 dotnet restore Nfe-Agendamento.sln
 dotnet test Nfe-Agendamento.sln -c Release
 node tests/js/product-mapping-regression.test.js
+node tests/js/lookup-feedback-regression.test.js
 dotnet build Nfe-Agendamento.sln -c Release
 ```
 
-O CI executa testes, regressão do mapeamento, build e geração do pacote Windows. Execuções antigas da mesma branch são canceladas quando uma nova começa.
+O CI executa testes, as regressões do mapeamento e do feedback fiscal, build e geração do pacote Windows. Execuções antigas da mesma branch são canceladas quando uma nova começa.
 
 ## Criar uma release
 
