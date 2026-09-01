@@ -103,6 +103,10 @@ public sealed class NfeLookupService
                 {
                     await _delay(attempt == 0 ? TimeSpan.FromSeconds(2) : TimeSpan.FromSeconds(5), cancellationToken);
                 }
+                catch (HttpRequestException)
+                {
+                    return new NfeLookupResult(NfeLookupStatus.Failed, null, null, "Não foi possível comunicar com a SEFAZ após novas tentativas.", false);
+                }
                 catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested && attempt < 2)
                 {
                     await _delay(attempt == 0 ? TimeSpan.FromSeconds(2) : TimeSpan.FromSeconds(5), cancellationToken);
@@ -110,6 +114,10 @@ public sealed class NfeLookupService
                 catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
                 {
                     return new NfeLookupResult(NfeLookupStatus.Failed, null, null, "A consulta à SEFAZ excedeu o tempo limite.", false);
+                }
+                catch (InvalidDataException)
+                {
+                    return new NfeLookupResult(NfeLookupStatus.Failed, null, null, "A resposta recebida da SEFAZ não pôde ser validada com segurança.", false);
                 }
             }
 
