@@ -103,17 +103,39 @@ public sealed class NfeLookupServiceTests
         Assert.Equal(2, transport.CallCount);
     }
 
+    [Fact]
+    public async Task Lookup_deduplicates_concurrent_requests_for_the_same_key()
+    {
+        using var temp = new TemporaryDirectory();
+        var coordinator = new FiscalRequestCoordinator();
+        var transport = new BlockingTransport();
+        var service1 = CreateService(Path.Combine(temp.Path, "a"), null, transport, coordinator: coordinator);
+        var service2 = CreateService(Path.Combine(temp.Path, "b"), null, transport, coordinator: coordinator);
+
+        var first = service1.LookupAsync(ValidKey);
+        await transport.FirstCallEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var second = service2.LookupAsync(ValidKey);
+        await Task.Delay(100);
+
+        Assert.Equal(1, transport.CallCount);
+        transport.ReleaseFirstCall.SetResult();
+        await Task.WhenAll(first, second);
+        Assert.Equal(1, transport.CallCount);
+    }
+
     private static NfeLookupService CreateService(
         string root,
         EncryptedXmlCache? cache,
         INfeDistributionTransport transport,
         FiscalCooldownStore? cooldown = null,
-        FiscalOperationGate? gate = null) =>
+        FiscalOperationGate? gate = null,
+        FiscalRequestCoordinator? coordinator = null) =>
         new(
             transport,
             cache ?? new EncryptedXmlCache(Path.Combine(root, "cache"), TimeProvider.System, TimeSpan.FromHours(24)),
             cooldown ?? new FiscalCooldownStore(Path.Combine(root, "cooldown.bin")),
-            gate: gate);
+            gate: gate,
+            coordinator: coordinator);
 
     private sealed class FakeTransport(NfeDistributionResponse response) : INfeDistributionTransport
     {
