@@ -22,44 +22,27 @@ const NfeProductMapping = (() => {
   ]);
 
   function normalizeTaxId(value) {
-    return String(value || '')
-      .toUpperCase()
-      .replace(/[^A-Z0-9]/g, '');
+    return String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
   }
 
   function normalizeProductName(value) {
-    const normalized = String(value || '')
-      .trim()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .toUpperCase()
-      .replace(/[^A-Z0-9]+/g, ' ')
-      .trim()
-      .replace(/\s+/g, ' ');
-
+    const normalized = String(value || '').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
     return normalized.replace(/^VERDURAS(?:\s+|$)/, '').trim();
   }
 
   function buildAliasIndex(catalog) {
     const aliases = {};
-
     for (const item of catalog || []) {
       const internalCode = String(item?.internalCode || '').trim();
       if (!internalCode) throw new Error('Produto do catálogo sem código interno.');
-
       for (const rawAlias of item?.aliases || []) {
         const alias = normalizeProductName(rawAlias);
         if (!alias) throw new Error(`Alias vazio no código interno ${internalCode}.`);
-
         const existingCode = aliases[alias];
-        if (existingCode && existingCode !== internalCode) {
-          throw new Error(`Alias conflitante ${alias}: códigos internos ${existingCode} e ${internalCode}.`);
-        }
-
+        if (existingCode && existingCode !== internalCode) throw new Error(`Alias conflitante ${alias}: códigos internos ${existingCode} e ${internalCode}.`);
         aliases[alias] = internalCode;
       }
     }
-
     return Object.freeze(aliases);
   }
 
@@ -70,17 +53,30 @@ const NfeProductMapping = (() => {
 
   const FERNANDO_KLEIN_ALIAS_INDEX = buildAliasIndex(FERNANDO_KLEIN_CATALOG);
 
+  function isFernandoKleinEmitter(emitterTaxId) {
+    return normalizeTaxId(emitterTaxId) === FERNANDO_KLEIN_TAX_ID;
+  }
+
   function resolveFernandoKleinProduct({ emitterTaxId, xProd, cProd }) {
     const sourceCode = String(cProd || '');
-    if (normalizeTaxId(emitterTaxId) !== FERNANDO_KLEIN_TAX_ID) {
-      return { sourceCode, internalCode: '' };
-    }
-
+    if (!isFernandoKleinEmitter(emitterTaxId)) return { sourceCode, internalCode: '' };
     const productName = normalizeProductName(xProd);
-    return {
-      sourceCode,
-      internalCode: FERNANDO_KLEIN_ALIAS_INDEX[productName] || ''
-    };
+    return { sourceCode, internalCode: FERNANDO_KLEIN_ALIAS_INDEX[productName] || '' };
+  }
+
+  function summarizeFernandoKleinProducts({ emitterTaxId, products }) {
+    const list = Array.isArray(products) ? products : [];
+    if (!isFernandoKleinEmitter(emitterTaxId)) {
+      return Object.freeze({ applies: false, total: list.length, mapped: 0, unmapped: 0, unknownProducts: Object.freeze([]) });
+    }
+    let mapped = 0;
+    const unknownProducts = [];
+    for (const product of list) {
+      const result = resolveFernandoKleinProduct({ emitterTaxId, xProd: product?.xProd, cProd: product?.cProd });
+      if (result.internalCode) mapped += 1;
+      else unknownProducts.push(Object.freeze({ cProd: String(product?.cProd || ''), xProd: String(product?.xProd || '') }));
+    }
+    return Object.freeze({ applies: true, total: list.length, mapped, unmapped: unknownProducts.length, unknownProducts: Object.freeze(unknownProducts) });
   }
 
   return Object.freeze({
@@ -88,6 +84,7 @@ const NfeProductMapping = (() => {
     normalizeTaxId,
     normalizeProductName,
     resolveFernandoKleinProduct,
+    summarizeFernandoKleinProducts,
     validateCatalog
   });
 })();
