@@ -32,6 +32,7 @@ internal static class Program
         builder.Services.AddSingleton<FiscalCooldownStore>();
         builder.Services.AddSingleton<FiscalOperationGate>();
         builder.Services.AddSingleton<FiscalRequestCoordinator>();
+        builder.Services.AddSingleton<FiscalAuditLog>();
         builder.Services.AddScoped<NfeLookupService>();
         builder.Services.AddScoped<INfeDistributionTransport>(sp =>
         {
@@ -91,6 +92,7 @@ internal static class Program
                     NfeLookupStatus.NotFound => Results.Json(new { status = "not_found", message = result.Message, cStat = result.CStat }, statusCode: 404),
                     NfeLookupStatus.ManifestationRequired => Results.Json(new { status = "manifestation_required", message = result.Message, cStat = result.CStat }, statusCode: 409),
                     NfeLookupStatus.Blocked => BlockedResult(result),
+                    NfeLookupStatus.Busy => BusyResult(result),
                     _ => Results.Json(new { status = "network_error", message = result.Message ?? "Não foi possível concluir a consulta." }, statusCode: 502)
                 };
             }
@@ -129,6 +131,14 @@ internal static class Program
         return new HeaderResult(response, result.BlockedUntilUtc);
     }
 
+    private static IResult BusyResult(NfeLookupResult result)
+    {
+        var response = Results.Json(
+            new { status = "fila_ocupada", message = result.Message ?? "A Central está processando muitas consultas. Tente novamente em alguns segundos." },
+            statusCode: StatusCodes.Status429TooManyRequests);
+        return new RetryAfterResult(response);
+    }
+
     private sealed class HeaderResult(IResult inner, DateTimeOffset? blockedUntilUtc) : IResult
     {
         public async Task ExecuteAsync(HttpContext httpContext)
@@ -138,6 +148,15 @@ internal static class Program
                 var seconds = Math.Max(1, (int)Math.Ceiling((until - DateTimeOffset.UtcNow).TotalSeconds));
                 httpContext.Response.Headers.RetryAfter = seconds.ToString(System.Globalization.CultureInfo.InvariantCulture);
             }
+            await inner.ExecuteAsync(httpContext);
+        }
+    }
+
+    private sealed class RetryAfterResult(IResult inner) : IResult
+    {
+        public async Task ExecuteAsync(HttpContext httpContext)
+        {
+            httpContext.Response.Headers.RetryAfter = "5";
             await inner.ExecuteAsync(httpContext);
         }
     }
