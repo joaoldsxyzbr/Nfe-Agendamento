@@ -20,32 +20,34 @@ public sealed class LocalRequestSecurityMiddleware
 
     private readonly RequestDelegate _next;
     private readonly CsrfTokenService _csrf;
+    private readonly CentralStateService _centralState;
 
-    public LocalRequestSecurityMiddleware(RequestDelegate next, CsrfTokenService csrf)
+    public LocalRequestSecurityMiddleware(RequestDelegate next, CsrfTokenService csrf, CentralStateService centralState)
     {
         _next = next ?? throw new ArgumentNullException(nameof(next));
         _csrf = csrf ?? throw new ArgumentNullException(nameof(csrf));
+        _centralState = centralState ?? throw new ArgumentNullException(nameof(centralState));
     }
 
     public async Task InvokeAsync(HttpContext context)
     {
         var isLoopback = context.Connection.RemoteIpAddress is not null
             && IPAddress.IsLoopback(context.Connection.RemoteIpAddress);
-        if (!isLoopback && !LocalHost.IsLanMode)
+        if (!isLoopback && !_centralState.IsEnabled)
         {
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
             return;
         }
 
         if (!AllowedHosts.Contains(context.Request.Host.Value)
-            && !(LocalHost.IsLanMode && IsLanHost(context.Request.Host)))
+            && !(_centralState.IsEnabled && IsLanHost(context.Request.Host)))
         {
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
             return;
         }
 
         var origin = context.Request.Headers.Origin.ToString();
-        if (!string.IsNullOrWhiteSpace(origin) && !IsAllowedOrigin(origin, context.Request.Host))
+        if (!string.IsNullOrWhiteSpace(origin) && !IsAllowedOrigin(origin, context.Request.Host, _centralState.IsEnabled))
         {
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
             return;
@@ -70,18 +72,18 @@ public sealed class LocalRequestSecurityMiddleware
     }
 
     private static bool IsLanHost(HostString host) =>
-        host.Port == 17345 && !string.IsNullOrWhiteSpace(host.Host);
+        host.Port == LocalHost.Port && !string.IsNullOrWhiteSpace(host.Host);
 
-    private static bool IsAllowedOrigin(string origin, HostString requestHost)
+    private static bool IsAllowedOrigin(string origin, HostString requestHost, bool centralEnabled)
     {
         if (AllowedOrigins.Contains(origin))
             return true;
 
-        return LocalHost.IsLanMode
+        return centralEnabled
             && Uri.TryCreate(origin, UriKind.Absolute, out var parsed)
             && string.Equals(parsed.Scheme, "http", StringComparison.OrdinalIgnoreCase)
             && string.Equals(parsed.Host, requestHost.Host, StringComparison.OrdinalIgnoreCase)
-            && parsed.Port == 17345;
+            && parsed.Port == LocalHost.Port;
     }
 
     private static bool IsMutating(string method) =>
