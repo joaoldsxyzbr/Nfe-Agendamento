@@ -122,7 +122,7 @@ Não publique essa porta na internet e não habilite regra para redes públicas.
 - o acesso por IP é apenas fallback do domínio interno;
 - não há banco externo nem hospedagem em nuvem.
 
-A senha numérica é armazenada como um verificador protegido por DPAPI, não em texto puro.
+A senha padrão da central é `agendamentoprado`. O acesso deve ficar restrito à rede privada da empresa.
 
 ## Consultas e erro 429
 
