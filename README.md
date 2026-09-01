@@ -11,7 +11,7 @@ Aplicativo Windows interno para consultar, visualizar e baixar NF-e usando o cer
 
 O pacote é autocontido e não exige instalação do .NET.
 
-> A `main` já contém o painel Windows da Central e o diagnóstico de rede/firewall. Essas mudanças ainda precisam de uma nova release para chegar ao pacote publicado.
+> A `main` já contém o painel Windows da Central, o diagnóstico de rede/firewall e o reforço da fila fiscal. Essas mudanças ainda precisam de uma nova release para chegar ao pacote publicado.
 
 ## Como o sistema funciona
 
@@ -73,10 +73,13 @@ Fechar a janela não encerra o aplicativo: ele continua na bandeja. Use **Sair**
 - cache local criptografado por DPAPI;
 - validade do cache de 24 horas;
 - coordenação fiscal única no PC central;
+- fila fiscal serializada e limitada a 12 operações únicas admitidas;
 - deduplicação de consultas simultâneas para a mesma chave;
+- proteção da fila contra novas consultas após `cStat=656`;
 - tratamento de `137`, `138` e `656`;
 - cooldown persistente de uma hora após `cStat=656`;
 - retry limitado apenas para falhas transitórias de rede;
+- auditoria fiscal operacional local sem armazenar a chave de acesso completa;
 - proteção CSRF, validação de Host e Origin;
 - controle do acesso remoto pelo painel Windows da Central;
 - seleção mais robusta do IPv4 da interface de rede;
@@ -86,6 +89,51 @@ Fechar a janela não encerra o aplicativo: ele continua na bandeja. Use **Sair**
 - mapeamento interno de produtos da Fernando Klein sem alterar o XML original.
 
 A consulta em lote foi removida para reduzir risco de consumo indevido e manter a operação da central simples e previsível para vários computadores.
+
+## Fila e proteção fiscal
+
+Todas as consultas externas à SEFAZ passam por uma única fila no PC central. O limite padrão é de **12 operações únicas admitidas ao mesmo tempo**: uma pode estar executando e até 11 podem aguardar.
+
+Consultas simultâneas da **mesma chave** são deduplicadas antes de entrar nessa fila. Portanto, vários cliques ou vários computadores pedindo a mesma NF-e compartilham a mesma operação fiscal e não consomem vagas adicionais.
+
+Quando o limite é atingido, uma nova chave não fica acumulada indefinidamente. A API responde:
+
+- HTTP `429`;
+- status `fila_ocupada`;
+- cabeçalho `Retry-After: 5`.
+
+Esse retorno é diferente do bloqueio `cStat=656`. Quando a SEFAZ retorna `656`, a Central grava um cooldown de uma hora. Operações que já estavam aguardando na fila verificam novamente esse estado antes de chamar a SEFAZ e são bloqueadas localmente sem gerar uma nova consulta fiscal.
+
+A comunicação fiscal também possui limites defensivos:
+
+- no máximo 3 tentativas quando a falha é transitória;
+- espera de 2 segundos antes da segunda tentativa e 5 segundos antes da terceira;
+- timeout de 45 segundos na comunicação com a SEFAZ;
+- resposta fiscal limitada a 10 MB;
+- corpo das requisições locais limitado a 256 KB.
+
+Falhas finais de rede, timeout e respostas inválidas são convertidas em erros controlados. Se o arquivo local de cooldown estiver corrompido ou não puder ser validado, a Central falha de forma segura e **não envia uma nova consulta à SEFAZ** até que o estado fiscal seja corrigido.
+
+## Auditoria fiscal local
+
+Cada operação fiscal compartilhada registra um evento operacional em:
+
+```text
+%LOCALAPPDATA%\NfeAgendamento\logs\fiscal-audit.jsonl
+```
+
+O arquivo gira ao atingir aproximadamente 2 MB e mantém um backup em `fiscal-audit.jsonl.1`.
+
+A auditoria registra somente:
+
+- horário UTC;
+- fingerprint SHA-256 de 12 caracteres da chave;
+- status interno da operação;
+- `cStat`, quando existir;
+- indicação de uso do cache;
+- duração da operação.
+
+Ela **não grava** XML, chave de acesso completa, certificado, chave privada, CPF/CNPJ nem a mensagem integral retornada pela SEFAZ. Uma falha ao gravar o log também não interrompe a consulta fiscal.
 
 ## Mapeamento Fernando Klein
 
@@ -151,26 +199,35 @@ Não publique a porta `17345` na internet e não crie regra ampla para redes pú
 - o certificado A1 permanece no Windows Certificate Store;
 - a chave privada não é enviada aos navegadores;
 - os XMLs ficam no PC central;
-- o cache é criptografado com DPAPI do usuário do Windows;
+- o cache e o cooldown fiscal são protegidos localmente com DPAPI;
 - operações de alteração e consulta fiscal exigem CSRF válido;
 - Host e Origin são validados;
 - conexões remotas são bloqueadas imediatamente quando a Central é parada;
 - o sistema local continua disponível em `127.0.0.1:17345`;
 - a regra automática do firewall fica limitada à rede privada, porta `17345` e executável atual;
+- a auditoria fiscal não armazena XML nem identificadores fiscais completos;
 - não há banco externo nem hospedagem em nuvem.
 
 O aplicativo não possui autenticação própria. Portanto, enquanto a Central estiver ativa, qualquer computador autorizado pela rede interna que consiga alcançar a porta 17345 poderá acessar a interface. Mantenha a porta restrita à rede da empresa.
 
-## Consultas e erro 429
+## Retornos HTTP 429
 
-O retorno HTTP 429 representa o bloqueio fiscal causado por `cStat=656`, chamado pela SEFAZ de consumo indevido. Nesse caso:
+Existem dois cenários diferentes que usam HTTP `429`:
+
+### `fila_ocupada`
+
+A Central já possui 12 operações fiscais únicas admitidas. Aguarde pelo menos os 5 segundos indicados em `Retry-After` e tente novamente. Esse caso **não significa bloqueio da SEFAZ**.
+
+### `consumo_indevido` / `cStat=656`
+
+A SEFAZ bloqueou temporariamente as consultas por consumo indevido. Nesse caso:
 
 1. não repita a consulta;
 2. aguarde o horário informado na tela;
 3. verifique se outro sistema não está consultando o mesmo CNPJ;
 4. confirme que todos os usuários estão usando a central, e não cópias independentes do aplicativo.
 
-A central impede chamadas simultâneas duplicadas da mesma chave e serializa o acesso fiscal, mas não pode impedir outro sistema externo de consultar o mesmo CNPJ.
+O cooldown é persistido por uma hora e vale para toda a Central. A fila revalida esse estado antes de cada acesso à SEFAZ, inclusive para consultas que já estavam aguardando.
 
 ## Atualização
 
@@ -184,7 +241,7 @@ Para atualizar:
 
 Como a regra do firewall é vinculada ao caminho do executável, se a aplicação for movida para outra pasta o painel pode pedir para configurar a regra novamente. Isso é esperado e evita liberar executáveis diferentes pela mesma regra.
 
-Não substitua a pasta de dados do usuário. O cache, o estado fiscal e a configuração da Central ficam em:
+Não substitua a pasta de dados do usuário. O cache, o estado fiscal, a auditoria e a configuração da Central ficam em:
 
 ```text
 %LOCALAPPDATA%\NfeAgendamento
