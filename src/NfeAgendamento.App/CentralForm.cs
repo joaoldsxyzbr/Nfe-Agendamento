@@ -36,20 +36,33 @@ public sealed class CentralForm : Form
         ClientSize = new Size(590, 500);
         Font = new Font("Segoe UI", 10F, FontStyle.Regular, GraphicsUnit.Point);
         Icon = Icon.ExtractAssociatedIcon(Environment.ProcessPath ?? string.Empty) ?? SystemIcons.Application;
+        BackColor = CentralTheme.Background;
+        ForeColor = CentralTheme.Text;
 
         var title = new Label
         {
             Text = "Central NFe Agendamento",
             Font = new Font("Segoe UI Semibold", 18F, FontStyle.Bold, GraphicsUnit.Point),
             AutoSize = true,
-            Location = new Point(28, 24)
+            Location = new Point(28, 24),
+            ForeColor = CentralTheme.BrandBlue,
+            BackColor = Color.Transparent
         };
 
         var subtitle = new Label
         {
             Text = "Controle e diagnóstico do acesso dos outros computadores.",
             AutoSize = true,
-            Location = new Point(31, 62)
+            Location = new Point(31, 62),
+            ForeColor = CentralTheme.MutedText,
+            BackColor = Color.Transparent
+        };
+
+        var brandAccent = new Panel
+        {
+            Location = new Point(31, 88),
+            Size = new Size(528, 4),
+            BackColor = CentralTheme.BrandYellow
         };
 
         _statusValue = CreateValueLabel(190, 106);
@@ -64,11 +77,14 @@ public sealed class CentralForm : Form
         {
             AutoSize = false,
             Location = new Point(31, 366),
-            Size = new Size(528, 48)
+            Size = new Size(528, 48),
+            ForeColor = CentralTheme.MutedText,
+            BackColor = Color.Transparent
         };
 
         Controls.Add(title);
         Controls.Add(subtitle);
+        Controls.Add(brandAccent);
         Controls.Add(CreateCaption("Status", 31, 106));
         Controls.Add(CreateCaption("IP deste PC", 31, 140));
         Controls.Add(CreateCaption("Porta", 31, 174));
@@ -87,10 +103,11 @@ public sealed class CentralForm : Form
 
         _startButton = new Button
         {
-            Text = PrimaryActionLabels[0],
+            Text = "Iniciar Central",
             Size = new Size(125, 38),
             Location = new Point(31, 438)
         };
+        StylePrimaryButton(_startButton, CentralTheme.BrandBlue, Color.White);
         _startButton.Click += (_, _) =>
         {
             _centralState.SetEnabled(true);
@@ -99,10 +116,11 @@ public sealed class CentralForm : Form
 
         _stopButton = new Button
         {
-            Text = PrimaryActionLabels[1],
+            Text = "Parar Central",
             Size = new Size(125, 38),
             Location = new Point(166, 438)
         };
+        StyleOutlineButton(_stopButton);
         _stopButton.Click += (_, _) =>
         {
             _centralState.SetEnabled(false);
@@ -111,10 +129,11 @@ public sealed class CentralForm : Form
 
         var openButton = new Button
         {
-            Text = PrimaryActionLabels[2],
+            Text = "Abrir sistema",
             Size = new Size(125, 38),
             Location = new Point(301, 438)
         };
+        StylePrimaryButton(openButton, CentralTheme.BrandBlueSoft, Color.White);
         openButton.Click += (_, _) => OpenSystem();
 
         _firewallButton = new Button
@@ -123,6 +142,7 @@ public sealed class CentralForm : Form
             Size = new Size(133, 38),
             Location = new Point(436, 438)
         };
+        StylePrimaryButton(_firewallButton, CentralTheme.BrandYellow, CentralTheme.Text);
         _firewallButton.Click += async (_, _) => await ConfigureFirewallAsync();
 
         Controls.Add(_startButton);
@@ -153,15 +173,40 @@ public sealed class CentralForm : Form
     {
         Text = text + ":",
         AutoSize = true,
-        Location = new Point(x, y)
+        Location = new Point(x, y),
+        ForeColor = CentralTheme.MutedText,
+        BackColor = Color.Transparent
     };
 
     private static Label CreateValueLabel(int x, int y) => new()
     {
         AutoSize = true,
         Font = new Font("Segoe UI Semibold", 10F, FontStyle.Bold, GraphicsUnit.Point),
-        Location = new Point(x, y)
+        Location = new Point(x, y),
+        ForeColor = CentralTheme.Text,
+        BackColor = Color.Transparent
     };
+
+    private static void StylePrimaryButton(Button button, Color backColor, Color foreColor)
+    {
+        button.FlatStyle = FlatStyle.Flat;
+        button.FlatAppearance.BorderSize = 0;
+        button.BackColor = backColor;
+        button.ForeColor = foreColor;
+        button.Cursor = Cursors.Hand;
+        button.UseVisualStyleBackColor = false;
+    }
+
+    private static void StyleOutlineButton(Button button)
+    {
+        button.FlatStyle = FlatStyle.Flat;
+        button.FlatAppearance.BorderSize = 1;
+        button.FlatAppearance.BorderColor = CentralTheme.BrandBlue;
+        button.BackColor = CentralTheme.Surface;
+        button.ForeColor = CentralTheme.BrandBlue;
+        button.Cursor = Cursors.Hand;
+        button.UseVisualStyleBackColor = false;
+    }
 
     private void CentralStateChanged(object? sender, EventArgs e)
     {
@@ -180,6 +225,7 @@ public sealed class CentralForm : Form
         var address = CentralNetworkInfo.FindLanIPv4();
 
         _statusValue.Text = enabled ? "Central ativa" : "Central parada";
+        _statusValue.ForeColor = enabled ? CentralTheme.Success : CentralTheme.MutedText;
         _ipValue.Text = address?.ToString() ?? "Não identificado";
         _portValue.Text = LocalHost.Port.ToString(System.Globalization.CultureInfo.InvariantCulture);
         _urlValue.Text = enabled && address is not null
@@ -207,10 +253,11 @@ public sealed class CentralForm : Form
             if (IsDisposed)
                 return;
 
-            _networkValue.Text = HealthText(snapshot.NetworkStatus);
-            _listenerValue.Text = HealthText(snapshot.ListenerStatus);
-            _firewallValue.Text = HealthText(snapshot.FirewallStatus);
+            SetHealthLabel(_networkValue, snapshot.NetworkStatus);
+            SetHealthLabel(_listenerValue, snapshot.ListenerStatus);
+            SetHealthLabel(_firewallValue, snapshot.FirewallStatus);
             _summaryValue.Text = snapshot.Summary;
+            _summaryValue.ForeColor = SummaryColor(snapshot);
             _urlValue.Text = _centralState.IsEnabled ? snapshot.AccessUrl : "Acesso externo desativado";
             _firewallButton.Enabled = _centralState.IsEnabled && snapshot.FirewallStatus != NetworkHealthStatus.Ok;
         }
@@ -220,10 +267,43 @@ public sealed class CentralForm : Form
         }
     }
 
+    private static void SetHealthLabel(Label label, NetworkHealthStatus status)
+    {
+        label.Text = HealthText(status);
+        label.ForeColor = status switch
+        {
+            NetworkHealthStatus.Ok => CentralTheme.Success,
+            NetworkHealthStatus.ActionRequired => CentralTheme.Warning,
+            NetworkHealthStatus.Error => CentralTheme.Danger,
+            _ => CentralTheme.MutedText
+        };
+    }
+
+    private static Color SummaryColor(CentralNetworkDiagnosticsSnapshot snapshot)
+    {
+        if (snapshot.NetworkStatus == NetworkHealthStatus.Error
+            || snapshot.ListenerStatus == NetworkHealthStatus.Error
+            || snapshot.FirewallStatus == NetworkHealthStatus.Error)
+            return CentralTheme.Danger;
+
+        if (snapshot.NetworkStatus == NetworkHealthStatus.ActionRequired
+            || snapshot.ListenerStatus == NetworkHealthStatus.ActionRequired
+            || snapshot.FirewallStatus == NetworkHealthStatus.ActionRequired)
+            return CentralTheme.Warning;
+
+        if (snapshot.NetworkStatus == NetworkHealthStatus.Ok
+            && snapshot.ListenerStatus == NetworkHealthStatus.Ok
+            && snapshot.FirewallStatus == NetworkHealthStatus.Ok)
+            return CentralTheme.Success;
+
+        return CentralTheme.MutedText;
+    }
+
     private async Task ConfigureFirewallAsync()
     {
         _firewallButton.Enabled = false;
         _summaryValue.Text = "Solicitando permissão do Windows para configurar a porta 17345...";
+        _summaryValue.ForeColor = CentralTheme.Warning;
 
         var configured = await _firewall.EnsureRuleAsync();
         if (!configured)
