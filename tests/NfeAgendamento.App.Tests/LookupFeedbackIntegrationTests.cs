@@ -28,4 +28,14 @@ public sealed class LookupFeedbackIntegrationTests
         Assert.Contains("response.headers.get('Retry-After')", script, StringComparison.Ordinal);
         Assert.DoesNotContain("Consultas temporariamente bloqueadas até", script, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void Remote_client_hides_certificate_admin_when_server_returns_forbidden()
+    {
+        var script = Fixture("app.js");
+
+        Assert.Contains("listResponse.status === 403", script, StringComparison.Ordinal);
+        Assert.Contains("document.querySelector('.certificate-panel')", script, StringComparison.Ordinal);
+        Assert.Contains("certificatePanel.hidden = true", script, StringComparison.Ordinal);
+    }
 }
