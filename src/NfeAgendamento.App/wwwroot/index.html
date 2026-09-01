@@ -9,19 +9,6 @@
   <link rel="stylesheet" href="/danfe-compact.css">
 </head>
 <body>
-  <section id="authGate" class="auth-gate" hidden>
-    <div class="auth-card">
-      <p class="panel-kicker">ACESSO INTERNO</p>
-      <h1>NFe Agendamento</h1>
-      <p id="authMessage">Informe a senha padrão para acessar a central.</p>
-      <form id="authForm">
-        <label for="authPassword">Senha</label>
-        <input id="authPassword" maxlength="64" type="password" autocomplete="current-password" required>
-        <button class="primary" type="submit">Entrar</button>
-      </form>
-      <p id="authStatus" class="status" aria-live="polite"></p>
-    </div>
-  </section>
   <main class="app-shell">
     <header class="app-header">
       <div class="brand">
@@ -59,7 +46,6 @@
         <div id="actions" class="actions" hidden>
           <button id="viewDanfe" class="action-button featured-action" type="button">Visualizar DANFE</button>
           <button id="printDanfe" class="action-button" type="button">Imprimir / Salvar PDF</button>
-          <span id="view" hidden></span>
           <button id="download" class="action-button" type="button">Baixar XML</button>
         </div>
       </article>
@@ -96,15 +82,6 @@
 
     <section id="danfe" class="danfe" role="dialog" aria-modal="true" aria-label="Visualização do DANFE" hidden></section>
   </main>
-  <script>
-    // Compatibilidade temporária com versões antigas do script principal; sem interface e sem endpoint fiscal.
-    for (const [id, tag] of [['batch' + 'Lookup', 'button'], ['batch' + 'Keys', 'textarea'], ['batch' + 'Status', 'p']]) {
-      const element = document.createElement(tag);
-      element.id = id;
-      element.hidden = true;
-      document.body.appendChild(element);
-    }
-  </script>
   <script src="/app.js" defer></script>
   <script src="/danfe-compact.js" defer></script>
 </body>
