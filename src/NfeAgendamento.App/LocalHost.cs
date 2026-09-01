@@ -4,6 +4,7 @@ namespace NfeAgendamento.App;
 
 public static class LocalHost
 {
+    public const int Port = 17345;
     public const string ListenUrl = "http://127.0.0.1:17345";
     public const string LanListenUrl = "http://0.0.0.0:17345";
     public const string LanBrowserUrl = "http://nfeagendamento.local:17345";
