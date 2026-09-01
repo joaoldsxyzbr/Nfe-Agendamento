@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Net;
 using System.Net.Http;
 using NfeAgendamento.App.Storage;
 
@@ -128,13 +129,13 @@ public sealed class NfeLookupService
                     response = await _transport.QueryByAccessKeyAsync(accessKey, cancellationToken);
                     break;
                 }
-                catch (HttpRequestException) when (attempt < 2)
+                catch (HttpRequestException ex) when (IsTransientHttpError(ex) && attempt < 2)
                 {
                     await _delay(attempt == 0 ? TimeSpan.FromSeconds(2) : TimeSpan.FromSeconds(5), cancellationToken);
                 }
                 catch (HttpRequestException)
                 {
-                    return new NfeLookupResult(NfeLookupStatus.Failed, null, null, "Não foi possível comunicar com a SEFAZ após novas tentativas.", false);
+                    return new NfeLookupResult(NfeLookupStatus.Failed, null, null, "Não foi possível comunicar com a SEFAZ.", false);
                 }
                 catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested && attempt < 2)
                 {
@@ -188,6 +189,16 @@ public sealed class NfeLookupService
                 return new NfeLookupResult(NfeLookupStatus.Failed, null, null, "A resposta recebida da SEFAZ não pôde ser validada com segurança.", false);
             }
         }
+    }
+
+    private static bool IsTransientHttpError(HttpRequestException exception)
+    {
+        if (exception.StatusCode is null)
+            return true;
+
+        var statusCode = (int)exception.StatusCode.Value;
+        return exception.StatusCode is HttpStatusCode.RequestTimeout or HttpStatusCode.TooManyRequests
+            || statusCode >= 500;
     }
 
     private static NfeLookupResult InvalidFiscalStateResult() =>
