@@ -84,6 +84,7 @@ const NfeProductMapping = (() => {
   }
 
   return Object.freeze({
+    catalog: FERNANDO_KLEIN_CATALOG,
     normalizeTaxId,
     normalizeProductName,
     resolveFernandoKleinProduct,
