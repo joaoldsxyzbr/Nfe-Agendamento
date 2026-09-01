@@ -55,6 +55,18 @@ public sealed class DanfeStaticAssetsTests
     }
 
     [Fact]
+    public void Application_does_not_expose_batch_lookup()
+    {
+        var html = Fixture("index.html");
+        var program = Fixture("Program.cs");
+
+        Assert.DoesNotContain("Consulta em lote", html, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("batchLookup", html, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("/api/nfe/batch", program, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("BatchLookupService", program, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Danfe_uses_a4_space_and_only_renders_transport_when_it_has_useful_data()
     {
         var script = Fixture("danfe-compact.js");
