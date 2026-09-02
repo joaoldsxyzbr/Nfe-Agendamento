@@ -62,30 +62,9 @@ public sealed class SharedQueueProcessor
         if (!_paths.ValidateForClient())
             return false;
 
-        string? candidate;
-        try
-        {
-            candidate = Directory.EnumerateFiles(_paths.QueueDirectory, "*.req", SearchOption.TopDirectoryOnly)
-                .OrderBy(File.GetCreationTimeUtc)
-                .FirstOrDefault();
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or DirectoryNotFoundException)
-        {
+        var candidate = FindNextValidCandidate(out var requestId);
+        if (candidate is null)
             return false;
-        }
-
-        if (candidate is null || !TryParseRequestId(candidate, out var requestId))
-            return false;
-
-        try
-        {
-            if (SharedQueueFileIO.IsReparsePoint(candidate))
-                return false;
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            return false;
-        }
 
         var processingPath = _paths.ProcessingPath(requestId);
         try
@@ -189,6 +168,49 @@ public sealed class SharedQueueProcessor
         return Task.CompletedTask;
     }
 
+    private string? FindNextValidCandidate(out Guid requestId)
+    {
+        requestId = Guid.Empty;
+        string[] candidates;
+        try
+        {
+            candidates = Directory.EnumerateFiles(_paths.QueueDirectory, "*.req", SearchOption.TopDirectoryOnly)
+                .OrderBy(File.GetCreationTimeUtc)
+                .ToArray();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or DirectoryNotFoundException)
+        {
+            return null;
+        }
+
+        foreach (var candidate in candidates)
+        {
+            if (!TryParseRequestId(candidate, out var parsedId))
+            {
+                TryDelete(candidate);
+                continue;
+            }
+
+            try
+            {
+                if (SharedQueueFileIO.IsReparsePoint(candidate))
+                {
+                    TryDelete(candidate);
+                    continue;
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+            {
+                continue;
+            }
+
+            requestId = parsedId;
+            return candidate;
+        }
+
+        return null;
+    }
+
     private async Task PublishResponseAsync(QueueResponseEnvelope response, CancellationToken cancellationToken)
     {
         var target = _paths.ResponsePath(response.RequestId);
@@ -225,12 +247,18 @@ public sealed class SharedQueueProcessor
         foreach (var processingPath in files)
         {
             if (!TryParseRequestId(processingPath, out var requestId))
+            {
+                TryDelete(processingPath);
                 continue;
+            }
 
             try
             {
                 if (SharedQueueFileIO.IsReparsePoint(processingPath))
+                {
+                    TryDelete(processingPath);
                     continue;
+                }
 
                 if (File.Exists(_paths.ResponsePath(requestId)))
                 {
