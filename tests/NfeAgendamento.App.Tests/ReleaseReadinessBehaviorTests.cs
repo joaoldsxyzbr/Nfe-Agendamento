@@ -31,7 +31,7 @@ public sealed class ReleaseReadinessBehaviorTests
     }
 
     [Fact]
-    public void Bootstrap_exposes_only_operational_session_and_lan_fields()
+    public void Bootstrap_exposes_only_operational_shared_queue_fields()
     {
         var source = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "Program.cs"));
         var start = source.IndexOf("app.MapGet(\"/api/bootstrap\"", StringComparison.Ordinal);
@@ -41,8 +41,13 @@ public sealed class ReleaseReadinessBehaviorTests
         var bootstrap = source[start..end];
 
         Assert.Contains("csrfToken", bootstrap, StringComparison.Ordinal);
-        Assert.Contains("lanMode", bootstrap, StringComparison.Ordinal);
-        Assert.Contains("accessUrl", bootstrap, StringComparison.Ordinal);
+        Assert.Contains("configuredAsCentral", bootstrap, StringComparison.Ordinal);
+        Assert.Contains("centralActive", bootstrap, StringComparison.Ordinal);
+        Assert.Contains("centralOnline", bootstrap, StringComparison.Ordinal);
+        Assert.Contains("shareAvailable", bootstrap, StringComparison.Ordinal);
+        Assert.Contains("sharedFolder", bootstrap, StringComparison.Ordinal);
+        Assert.DoesNotContain("lanMode", bootstrap, StringComparison.Ordinal);
+        Assert.DoesNotContain("accessUrl", bootstrap, StringComparison.Ordinal);
         Assert.DoesNotContain("Thumbprint", bootstrap, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Subject", bootstrap, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Certificate", bootstrap, StringComparison.OrdinalIgnoreCase);
