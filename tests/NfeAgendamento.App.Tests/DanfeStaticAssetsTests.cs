@@ -29,7 +29,6 @@ public sealed class DanfeStaticAssetsTests
         var css = Fixture("styles.css");
 
         Assert.Contains("class=\"app-shell\"", html);
-        Assert.Contains("class=\"workspace-grid\"", html);
         Assert.Contains("color-scheme: dark", css);
         Assert.Contains(".danfe-page", css);
         Assert.Contains("background: #fff", css);
@@ -75,14 +74,23 @@ public sealed class DanfeStaticAssetsTests
     }
 
     [Fact]
-    public void Main_cards_are_stretched_to_the_same_height()
+    public void Application_uses_three_operational_tabs_without_step_badges()
     {
+        var html = Fixture("index.html");
         var css = Fixture("ui-adjustments.css");
 
-        Assert.Contains(".workspace-grid", css);
-        Assert.Contains("align-items: stretch", css);
-        Assert.Contains(".workspace-grid > .panel", css);
-        Assert.Contains("height: 100%", css);
+        Assert.Contains("role=\"tablist\"", html);
+        Assert.Contains("data-tab=\"lookup\"", html);
+        Assert.Contains("data-tab=\"batch\"", html);
+        Assert.Contains("data-tab=\"config\"", html);
+        Assert.Contains("id=\"tabPanelLookup\"", html);
+        Assert.Contains("id=\"tabPanelBatch\"", html);
+        Assert.Contains("id=\"tabPanelConfig\"", html);
+        Assert.Contains("/tabs.js", html);
+        Assert.DoesNotContain("step-badge", html, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(".app-tabs", css);
+        Assert.Contains(".tab-button[aria-selected=\"true\"]", css);
+        Assert.Contains("body {\n  background: #081522;", css);
     }
 
     [Fact]
