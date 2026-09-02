@@ -76,6 +76,9 @@ jobs:
       - name: Testar feedback de erros fiscais
         run: node tests/js/lookup-feedback-regression.test.js
 
+      - name: Testar consulta em lote
+        run: node tests/js/batch-lookup-regression.test.js
+
       - name: Testar prontidão dos workflows de release
         run: node tests/js/release-readiness-regression.test.js
 
