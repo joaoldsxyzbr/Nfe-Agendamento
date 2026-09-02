@@ -154,14 +154,57 @@ function applyDanfeZoom(zoom = danfeZoom) {
   });
 }
 
+function ensureDanfeZoomHint() {
+  const toolbar = document.querySelector('#danfe .danfe-toolbar');
+  if (!toolbar || toolbar.querySelector('.danfe-zoom-hint')) return;
+
+  const hint = document.createElement('span');
+  hint.className = 'danfe-zoom-hint';
+  hint.textContent = 'Ctrl + scroll para zoom';
+  toolbar.querySelector('.danfe-toolbar-actions')?.before(hint);
+}
+
+function resetDanfeZoom() {
+  danfeZoom = 1;
+  applyDanfeZoom(1);
+  const scroll = document.querySelector('#danfe .danfe-scroll');
+  if (scroll) {
+    scroll.scrollLeft = 0;
+    scroll.scrollTop = 0;
+  }
+}
+
+const originalOpenDanfe = openDanfe;
+openDanfe = function openDanfeWithZoomReset() {
+  originalOpenDanfe();
+  resetDanfeZoom();
+  ensureDanfeZoomHint();
+};
+
 const danfeViewer = document.getElementById('danfe');
 if (danfeViewer) {
   danfeViewer.addEventListener('wheel', event => {
     if (!event.ctrlKey || danfeViewer.hidden) return;
 
+    const scroll = event.target.closest?.('.danfe-scroll');
+    if (!scroll) return;
+
     event.preventDefault();
+    const oldZoom = danfeZoom;
     const direction = event.deltaY < 0 ? 1 : -1;
-    applyDanfeZoom(Number((danfeZoom + (direction * DANFE_ZOOM_STEP)).toFixed(2)));
+    const nextZoom = Math.min(DANFE_ZOOM_MAX, Math.max(DANFE_ZOOM_MIN, Number((oldZoom + (direction * DANFE_ZOOM_STEP)).toFixed(2))));
+    if (nextZoom === oldZoom) return;
+
+    const viewportRect = scroll.getBoundingClientRect();
+    const pointerX = event.clientX - viewportRect.left;
+    const pointerY = event.clientY - viewportRect.top;
+    const contentX = scroll.scrollLeft + pointerX;
+    const contentY = scroll.scrollTop + pointerY;
+    const ratio = nextZoom / oldZoom;
+
+    applyDanfeZoom(nextZoom);
+    scroll.scrollLeft = (contentX * ratio) - pointerX;
+    scroll.scrollTop = (contentY * ratio) - pointerY;
   }, { passive: false });
 }
 
