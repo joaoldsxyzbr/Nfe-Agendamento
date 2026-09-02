@@ -212,6 +212,122 @@ textarea::placeholder {
   margin-bottom: 14px;
 }
 
+.batch-panel {
+  margin-top: 18px;
+}
+
+.batch-panel textarea {
+  width: 100%;
+  min-height: 144px;
+  resize: vertical;
+  font-family: Consolas, "Courier New", monospace;
+  line-height: 1.55;
+}
+
+.batch-input-summary,
+.batch-summary {
+  margin-top: 8px;
+}
+
+.batch-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.batch-actions button {
+  min-width: 138px;
+}
+
+.batch-table-wrap {
+  margin-top: 16px;
+  overflow-x: auto;
+  border: 1px solid #294d70;
+  border-radius: 10px;
+}
+
+.batch-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 760px;
+  background: #071c32;
+}
+
+.batch-table th,
+.batch-table td {
+  padding: 11px 12px;
+  border-bottom: 1px solid #1d405f;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.batch-table th {
+  color: #dce7f2;
+  background: #0e3152;
+  font-size: .78rem;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.batch-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.batch-key {
+  font-family: Consolas, "Courier New", monospace;
+  font-size: .84rem;
+  white-space: nowrap;
+}
+
+.batch-status {
+  display: inline-block;
+  font-weight: 600;
+}
+
+.batch-status-pending,
+.batch-status-cancelled {
+  color: var(--muted);
+}
+
+.batch-status-running,
+.batch-status-waiting {
+  color: var(--prado-yellow);
+}
+
+.batch-status-success {
+  color: var(--green);
+}
+
+.batch-status-warning {
+  color: #ffcf67;
+}
+
+.batch-status-error {
+  color: var(--danger);
+}
+
+.batch-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.batch-row-action {
+  padding: 7px 10px;
+  border: 1px solid #45698b;
+  border-radius: 7px;
+  background: #143555;
+  color: #edf3f8;
+  font-size: .78rem;
+  cursor: pointer;
+}
+
+.batch-row-action:hover {
+  border-color: var(--prado-yellow);
+  color: var(--prado-yellow);
+}
+
 @media (max-width: 620px) {
   .lookup-actions-row {
     grid-template-columns: 1fr;
@@ -220,5 +336,14 @@ textarea::placeholder {
   .connection-pill {
     margin-left: 0;
     margin-top: -4px;
+  }
+
+  .batch-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .batch-actions button {
+    width: 100%;
   }
 }
