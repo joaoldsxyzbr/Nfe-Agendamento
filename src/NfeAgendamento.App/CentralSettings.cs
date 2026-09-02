@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace NfeAgendamento.App;
 
-public sealed record CentralSettings(bool Enabled);
+public sealed record CentralSettings(bool ConfiguredAsCentral = false);
 
 public sealed class CentralSettingsStore
 {
@@ -24,7 +24,7 @@ public sealed class CentralSettingsStore
     public CentralSettings Load()
     {
         if (!File.Exists(_path))
-            return new CentralSettings(true);
+            return new CentralSettings(false);
 
         try
         {
@@ -55,35 +55,41 @@ public sealed class CentralStateService
 {
     private readonly object _sync = new();
     private readonly CentralSettingsStore _store;
-    private bool _enabled;
+    private bool _configuredAsCentral;
 
     public CentralStateService(CentralSettingsStore store)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
-        _enabled = _store.Load().Enabled;
+        _configuredAsCentral = _store.Load().ConfiguredAsCentral;
     }
 
-    public bool IsEnabled
+    public bool IsConfiguredAsCentral
     {
         get
         {
-            lock (_sync) return _enabled;
+            lock (_sync) return _configuredAsCentral;
         }
     }
 
+    // Compatibilidade temporária enquanto a interface LAN antiga é removida.
+    public bool IsEnabled => IsConfiguredAsCentral;
+
     public event EventHandler? Changed;
 
-    public void SetEnabled(bool enabled)
+    public void SetConfiguredAsCentral(bool configuredAsCentral)
     {
         lock (_sync)
         {
-            if (_enabled == enabled)
+            if (_configuredAsCentral == configuredAsCentral)
                 return;
 
-            _store.Save(new CentralSettings(enabled));
-            _enabled = enabled;
+            _store.Save(new CentralSettings(configuredAsCentral));
+            _configuredAsCentral = configuredAsCentral;
         }
 
         Changed?.Invoke(this, EventArgs.Empty);
     }
+
+    // Compatibilidade temporária enquanto consumidores existentes migram para o novo nome.
+    public void SetEnabled(bool enabled) => SetConfiguredAsCentral(enabled);
 }
