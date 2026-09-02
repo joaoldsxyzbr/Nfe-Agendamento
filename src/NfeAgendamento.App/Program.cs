@@ -162,7 +162,9 @@ internal static class Program
             return;
         }
 
-        Application.Run(new TrayApplicationContext(centralState));
+        var centralRuntime = app.Services.GetRequiredService<SharedQueueCentralService>();
+        var queueClient = app.Services.GetRequiredService<SharedQueueClient>();
+        Application.Run(new TrayApplicationContext(centralState, centralRuntime, queueClient));
         await app.StopAsync();
     }
 
