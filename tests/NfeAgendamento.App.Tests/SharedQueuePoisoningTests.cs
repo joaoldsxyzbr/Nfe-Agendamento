@@ -60,6 +60,55 @@ public sealed class SharedQueuePoisoningTests
         }
     }
 
+    [Fact]
+    public async Task Invalid_oldest_pairing_filename_cannot_starve_legitimate_client()
+    {
+        var root = NewRoot();
+        try
+        {
+            var share = Path.Combine(root, "share");
+            Directory.CreateDirectory(share);
+            var paths = new SharedQueuePaths(share);
+            paths.InitializeAsCentral();
+
+            var poison = Path.Combine(paths.PairingDirectory, "arquivo-invalido.pair.req");
+            await File.WriteAllTextAsync(poison, "lixo");
+            File.SetCreationTimeUtc(poison, DateTime.UtcNow.AddMinutes(-5));
+
+            var keyStore = new CentralKeyStore(Path.Combine(root, "central.key"));
+            var authorized = new AuthorizedClientStore(Path.Combine(root, "authorized.bin"));
+            var codes = new PairingCodeService();
+            var code = codes.Generate();
+            var pairingKey = PairingCodeService.DeriveKey(code.Code);
+            try
+            {
+                var requestId = Guid.NewGuid();
+                var request = SharedQueuePairingCrypto.CreateRequest(
+                    requestId,
+                    new QueuePairingRequestPayload(Guid.NewGuid(), "CA02"),
+                    pairingKey);
+                await File.WriteAllBytesAsync(
+                    paths.PairingRequestPath(requestId),
+                    JsonSerializer.SerializeToUtf8Bytes(request));
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(pairingKey);
+            }
+
+            var processor = new SharedQueuePairingProcessor(paths, codes, authorized, keyStore);
+            var processed = await processor.ProcessOneAsync();
+
+            Assert.True(processed);
+            Assert.Equal(1, authorized.Count);
+            Assert.False(File.Exists(poison));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static string NewRoot()
     {
         var root = Path.Combine(Path.GetTempPath(), "nfe-agendamento-poison-tests", Guid.NewGuid().ToString("N"));
