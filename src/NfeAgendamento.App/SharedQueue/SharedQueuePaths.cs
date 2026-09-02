@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace NfeAgendamento.App.SharedQueue;
 
 public sealed class SharedQueuePaths
@@ -30,6 +32,7 @@ public sealed class SharedQueuePaths
     public string ProcessingDirectory => ChildDirectory("processando");
     public string ResponsesDirectory => ChildDirectory("respostas");
     public string StatusDirectory => ChildDirectory("status");
+    public string PairingDirectory => ChildDirectory("pareamento");
     public string MarkerPath => EnsureInsideRoot(Path.Combine(Root, ".nfe-agendamento"));
 
     public string RequestPath(Guid requestId) =>
@@ -46,6 +49,21 @@ public sealed class SharedQueuePaths
 
     public string ResponseTemporaryPath(Guid requestId) =>
         EnsureInsideRoot(Path.Combine(ResponsesDirectory, $"{ValidateId(requestId):N}.res.tmp"));
+
+    public string PairingRequestPath(Guid requestId) =>
+        EnsureInsideRoot(Path.Combine(PairingDirectory, $"{ValidateId(requestId):N}.pair.req"));
+
+    public string PairingRequestTemporaryPath(Guid requestId) =>
+        EnsureInsideRoot(Path.Combine(PairingDirectory, $"{ValidateId(requestId):N}.pair.req.tmp"));
+
+    public string PairingProcessingPath(Guid requestId) =>
+        EnsureInsideRoot(Path.Combine(PairingDirectory, $"{ValidateId(requestId):N}.pair.processing"));
+
+    public string PairingResponsePath(Guid requestId) =>
+        EnsureInsideRoot(Path.Combine(PairingDirectory, $"{ValidateId(requestId):N}.pair.res"));
+
+    public string PairingResponseTemporaryPath(Guid requestId) =>
+        EnsureInsideRoot(Path.Combine(PairingDirectory, $"{ValidateId(requestId):N}.pair.res.tmp"));
 
     public string HeartbeatTemporaryPath(Guid writeId) =>
         EnsureInsideRoot(Path.Combine(StatusDirectory, $"heartbeat.{ValidateId(writeId):N}.tmp"));
@@ -65,16 +83,40 @@ public sealed class SharedQueuePaths
     public void InitializeAsCentral()
     {
         if (!Directory.Exists(Root))
-            throw new DirectoryNotFoundException($"A pasta compartilhada '{DefaultRoot}' não está disponível.");
+            throw new DirectoryNotFoundException($"A pasta compartilhada '{Root}' não está disponível.");
 
-        Directory.CreateDirectory(QueueDirectory);
-        Directory.CreateDirectory(ProcessingDirectory);
-        Directory.CreateDirectory(ResponsesDirectory);
-        Directory.CreateDirectory(StatusDirectory);
+        SharedQueueFileIO.EnsureNotReparsePoint(Root);
+        EnsureDirectory(QueueDirectory);
+        EnsureDirectory(ProcessingDirectory);
+        EnsureDirectory(ResponsesDirectory);
+        EnsureDirectory(StatusDirectory);
+        EnsureDirectory(PairingDirectory);
 
-        var temporary = EnsureInsideRoot(MarkerPath + ".tmp");
-        File.WriteAllText(temporary, MarkerContents);
-        File.Move(temporary, MarkerPath, overwrite: true);
+        if (File.Exists(MarkerPath))
+            SharedQueueFileIO.EnsureNotReparsePoint(MarkerPath);
+
+        var temporary = EnsureInsideRoot(Path.Combine(Root, $".nfe-agendamento.{Guid.NewGuid():N}.tmp"));
+        var bytes = Encoding.UTF8.GetBytes(MarkerContents);
+        try
+        {
+            using (var stream = new FileStream(
+                temporary,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.None,
+                bufferSize: 256,
+                FileOptions.WriteThrough))
+            {
+                stream.Write(bytes);
+                stream.Flush(flushToDisk: true);
+            }
+
+            File.Move(temporary, MarkerPath, overwrite: true);
+        }
+        finally
+        {
+            TryDelete(temporary);
+        }
     }
 
     public bool ValidateForClient()
@@ -86,20 +128,46 @@ public sealed class SharedQueuePaths
                 || !Directory.Exists(QueueDirectory)
                 || !Directory.Exists(ProcessingDirectory)
                 || !Directory.Exists(ResponsesDirectory)
-                || !Directory.Exists(StatusDirectory))
+                || !Directory.Exists(StatusDirectory)
+                || !Directory.Exists(PairingDirectory))
             {
                 return false;
             }
 
+            SharedQueueFileIO.EnsureNotReparsePoint(Root);
+            SharedQueueFileIO.EnsureNotReparsePoint(QueueDirectory);
+            SharedQueueFileIO.EnsureNotReparsePoint(ProcessingDirectory);
+            SharedQueueFileIO.EnsureNotReparsePoint(ResponsesDirectory);
+            SharedQueueFileIO.EnsureNotReparsePoint(StatusDirectory);
+            SharedQueueFileIO.EnsureNotReparsePoint(PairingDirectory);
+            SharedQueueFileIO.EnsureNotReparsePoint(MarkerPath);
+
+            var markerBytes = SharedQueueFileIO.ReadAllBytes(MarkerPath, SharedQueueFileIO.MaxMarkerBytes);
             return string.Equals(
-                File.ReadAllText(MarkerPath).Trim(),
+                Encoding.UTF8.GetString(markerBytes).Trim(),
                 MarkerContents,
                 StringComparison.Ordinal);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is IOException
+            or UnauthorizedAccessException
+            or DirectoryNotFoundException
+            or InvalidDataException
+            or NotSupportedException)
         {
             return false;
         }
+    }
+
+    private void EnsureDirectory(string path)
+    {
+        if (Directory.Exists(path))
+        {
+            SharedQueueFileIO.EnsureNotReparsePoint(path);
+            return;
+        }
+
+        Directory.CreateDirectory(path);
+        SharedQueueFileIO.EnsureNotReparsePoint(path);
     }
 
     private string ChildDirectory(string name) =>
@@ -119,5 +187,16 @@ public sealed class SharedQueuePaths
         if (id == Guid.Empty)
             throw new ArgumentException("Identificador de arquivo inválido.", nameof(id));
         return id;
+    }
+
+    private static void TryDelete(string path)
+    {
+        try
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+        }
     }
 }
