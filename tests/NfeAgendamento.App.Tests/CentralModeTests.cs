@@ -6,25 +6,43 @@ namespace NfeAgendamento.App.Tests;
 public sealed class CentralModeTests
 {
     [Fact]
-    public void Central_settings_default_to_enabled_when_file_does_not_exist()
+    public void Central_settings_default_to_client_when_file_does_not_exist()
     {
         var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"), "central.json");
         var store = new CentralSettingsStore(path);
 
-        Assert.True(store.Load().Enabled);
+        Assert.False(store.Load().ConfiguredAsCentral);
     }
 
     [Fact]
-    public void Central_settings_are_persisted()
+    public void Legacy_enabled_flag_is_not_migrated_to_configured_central()
+    {
+        var root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        var path = Path.Combine(root, "central.json");
+        try
+        {
+            Directory.CreateDirectory(root);
+            File.WriteAllText(path, "{\"Enabled\":true}");
+
+            Assert.False(new CentralSettingsStore(path).Load().ConfiguredAsCentral);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Central_role_is_persisted()
     {
         var root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
         var path = Path.Combine(root, "central.json");
         try
         {
             var store = new CentralSettingsStore(path);
-            store.Save(new CentralSettings(false));
+            store.Save(new CentralSettings(true));
 
-            Assert.False(new CentralSettingsStore(path).Load().Enabled);
+            Assert.True(new CentralSettingsStore(path).Load().ConfiguredAsCentral);
         }
         finally
         {
