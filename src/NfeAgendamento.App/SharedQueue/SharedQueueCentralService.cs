@@ -101,7 +101,7 @@ public sealed class SharedQueueCentralService : BackgroundService
         {
             throw;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CryptographicException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CryptographicException or InvalidDataException)
         {
             ReleaseLease(CentralRuntimeStatus.ShareUnavailable, ex.Message);
         }
@@ -116,22 +116,29 @@ public sealed class SharedQueueCentralService : BackgroundService
         }
 
         var now = DateTimeOffset.UtcNow;
+        var publicKey = _keyStore.GetOrCreatePublicKey();
         var heartbeat = new QueueHeartbeat(
             SharedQueueCrypto.ProtocolVersion,
             Environment.MachineName,
             now,
-            Convert.ToBase64String(_keyStore.GetOrCreatePublicKey()),
+            Convert.ToBase64String(publicKey),
             typeof(SharedQueueCentralService).Assembly.GetName().Version?.ToString() ?? "0.0.0");
+
+        using (var privateKey = _keyStore.OpenPrivateKey())
+            heartbeat = heartbeat with { SignatureBase64 = SharedQueueCrypto.SignHeartbeat(heartbeat, privateKey) };
 
         var target = _paths.StatusPath("heartbeat.json");
         var temporary = _paths.HeartbeatTemporaryPath(Guid.NewGuid());
         try
         {
-            await File.WriteAllBytesAsync(
+            var bytes = JsonSerializer.SerializeToUtf8Bytes(heartbeat);
+            await SharedQueueFileIO.WriteAtomicAsync(
                 temporary,
-                JsonSerializer.SerializeToUtf8Bytes(heartbeat),
+                target,
+                bytes,
+                SharedQueueFileIO.MaxHeartbeatBytes,
+                overwrite: true,
                 cancellationToken);
-            File.Move(temporary, target, overwrite: true);
 
             lock (_sync)
             {
@@ -143,19 +150,14 @@ public sealed class SharedQueueCentralService : BackgroundService
         {
             throw;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
         {
             ReleaseLease(CentralRuntimeStatus.ShareUnavailable, ex.Message);
         }
         finally
         {
-            try
-            {
-                if (File.Exists(temporary)) File.Delete(temporary);
-            }
-            catch
-            {
-            }
+            TryDelete(temporary);
+            CryptographicOperations.ZeroMemory(publicKey);
         }
     }
 
@@ -213,6 +215,20 @@ public sealed class SharedQueueCentralService : BackgroundService
             if (status != CentralRuntimeStatus.Active)
                 _lastHeartbeatUtc = null;
         }
+
+        if (lease is not null)
+            TryDelete(_paths.StatusPath("heartbeat.json"));
         lease?.Dispose();
+    }
+
+    private static void TryDelete(string path)
+    {
+        try
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+        }
     }
 }
