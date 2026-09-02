@@ -34,11 +34,27 @@ public sealed class TrayApplicationContext : ApplicationContext
         _configureCertificate.Click += (_, _) => OpenSystem();
         var checkUpdates = new ToolStripMenuItem("Verificar atualização");
         checkUpdates.Click += async (_, _) => await CheckForUpdatesAsync();
-        var startup = new ToolStripMenuItem("Iniciar com o Windows") { CheckOnClick = true, Checked = StartupManager.IsEnabled() };
-        startup.CheckedChanged += (_, _) =>
+        var startup = new ToolStripMenuItem("Iniciar com o Windows")
         {
-            try { StartupManager.SetEnabled(startup.Checked); }
-            catch { startup.Checked = !startup.Checked; }
+            CheckOnClick = false,
+            Checked = StartupManager.IsEnabled()
+        };
+        startup.Click += (_, _) =>
+        {
+            var desired = !startup.Checked;
+            try
+            {
+                StartupManager.SetEnabled(desired);
+                startup.Checked = desired;
+            }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or InvalidOperationException or IOException)
+            {
+                MessageBox.Show(
+                    $"Não foi possível alterar a inicialização automática neste PC.\n\n{ex.Message}",
+                    "NFe Agendamento",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+            }
         };
         var exit = new ToolStripMenuItem("Sair");
         exit.Click += (_, _) => ExitApplication();
