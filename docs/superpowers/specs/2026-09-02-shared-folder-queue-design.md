@@ -104,13 +104,24 @@ O processador nunca consome arquivos temporários.
 
 ## Papel da Central
 
-O estado existente de **Central ativa** passa a significar que aquela instância é a processadora da pasta compartilhada.
+O papel de Central é escolhido manualmente no painel do próprio aplicativo, no PC que possui o certificado A1.
+
+Essa escolha é persistida **somente no armazenamento local desse PC**. Ela não é decidida pela presença do certificado e não é gravada na pasta compartilhada como autoridade permanente.
+
+Ao marcar o PC como Central:
+
+1. o aplicativo salva localmente `ConfiguredAsCentral = true`;
+2. tenta adquirir um lock exclusivo em `status` dentro da pasta compartilhada;
+3. se o lock for adquirido, passa a processar a fila e publicar heartbeat;
+4. se já existir outra Central com lock válido, a ativação é recusada sem alterar ou encerrar a Central existente.
+
+Ao iniciar o Windows/aplicativo novamente, um PC com `ConfiguredAsCentral = true` tenta reassumir automaticamente a função. Se outra Central já estiver ativa, permanece sem processar e mostra claramente o conflito.
+
+Ao escolher **Parar Central**, a preferência local é alterada para `ConfiguredAsCentral = false`, o lock é liberado e o PC deixa de tentar reassumir automaticamente nas próximas inicializações até nova ativação manual.
 
 Somente uma Central pode ficar ativa por vez.
 
-Ao ativar, o aplicativo mantém um lock exclusivo em arquivo dentro de `status`. O compartilhamento SMB mantém o lock enquanto o processo está vivo. Se outra máquina tentar ativar a Central enquanto o lock estiver em uso, a ativação é recusada com mensagem clara.
-
-Se o processo central cair, o lock é liberado pelo sistema e outra inicialização pode assumir a função.
+O compartilhamento SMB mantém o lock enquanto o processo está vivo. Se o processo central cair, o lock é liberado pelo sistema e uma nova inicialização configurada como Central pode assumir a função.
 
 O PC central continua podendo consultar NF-e localmente mesmo se a unidade `P:` ficar temporariamente indisponível. Consultas feitas no próprio PC central usam diretamente o serviço fiscal existente.
 
@@ -149,6 +160,7 @@ Não entram no heartbeat:
 
 O painel Windows passa a diagnosticar:
 
+- PC configurado como Central ou Cliente;
 - pasta compartilhada disponível;
 - marcador válido;
 - permissão de leitura/escrita dentro da pasta dedicada;
@@ -237,6 +249,8 @@ A fila compartilhada fica antes desse fluxo e serve apenas como transporte entre
 
 - duas requisições recebem IDs independentes;
 - somente uma Central adquire o lock;
+- preferência `ConfiguredAsCentral` persiste localmente e tenta reassumir na inicialização;
+- `Parar Central` remove a preferência de reassunção automática;
 - reivindicação por move impede processamento duplo do mesmo arquivo;
 - reinicialização recupera item antigo em `processando` sem duplicar chamada fiscal já concluída quando houver resposta publicada.
 
@@ -260,13 +274,14 @@ Na empresa, após a release:
 
 1. os três PCs conseguem abrir `P:\01-Nfe agendamento`;
 2. cada PC abre sua própria interface em `127.0.0.1:17345`;
-3. somente o PC com certificado é ativado como Central;
-4. os outros PCs exibem Central online;
-5. um cliente sem certificado consulta uma NF-e conhecida;
-6. XML/DANFE chegam ao cliente sem ficarem legíveis em texto puro na pasta compartilhada;
-7. desligar a Central faz os clientes exibirem Central offline;
-8. bloquear acesso ao `P:` produz erro de compartilhamento, sem tentativa de abrir firewall;
-9. arquivos fora de `P:\01-Nfe agendamento` permanecem intocados.
+3. somente o PC com certificado é marcado manualmente como Central;
+4. depois de reiniciar esse PC, ele tenta reassumir a Central automaticamente;
+5. os outros PCs exibem Central online;
+6. um cliente sem certificado consulta uma NF-e conhecida;
+7. XML/DANFE chegam ao cliente sem ficarem legíveis em texto puro na pasta compartilhada;
+8. desligar a Central faz os clientes exibirem Central offline;
+9. bloquear acesso ao `P:` produz erro de compartilhamento, sem tentativa de abrir firewall;
+10. arquivos fora de `P:\01-Nfe agendamento` permanecem intocados.
 
 ## Fora do escopo
 
