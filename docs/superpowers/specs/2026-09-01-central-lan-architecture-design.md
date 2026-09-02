@@ -37,8 +37,10 @@ http://10.0.0.29:17345
 - requisições possuem limite de tamanho;
 - clientes remotos são rejeitados quando a Central está parada;
 - `/api/bootstrap` expõe somente token CSRF, estado LAN e endereço operacional;
-- firewall automático limita entrada a TCP `17345`, perfil Privado e executável atual;
+- firewall automático limita entrada a TCP `17345`, perfis Domínio/Privado e origem `LocalSubnet`, sem depender do caminho do executável;
 - a porta não deve ser publicada na internet.
+
+A regra de firewall é deliberadamente estável entre atualizações. O pacote pode substituir ou mover o executável sem invalidar a regra apenas por mudança de caminho. Em troca, a restrição fica concentrada na porta fixa `17345`, nos perfis seguros do Windows e na origem da sub-rede local.
 
 O produto atual **não possui autenticação própria por senha**. A fronteira de acesso é a rede interna da empresa, a regra restrita de firewall e o controle ativa/parada da Central. Se autenticação voltar a ser necessária no futuro, deverá ser tratada como uma nova decisão arquitetural e não como comportamento já existente.
 
@@ -153,6 +155,7 @@ Automatizados:
 - fila possui limite e retorno controlado;
 - `656` persiste entre instâncias e impede novo transporte;
 - bootstrap não expõe certificado/XML;
+- regra de firewall permanece independente do caminho do executável e restrita a Domínio/Privado + `LocalSubnet`;
 - CI não usa credenciais fiscais reais;
 - build e pacote Windows passam.
 
@@ -160,7 +163,7 @@ Físicos, após gerar a próxima release:
 
 - painel central apresenta Rede/Servidor/Firewall OK;
 - acesso local em `127.0.0.1:17345` funciona;
-- um segundo PC acessa o IPv4 exibido pela Central;
+- um segundo PC na mesma sub-rede acessa o IPv4 exibido pela Central;
 - o segundo PC consulta uma NF-e conhecida sem instalar o certificado A1;
 - XML e DANFE funcionam no cliente;
 - o certificado permanece somente no PC central.
