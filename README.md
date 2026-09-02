@@ -6,7 +6,7 @@ Aplicativo Windows interno para consultar, visualizar e baixar NF-e usando o cer
 
 **v0.1.18**
 
-> A `main` já contém a nova arquitetura por pasta compartilhada com pareamento seguro. A `v0.1.18` ainda pertence à arquitetura LAN anterior, mas já contém o atualizador integrado. O pacote atual da `main` é o candidato de teste para a próxima release (`v0.1.19`).
+> A `main` já contém a nova arquitetura por pasta compartilhada com pareamento seguro e consulta em lote serial. A `v0.1.18` ainda pertence à arquitetura LAN anterior, mas já contém o atualizador integrado. O pacote atual da `main` é o candidato de teste para a próxima release (`v0.1.19`).
 
 ## Arquitetura atual da `main`
 
@@ -135,6 +135,27 @@ O cliente valida o heartbeat assinado da Central, cifra e autentica a solicitaç
 
 A área de configuração do certificado fica indisponível nos PCs cliente.
 
+## Consulta em lote
+
+A consulta em lote voltou de forma controlada sobre a mesma arquitetura segura.
+
+- aceite de até **50 chaves únicas por lote**;
+- uma chave por linha;
+- duplicatas são removidas antes da execução;
+- linhas inválidas são ignoradas e informadas na tela;
+- cada instalação envia **somente uma consulta por vez**;
+- não existe endpoint fiscal paralelo nem segunda fila de lote;
+- cada item usa o mesmo `POST /api/nfe/lookup` da consulta individual;
+- a Central continua aplicando deduplicação, cache, fila fiscal e cooldown normalmente;
+- dois ou três PCs podem iniciar lotes, mas a Central continua serializando o acesso fiscal;
+- `fila_ocupada` respeita `Retry-After` e possui retry limitado;
+- `cStat=656` interrompe imediatamente o restante do lote;
+- **Cancelar lote** impede o início das próximas consultas e cancela a requisição local atual quando possível;
+- XMLs localizados ficam somente em memória na página para **Ver DANFE** e **Baixar XML**;
+- não existe histórico persistente do lote nem gravação adicional no compartilhamento.
+
+O lote é uma automação de entrada da fila existente, não aumento de paralelismo fiscal.
+
 ## Criptografia e autenticação da fila
 
 Cada consulta usa uma chave AES de 256 bits exclusiva.
@@ -192,11 +213,11 @@ O transporte pela pasta fica **antes** do fluxo fiscal existente. A Central cont
 - retry limitado para falhas transitórias;
 - auditoria local sem XML, chave completa, certificado ou CPF/CNPJ.
 
-A consulta em lote permanece removida.
+A consulta em lote usa exatamente essas mesmas proteções e não executa chamadas fiscais em paralelo.
 
 ## Firewall e rede
 
-A nova arquitetura multi-PC **não depende mais de conexão HTTP de entrada na porta 17345**.
+A arquitetura multi-PC **não depende de conexão HTTP de entrada na porta 17345**.
 
 O servidor web de cada instalação escuta somente em loopback:
 
@@ -286,7 +307,7 @@ Incluem, conforme o papel do PC:
 - identidade, segredo e chave pública fixada da Central no cliente, protegidos por DPAPI;
 - lista de clientes autorizados no PC Central, protegida por DPAPI.
 
-O compartilhamento é somente transporte efêmero.
+O compartilhamento é somente transporte efêmero. A consulta em lote não adiciona persistência de chaves ou XMLs no navegador.
 
 ## Segurança
 
@@ -305,6 +326,7 @@ O compartilhamento é somente transporte efêmero.
 - junctions/reparse points são rejeitados;
 - somente uma Central mantém o lock do compartilhamento;
 - uma Central sem lock ativo não executa consulta fiscal;
+- lote possui limite de 50 itens e execução serial por instalação;
 - nenhuma rotina operacional acessa outras áreas de `P:`;
 - nenhum fallback tenta abrir firewall, mDNS ou servidor LAN.
 
@@ -321,6 +343,7 @@ dotnet restore Nfe-Agendamento.sln
 dotnet test Nfe-Agendamento.sln -c Release
 node tests/js/product-mapping-regression.test.js
 node tests/js/lookup-feedback-regression.test.js
+node tests/js/batch-lookup-regression.test.js
 node tests/js/release-readiness-regression.test.js
 dotnet build Nfe-Agendamento.sln -c Release
 ```
@@ -341,7 +364,7 @@ Existe um único fluxo oficial:
 
 A última versão publicada é `v0.1.18`; portanto, a próxima release deve usar uma versão superior, como `v0.1.19`.
 
-O workflow executa testes, regressões, build, publish Windows x64 autocontido e cria a tag/release no SHA validado.
+O workflow executa testes .NET, regressões de produto, feedback fiscal, consulta em lote e prontidão de release, depois faz build, publish Windows x64 autocontido e cria a tag/release no SHA validado.
 
 ## Checklist físico da próxima release
 
@@ -356,6 +379,12 @@ O workflow executa testes, regressões, build, publish Windows x64 autocontido e
 - [ ] os clientes mostram Central online;
 - [ ] cliente sem A1 consulta uma NF-e conhecida;
 - [ ] XML e DANFE funcionam no cliente;
+- [ ] lote com 3 NF-e funciona no PC Central;
+- [ ] lote com 3 NF-e funciona em um cliente sem A1;
+- [ ] duas máquinas iniciando lotes continuam sendo serializadas pela Central;
+- [ ] chave repetida no lote é executada uma única vez;
+- [ ] **Cancelar lote** impede novas consultas do lote;
+- [ ] DANFE e download XML funcionam nas linhas concluídas do lote;
 - [ ] arquivos em `fila`/`pareamento`/`respostas` não expõem chave NF-e ou XML em texto puro;
 - [ ] reiniciar o Central faz ele tentar reassumir automaticamente;
 - [ ] **Parar Central** remove o heartbeat e impede reassunção automática na inicialização seguinte;
@@ -371,6 +400,8 @@ Não provoque um `656` real apenas para testar cooldown; esse comportamento poss
 - [Inicialização e atualização](docs/ATUALIZACAO-E-INICIALIZACAO.md)
 - [Design atual — fila segura em pasta compartilhada](docs/superpowers/specs/2026-09-02-shared-folder-queue-design.md)
 - [Plano de implementação da fila compartilhada](docs/superpowers/plans/2026-09-02-shared-folder-queue.md)
+- [Design da consulta em lote](docs/superpowers/specs/2026-09-02-batch-lookup-design.md)
+- [Plano da consulta em lote](docs/superpowers/plans/2026-09-02-batch-lookup.md)
 - [Design do navegador local](docs/superpowers/specs/2026-08-31-local-browser-nfe-design.md)
 - [Design do DANFE](docs/superpowers/specs/2026-08-31-danfe-fsist-design.md)
 
