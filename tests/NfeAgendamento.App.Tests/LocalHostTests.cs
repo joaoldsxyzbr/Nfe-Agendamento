@@ -13,10 +13,10 @@ public sealed class LocalHostTests
     }
 
     [Fact]
-    public void GetListenUrl_uses_loopback_by_default_and_all_interfaces_in_lan_mode()
+    public void Legacy_lan_argument_cannot_expose_the_server()
     {
         Assert.Equal("http://127.0.0.1:17345", LocalHost.GetListenUrl([]));
-        Assert.Equal("http://0.0.0.0:17345", LocalHost.GetListenUrl(["--lan"]));
-        Assert.Equal("http://nfeagendamento.local:17345", LocalHost.GetBrowserUrl(["--lan"]));
+        Assert.Equal("http://127.0.0.1:17345", LocalHost.GetListenUrl(["--lan"]));
+        Assert.Equal("http://127.0.0.1:17345", LocalHost.GetBrowserUrl(["--lan"]));
     }
 }
