@@ -1,24 +1,28 @@
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 
 namespace NfeAgendamento.App;
 
 public sealed class TrayApplicationContext : ApplicationContext
 {
     public static IReadOnlyList<string> MenuLabels { get; } =
-        ["Abrir Central", "Abrir sistema", "Copiar endereço da Central", "Configurar certificado", "Verificar atualização", "Iniciar com o Windows", "Sair"];
+        ["Abrir Central", "Abrir sistema", "Configurar certificado", "Verificar atualização", "Iniciar com o Windows", "Sair"];
 
     private readonly NotifyIcon _trayIcon;
     private readonly CentralForm _centralForm;
     private readonly CentralStateService _centralState;
-    private readonly ToolStripMenuItem _accessAddress;
-    private readonly ToolStripMenuItem _copyAccessAddress;
+    private readonly ToolStripMenuItem _configureCertificate;
     private bool _allowClose;
 
-    public TrayApplicationContext(CentralStateService centralState)
+    public TrayApplicationContext(
+        CentralStateService centralState,
+        SharedQueue.SharedQueueCentralService centralRuntime,
+        SharedQueue.SharedQueueClient queueClient)
     {
         _centralState = centralState ?? throw new ArgumentNullException(nameof(centralState));
-        _centralForm = new CentralForm(_centralState);
+        ArgumentNullException.ThrowIfNull(centralRuntime);
+        ArgumentNullException.ThrowIfNull(queueClient);
+
+        _centralForm = new CentralForm(_centralState, centralRuntime, queueClient);
         _centralForm.FormClosing += CentralFormClosing;
 
         var menu = new ContextMenuStrip();
@@ -26,11 +30,8 @@ public sealed class TrayApplicationContext : ApplicationContext
         openCentral.Click += (_, _) => OpenCentral();
         var open = new ToolStripMenuItem("Abrir sistema");
         open.Click += (_, _) => OpenSystem();
-        _accessAddress = new ToolStripMenuItem { Enabled = false };
-        _copyAccessAddress = new ToolStripMenuItem("Copiar endereço da Central");
-        _copyAccessAddress.Click += (_, _) => CopyAccessAddress();
-        var configure = new ToolStripMenuItem("Configurar certificado");
-        configure.Click += (_, _) => OpenSystem();
+        _configureCertificate = new ToolStripMenuItem("Configurar certificado");
+        _configureCertificate.Click += (_, _) => OpenSystem();
         var checkUpdates = new ToolStripMenuItem("Verificar atualização");
         checkUpdates.Click += async (_, _) => await CheckForUpdatesAsync();
         var startup = new ToolStripMenuItem("Iniciar com o Windows") { CheckOnClick = true, Checked = StartupManager.IsEnabled() };
@@ -43,9 +44,7 @@ public sealed class TrayApplicationContext : ApplicationContext
         exit.Click += (_, _) => ExitApplication();
         menu.Items.Add(openCentral);
         menu.Items.Add(open);
-        menu.Items.Add(_accessAddress);
-        menu.Items.Add(_copyAccessAddress);
-        menu.Items.Add(configure);
+        menu.Items.Add(_configureCertificate);
         menu.Items.Add(checkUpdates);
         menu.Items.Add(startup);
         menu.Items.Add(new ToolStripSeparator());
@@ -54,28 +53,17 @@ public sealed class TrayApplicationContext : ApplicationContext
         _trayIcon = new NotifyIcon
         {
             Icon = Icon.ExtractAssociatedIcon(Environment.ProcessPath ?? string.Empty) ?? SystemIcons.Application,
-            Text = "NFe Agendamento - Central",
+            Text = "NFe Agendamento",
             ContextMenuStrip = menu,
             Visible = true
         };
         _trayIcon.DoubleClick += (_, _) => OpenCentral();
 
         _centralState.Changed += CentralStateChanged;
-        RefreshAccessMenu();
+        RefreshRoleMenu();
 
         _centralForm.Show();
         _centralForm.Activate();
-    }
-
-    public static string BuildAccessMenuText(bool enabled, string accessUrl)
-    {
-        if (!enabled)
-            return "Acesso pela rede: desativado";
-
-        if (string.IsNullOrWhiteSpace(accessUrl) || string.Equals(accessUrl, LocalHost.ListenUrl, StringComparison.OrdinalIgnoreCase))
-            return "Acesso pela rede: IP não identificado";
-
-        return $"Acesso: {accessUrl}";
     }
 
     protected override void ExitThreadCore()
@@ -91,11 +79,11 @@ public sealed class TrayApplicationContext : ApplicationContext
     {
         if (_trayIcon.ContextMenuStrip?.InvokeRequired == true)
         {
-            _trayIcon.ContextMenuStrip.BeginInvoke(new Action(RefreshAccessMenu));
+            _trayIcon.ContextMenuStrip.BeginInvoke(new Action(RefreshRoleMenu));
             return;
         }
 
-        RefreshAccessMenu();
+        RefreshRoleMenu();
     }
 
     private void CentralFormClosing(object? sender, FormClosingEventArgs e)
@@ -129,43 +117,12 @@ public sealed class TrayApplicationContext : ApplicationContext
         }
     }
 
-    private void RefreshAccessMenu()
+    private void RefreshRoleMenu()
     {
-        var enabled = _centralState.IsEnabled;
-        var accessUrl = CentralNetworkInfo.GetAccessUrl(enabled);
-        var shareable = enabled
-            && !string.IsNullOrWhiteSpace(accessUrl)
-            && !string.Equals(accessUrl, LocalHost.ListenUrl, StringComparison.OrdinalIgnoreCase);
-
-        _accessAddress.Text = BuildAccessMenuText(enabled, accessUrl);
-        _copyAccessAddress.Enabled = shareable;
-    }
-
-    private void CopyAccessAddress()
-    {
-        var accessUrl = CentralNetworkInfo.GetAccessUrl(_centralState.IsEnabled);
-        if (!_centralState.IsEnabled || string.Equals(accessUrl, LocalHost.ListenUrl, StringComparison.OrdinalIgnoreCase))
-        {
-            MessageBox.Show(
-                "Inicie a Central e confirme que o IP da rede foi identificado antes de copiar o endereço.",
-                "NFe Agendamento",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Warning);
-            return;
-        }
-
-        try
-        {
-            Clipboard.SetText(accessUrl);
-        }
-        catch (ExternalException)
-        {
-            MessageBox.Show(
-                "Não foi possível copiar o endereço agora. Tente novamente.",
-                "NFe Agendamento",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Warning);
-        }
+        _configureCertificate.Enabled = _centralState.IsConfiguredAsCentral;
+        _configureCertificate.ToolTipText = _centralState.IsConfiguredAsCentral
+            ? "Configurar o certificado A1 deste PC Central"
+            : "O certificado é configurado somente no PC Central";
     }
 
     private void ExitApplication()
