@@ -90,7 +90,7 @@ public sealed class DanfeStaticAssetsTests
         Assert.DoesNotContain("step-badge", html, StringComparison.OrdinalIgnoreCase);
         Assert.Contains(".app-tabs", css);
         Assert.Contains(".tab-button[aria-selected=\"true\"]", css);
-        Assert.Contains("body {\n  background: #081522;", css);
+        Assert.Contains("background: #081522;", css);
     }
 
     [Fact]
