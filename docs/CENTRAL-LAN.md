@@ -138,14 +138,7 @@ O heartbeat contém somente dados operacionais necessários, como:
 - versão do aplicativo;
 - assinatura digital.
 
-Não contém:
-
-- certificado A1;
-- chave privada;
-- XML;
-- chave de acesso NF-e;
-- CPF/CNPJ;
-- segredo do cliente.
+Não contém certificado A1, chave privada, XML, chave de acesso NF-e, CPF/CNPJ ou segredo do cliente.
 
 Durante o pareamento, o cliente fixa localmente a chave pública da Central. Depois disso, ele não confia em uma chave diferente apenas porque apareceu no compartilhamento: compara a chave com a que foi pareada e valida a assinatura do heartbeat.
 
@@ -187,19 +180,56 @@ A sequência precisa ser maior que a última aceita pela Central, bloqueando rep
 
 A chave AES pendente fica protegida localmente por DPAPI no cliente. A chave RSA privada da Central fica protegida localmente por DPAPI no Central.
 
+## Consulta em lote
+
+O lote usa a mesma consulta individual e a mesma fila segura; não existe um serviço fiscal separado para lote.
+
+### Como usar
+
+1. abra o sistema local no Central ou em um cliente já pareado;
+2. localize **Consulta em lote**;
+3. cole uma chave de 44 dígitos por linha;
+4. confira o contador de válidas, duplicadas e inválidas;
+5. clique em **Iniciar lote**;
+6. acompanhe cada linha como **Aguardando**, **Consultando**, **Concluída** ou erro correspondente;
+7. nas linhas concluídas, use **Ver DANFE** ou **Baixar XML**.
+
+São aceitas no máximo **50 chaves únicas por lote**. Duplicatas no texto são removidas antes da execução e entradas inválidas não são enviadas ao backend.
+
+### Concorrência
+
+Cada instalação executa apenas **uma NF-e do lote por vez**. O lote não usa chamadas fiscais paralelas.
+
+Se PC 2 e PC 3 iniciarem lotes ao mesmo tempo, ambos enviam pedidos individuais pela fila já existente. O PC Central continua aplicando a serialização fiscal, deduplicação e cache normalmente.
+
+### Fila ocupada
+
+Quando a Central responder `fila_ocupada`, o lote respeita `Retry-After` e repete somente aquela NF-e, com quantidade limitada de tentativas. Se continuar ocupada, a linha recebe erro e o lote segue.
+
+### `cStat=656`
+
+Quando a SEFAZ indicar consumo indevido (`cStat=656`):
+
+- o item atual é marcado como bloqueado;
+- o restante do lote é interrompido;
+- itens ainda não iniciados são marcados como não processados por cooldown;
+- nenhuma repetição automática é feita para tentar furar o bloqueio.
+
+Não provoque `656` real para testar o lote.
+
+### Cancelamento
+
+**Cancelar lote** interrompe a requisição local atual quando possível e impede o início dos próximos itens. Um pedido que a Central já tenha reivindicado segue as regras normais da fila segura.
+
+Os XMLs retornados pelo lote ficam somente em memória enquanto a página estiver aberta. O lote não cria histórico persistente, não usa `localStorage`/IndexedDB e não cria uma área adicional no `P:`.
+
 ## O que acontece se `P:` cair
 
 ### Cliente
 
 A consulta falha de forma controlada com indicação de pasta/Central indisponível.
 
-O aplicativo **não**:
-
-- abre porta HTTP na LAN;
-- cria regra de firewall;
-- tenta mDNS;
-- procura outra pasta no `P:`;
-- tenta contornar política corporativa.
+O aplicativo **não** abre porta HTTP na LAN, cria regra de firewall, tenta mDNS, procura outra pasta no `P:` ou tenta contornar política corporativa.
 
 ### PC Central
 
@@ -292,10 +322,16 @@ Uma conexão de outro computador à porta 17345 deve ser rejeitada pelo próprio
 7. parear PC 2 e PC 3;
 8. consultar NF-e conhecida em um cliente sem A1;
 9. validar DANFE e download XML no cliente;
-10. verificar que os envelopes no compartilhamento não mostram XML/chave NF-e em texto puro;
-11. reiniciar o PC Central e confirmar reassunção automática;
-12. usar **Parar Central**, confirmar remoção do heartbeat, reiniciar e confirmar que ele não reassume;
-13. confirmar que arquivos fora de `P:\01-Nfe agendamento` ficaram intocados.
+10. executar lote com 3 chaves no Central;
+11. executar lote com 3 chaves em um cliente sem A1;
+12. testar uma chave duplicada e confirmar execução única;
+13. iniciar lotes em dois PCs e confirmar que a Central continua serializando as consultas;
+14. testar **Cancelar lote** sem provocar bloqueio real da SEFAZ;
+15. validar DANFE e download XML de uma linha concluída do lote;
+16. verificar que os envelopes no compartilhamento não mostram XML/chave NF-e em texto puro;
+17. reiniciar o PC Central e confirmar reassunção automática;
+18. usar **Parar Central**, confirmar remoção do heartbeat, reiniciar e confirmar que ele não reassume;
+19. confirmar que arquivos fora de `P:\01-Nfe agendamento` ficaram intocados.
 
 ## Documentos relacionados
 
@@ -303,5 +339,7 @@ Uma conexão de outro computador à porta 17345 deve ser rejeitada pelo próprio
 - `docs/ATUALIZACAO-E-INICIALIZACAO.md`
 - `docs/superpowers/specs/2026-09-02-shared-folder-queue-design.md`
 - `docs/superpowers/plans/2026-09-02-shared-folder-queue.md`
+- `docs/superpowers/specs/2026-09-02-batch-lookup-design.md`
+- `docs/superpowers/plans/2026-09-02-batch-lookup.md`
 
 A documentação de LAN anterior é histórica e não deve ser usada para operação da arquitetura atual.
