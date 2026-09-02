@@ -33,13 +33,22 @@ public sealed class SharedQueuePaths
     public string MarkerPath => EnsureInsideRoot(Path.Combine(Root, ".nfe-agendamento"));
 
     public string RequestPath(Guid requestId) =>
-        EnsureInsideRoot(Path.Combine(QueueDirectory, $"{requestId:N}.req"));
+        EnsureInsideRoot(Path.Combine(QueueDirectory, $"{ValidateId(requestId):N}.req"));
+
+    public string RequestTemporaryPath(Guid requestId) =>
+        EnsureInsideRoot(Path.Combine(QueueDirectory, $"{ValidateId(requestId):N}.req.tmp"));
 
     public string ProcessingPath(Guid requestId) =>
-        EnsureInsideRoot(Path.Combine(ProcessingDirectory, $"{requestId:N}.req"));
+        EnsureInsideRoot(Path.Combine(ProcessingDirectory, $"{ValidateId(requestId):N}.req"));
 
     public string ResponsePath(Guid requestId) =>
-        EnsureInsideRoot(Path.Combine(ResponsesDirectory, $"{requestId:N}.res"));
+        EnsureInsideRoot(Path.Combine(ResponsesDirectory, $"{ValidateId(requestId):N}.res"));
+
+    public string ResponseTemporaryPath(Guid requestId) =>
+        EnsureInsideRoot(Path.Combine(ResponsesDirectory, $"{ValidateId(requestId):N}.res.tmp"));
+
+    public string HeartbeatTemporaryPath(Guid writeId) =>
+        EnsureInsideRoot(Path.Combine(StatusDirectory, $"heartbeat.{ValidateId(writeId):N}.tmp"));
 
     public string StatusPath(string fileName)
     {
@@ -63,7 +72,7 @@ public sealed class SharedQueuePaths
         Directory.CreateDirectory(ResponsesDirectory);
         Directory.CreateDirectory(StatusDirectory);
 
-        var temporary = MarkerPath + ".tmp";
+        var temporary = EnsureInsideRoot(MarkerPath + ".tmp");
         File.WriteAllText(temporary, MarkerContents);
         File.Move(temporary, MarkerPath, overwrite: true);
     }
@@ -103,5 +112,12 @@ public sealed class SharedQueuePaths
             throw new InvalidOperationException("Caminho fora da pasta dedicada do NFe Agendamento.");
 
         return fullPath;
+    }
+
+    private static Guid ValidateId(Guid id)
+    {
+        if (id == Guid.Empty)
+            throw new ArgumentException("Identificador de arquivo inválido.", nameof(id));
+        return id;
     }
 }
