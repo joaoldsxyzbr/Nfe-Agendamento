@@ -9,20 +9,24 @@ namespace NfeAgendamento.App.SharedQueue;
 public sealed class SharedQueueProcessor
 {
     private static readonly TimeSpan ProcessingRecoveryAge = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan RequestMaxAge = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan TemporaryRetention = TimeSpan.FromMinutes(15);
     private static readonly TimeSpan ResponseRetention = TimeSpan.FromMinutes(30);
 
     private readonly SharedQueuePaths _paths;
     private readonly CentralKeyStore _keyStore;
+    private readonly AuthorizedClientStore _authorizedClients;
     private readonly Func<string, CancellationToken, Task<NfeLookupResult>> _lookup;
 
     public SharedQueueProcessor(
         SharedQueuePaths paths,
         CentralKeyStore keyStore,
+        AuthorizedClientStore authorizedClients,
         IServiceScopeFactory scopeFactory)
         : this(
             paths,
             keyStore,
+            authorizedClients,
             async (accessKey, cancellationToken) =>
             {
                 using var scope = scopeFactory.CreateScope();
@@ -37,9 +41,19 @@ public sealed class SharedQueueProcessor
         SharedQueuePaths paths,
         CentralKeyStore keyStore,
         Func<string, CancellationToken, Task<NfeLookupResult>> lookup)
+        : this(paths, keyStore, new AuthorizedClientStore(), lookup)
+    {
+    }
+
+    public SharedQueueProcessor(
+        SharedQueuePaths paths,
+        CentralKeyStore keyStore,
+        AuthorizedClientStore authorizedClients,
+        Func<string, CancellationToken, Task<NfeLookupResult>> lookup)
     {
         _paths = paths ?? throw new ArgumentNullException(nameof(paths));
         _keyStore = keyStore ?? throw new ArgumentNullException(nameof(keyStore));
+        _authorizedClients = authorizedClients ?? throw new ArgumentNullException(nameof(authorizedClients));
         _lookup = lookup ?? throw new ArgumentNullException(nameof(lookup));
     }
 
@@ -65,7 +79,7 @@ public sealed class SharedQueueProcessor
 
         try
         {
-            if ((File.GetAttributes(candidate) & FileAttributes.ReparsePoint) != 0)
+            if (SharedQueueFileIO.IsReparsePoint(candidate))
                 return false;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -97,15 +111,37 @@ public sealed class SharedQueueProcessor
         byte[]? aesKey = null;
         try
         {
-            var requestBytes = await File.ReadAllBytesAsync(processingPath, cancellationToken);
+            var requestBytes = await SharedQueueFileIO.ReadAllBytesAsync(
+                processingPath,
+                SharedQueueFileIO.MaxRequestBytes,
+                cancellationToken);
             var envelope = JsonSerializer.Deserialize<QueueRequestEnvelope>(requestBytes)
                 ?? throw new InvalidDataException("Envelope vazio.");
             if (envelope.RequestId != requestId)
                 throw new InvalidDataException("O identificador do envelope não corresponde ao arquivo.");
 
+            var now = DateTimeOffset.UtcNow;
+            if (envelope.CreatedUtc > now.AddMinutes(1) || now - envelope.CreatedUtc > RequestMaxAge)
+                throw new InvalidDataException("Solicitação expirada.");
+
             using var privateKey = _keyStore.OpenPrivateKey();
             var opened = SharedQueueCrypto.OpenRequest(envelope, privateKey);
             aesKey = opened.AesKey;
+
+            if (!_authorizedClients.TryAuthenticateAndAdvance(envelope, out var authenticationError))
+            {
+                var denied = new NfeLookupResult(
+                    NfeLookupStatus.Failed,
+                    null,
+                    null,
+                    authenticationError,
+                    false);
+                await PublishResponseAsync(
+                    SharedQueueCrypto.CreateResponse(requestId, denied, aesKey),
+                    cancellationToken);
+                TryDelete(processingPath);
+                return true;
+            }
 
             if (!AccessKeyValidator.IsValid(opened.Payload.AccessKey))
                 throw new InvalidDataException("Chave NF-e inválida no envelope.");
@@ -146,6 +182,9 @@ public sealed class SharedQueueProcessor
         CleanupPattern(_paths.QueueDirectory, "*.tmp", TemporaryRetention, DateTimeOffset.UtcNow);
         CleanupPattern(_paths.ResponsesDirectory, "*.tmp", TemporaryRetention, DateTimeOffset.UtcNow);
         CleanupPattern(_paths.StatusDirectory, "heartbeat.*.tmp", TemporaryRetention, DateTimeOffset.UtcNow);
+        CleanupPattern(_paths.PairingDirectory, "*.tmp", TemporaryRetention, DateTimeOffset.UtcNow);
+        CleanupPattern(_paths.PairingDirectory, "*.pair.processing", TemporaryRetention, DateTimeOffset.UtcNow);
+        CleanupPattern(_paths.PairingDirectory, "*.pair.res", TemporaryRetention, DateTimeOffset.UtcNow);
         CleanupPattern(_paths.ResponsesDirectory, "*.res", ResponseRetention, DateTimeOffset.UtcNow);
         return Task.CompletedTask;
     }
@@ -156,8 +195,14 @@ public sealed class SharedQueueProcessor
         var temporary = _paths.ResponseTemporaryPath(response.RequestId);
         try
         {
-            await File.WriteAllBytesAsync(temporary, JsonSerializer.SerializeToUtf8Bytes(response), cancellationToken);
-            File.Move(temporary, target, overwrite: true);
+            var bytes = JsonSerializer.SerializeToUtf8Bytes(response);
+            await SharedQueueFileIO.WriteAtomicAsync(
+                temporary,
+                target,
+                bytes,
+                SharedQueueFileIO.MaxResponseBytes,
+                overwrite: true,
+                cancellationToken);
         }
         finally
         {
@@ -184,6 +229,9 @@ public sealed class SharedQueueProcessor
 
             try
             {
+                if (SharedQueueFileIO.IsReparsePoint(processingPath))
+                    continue;
+
                 if (File.Exists(_paths.ResponsePath(requestId)))
                 {
                     TryDelete(processingPath);
@@ -200,7 +248,7 @@ public sealed class SharedQueueProcessor
                 else
                     TryDelete(processingPath);
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
             {
             }
         }
@@ -222,11 +270,13 @@ public sealed class SharedQueueProcessor
         {
             try
             {
+                if (SharedQueueFileIO.IsReparsePoint(path))
+                    continue;
                 var age = now - new DateTimeOffset(File.GetLastWriteTimeUtc(path), TimeSpan.Zero);
                 if (age >= retention)
                     File.Delete(path);
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
             {
             }
         }
@@ -259,11 +309,16 @@ public sealed class SharedQueueProcessor
 public sealed class SharedQueueProcessingHostedService : BackgroundService
 {
     private readonly SharedQueueCentralService _central;
+    private readonly SharedQueuePairingProcessor _pairing;
     private readonly SharedQueueProcessor _processor;
 
-    public SharedQueueProcessingHostedService(SharedQueueCentralService central, SharedQueueProcessor processor)
+    public SharedQueueProcessingHostedService(
+        SharedQueueCentralService central,
+        SharedQueuePairingProcessor pairing,
+        SharedQueueProcessor processor)
     {
         _central = central ?? throw new ArgumentNullException(nameof(central));
+        _pairing = pairing ?? throw new ArgumentNullException(nameof(pairing));
         _processor = processor ?? throw new ArgumentNullException(nameof(processor));
     }
 
@@ -286,15 +341,16 @@ public sealed class SharedQueueProcessingHostedService : BackgroundService
                     nextMaintenance = DateTimeOffset.UtcNow.AddSeconds(30);
                 }
 
+                var paired = await _pairing.ProcessOneAsync(stoppingToken);
                 var processed = await _processor.ProcessOneAsync(stoppingToken);
-                if (!processed)
+                if (!paired && !processed)
                     await Task.Delay(TimeSpan.FromMilliseconds(250), stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
                 break;
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
             {
                 await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken);
             }
