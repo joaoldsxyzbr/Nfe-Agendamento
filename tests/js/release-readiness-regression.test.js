@@ -1,6 +1,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 
 const root = path.resolve(__dirname, '../..');
 const read = (relativePath) => fs.readFileSync(path.join(root, relativePath), 'utf8');
@@ -8,8 +9,11 @@ const read = (relativePath) => fs.readFileSync(path.join(root, relativePath), 'u
 const ciPath = '.github/workflows/ci.yml';
 const bridgePath = '.github/workflows/release-bridge.yml';
 const legacyTagPath = '.github/workflows/release-on-tag.yml';
+const projectPath = 'src/NfeAgendamento.App/NfeAgendamento.App.csproj';
+const tabsPath = 'src/NfeAgendamento.App/wwwroot/tabs.js';
 const ci = read(ciPath);
 const bridge = read(bridgePath);
+const project = read(projectPath);
 
 assert.ok(bridge.includes('workflow_dispatch:'), 'Release Bridge deve continuar manual.');
 assert.ok(bridge.includes('node tests/js/product-mapping-regression.test.js'), 'Release deve validar o mapeamento Fernando Klein.');
@@ -21,6 +25,8 @@ assert.ok(!fs.existsSync(path.join(root, legacyTagPath)), 'Workflow legado por t
 assert.ok(bridge.includes('ref: ${{ github.sha }}'), 'Release deve fazer checkout do SHA imutável que disparou o workflow.');
 assert.ok(bridge.includes('--target "${{ github.sha }}"'), 'Tag/release deve apontar para o mesmo SHA que foi testado e empacotado.');
 assert.ok(!bridge.includes('--target main'), 'Release não pode tagar main mutável depois dos testes.');
+assert.ok(project.includes('<Version>0.1.19</Version>'), 'A versão base deve refletir a release publicada para que builds de teste possam atualizar para v0.1.20.');
+assert.doesNotThrow(() => new vm.Script(read(tabsPath), { filename: tabsPath }), 'tabs.js deve permanecer sintaticamente válido.');
 
 const workflowText = `${ci}\n${bridge}`;
 const forbiddenWorkflowPatterns = [
@@ -54,4 +60,4 @@ const certificateFiles = walk(root)
   .filter((file) => /\.(pfx|p12)$/i.test(file));
 assert.deepStrictEqual(certificateFiles, [], 'Repositório não pode conter certificado A1 empacotado.');
 
-console.log('OK: release usa SHA imutável, executa regressões e não depende de credenciais fiscais reais.');
+console.log('OK: release usa SHA imutável, versão base correta, regressões e nenhuma credencial fiscal real.');
