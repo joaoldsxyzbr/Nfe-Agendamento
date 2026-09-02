@@ -9,7 +9,10 @@ public sealed record QueueRequestEnvelope(
     byte[] EncryptedKey,
     byte[] Nonce,
     byte[] Tag,
-    byte[] Ciphertext);
+    byte[] Ciphertext,
+    Guid ClientId = default,
+    long Sequence = 0,
+    byte[]? ClientAuthTag = null);
 
 public sealed record QueueResponseEnvelope(
     int Version,
@@ -24,7 +27,8 @@ public sealed record QueueHeartbeat(
     string CentralId,
     DateTimeOffset UpdatedUtc,
     string PublicKeyBase64,
-    string AppVersion);
+    string AppVersion,
+    string SignatureBase64 = "");
 
 public sealed record QueueLookupPayload(string AccessKey);
 
