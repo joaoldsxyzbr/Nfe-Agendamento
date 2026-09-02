@@ -122,7 +122,6 @@ public sealed class SharedQueueClient
                 {
                     var result = await ReadResponseAsync(requestId, responsePath, cancellationToken);
                     TryDelete(responsePath);
-                    _pendingSecrets.Delete(requestId);
                     return result;
                 }
 
@@ -141,6 +140,10 @@ public sealed class SharedQueueClient
         }
         finally
         {
+            // Só remove o pedido se ele ainda estiver aguardando em fila. Se a Central já
+            // o moveu para processando, a operação pode terminar sem ser cancelada pelo cliente.
+            TryDelete(_paths.RequestPath(requestId));
+            _pendingSecrets.Delete(requestId);
             CryptographicOperations.ZeroMemory(material.AesKey);
         }
     }
