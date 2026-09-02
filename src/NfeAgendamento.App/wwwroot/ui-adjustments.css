@@ -168,6 +168,50 @@ textarea::placeholder {
   background: #071a2e;
 }
 
+.pairing-block {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.pairing-help,
+.pairing-status {
+  margin: 6px 0 12px;
+}
+
+.pairing-button {
+  width: 100%;
+  min-height: 44px;
+}
+
+.pairing-code-box {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid #355879;
+  border-radius: 10px;
+  background: #071a2e;
+}
+
+.pairing-code-label,
+.pairing-code-box span {
+  display: block;
+}
+
+.pairing-code {
+  display: block;
+  margin: 5px 0 6px;
+  color: var(--prado-yellow);
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 1.05rem;
+  letter-spacing: .04em;
+  overflow-wrap: anywhere;
+}
+
+.client-pairing-panel .status {
+  min-height: 24px;
+  margin-bottom: 14px;
+}
+
 @media (max-width: 620px) {
   .lookup-actions-row {
     grid-template-columns: 1fr;
