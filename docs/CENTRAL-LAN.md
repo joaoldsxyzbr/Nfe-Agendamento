@@ -34,6 +34,7 @@ Quando o PC Central é ativado, somente os itens abaixo podem ser criados dentro
 P:\01-Nfe agendamento\
 ├── .nfe-agendamento
 ├── fila\
+├── pareamento\
 ├── processando\
 ├── respostas\
 └── status\
@@ -54,9 +55,21 @@ O restante do compartilhamento corporativo fica fora do escopo do aplicativo.
 7. Clique em **Abrir sistema**.
 8. Selecione o certificado A1 e a UF autora.
 9. Salve.
-10. Consulte uma NF-e conhecida.
+10. Consulte uma NF-e conhecida no próprio Central.
 
 Ao clicar em **Iniciar Central**, o PC passa a ser marcado localmente como Central. Essa preferência persiste e o aplicativo tenta reassumir a função automaticamente nas próximas inicializações.
+
+### Parear cada PC cliente
+
+Com a Central ativa:
+
+1. no sistema local da Central, localize **Conectar PCs**;
+2. clique em **Gerar código de pareamento**;
+3. use o código temporário nos PCs clientes dentro de aproximadamente 10 minutos;
+4. em cada cliente, abra o sistema local, informe o código e clique em **Parear com a Central**;
+5. aguarde a confirmação de pareamento antes da primeira consulta.
+
+O pareamento é persistido localmente. Não é necessário repetir a cada consulta ou reinicialização. Gere outro código somente para um cliente novo ou quando for necessário refazer o vínculo.
 
 ### Nos outros PCs
 
@@ -65,7 +78,8 @@ Ao clicar em **Iniciar Central**, o PC passa a ser marcado localmente como Centr
 3. Não clique em **Iniciar Central**.
 4. Abra **Abrir sistema** ou `http://127.0.0.1:17345`.
 5. A configuração de certificado não fica disponível.
-6. Faça uma consulta de teste.
+6. Faça o pareamento inicial.
+7. Faça uma consulta de teste.
 
 Cada PC usa seu próprio servidor local. O cliente não abre o site hospedado pelo PC Central.
 
@@ -79,16 +93,19 @@ Significa que o usuário clicou em **Iniciar Central** naquele computador e essa
 
 Possíveis estados:
 
-- **Central ativa** — lock adquirido, heartbeat sendo publicado e processador disponível;
+- **Central ativa** — lock adquirido, heartbeat assinado sendo publicado e processador disponível;
 - **Central aguardando pasta** — `P:\01-Nfe agendamento` não está disponível ou não pode ser usada;
 - **Conflito: outra Central ativa** — outro processo já possui o lock exclusivo.
 
+Um PC configurado como Central só executa consulta fiscal quando a Central está realmente ativa com o lock adquirido.
+
 ### Cliente
 
-O PC não executa consulta fiscal diretamente. Ele usa a fila compartilhada e mostra:
+O PC não executa consulta fiscal diretamente. Ele usa a fila compartilhada e pode estar em três situações:
 
-- **Central online** quando encontra heartbeat recente;
-- **Central offline** quando não encontra heartbeat válido.
+- **não pareado** — precisa receber um código temporário da Central;
+- **Central online** — pareamento válido e heartbeat recente/autenticado;
+- **Central offline** — heartbeat ausente, antigo ou inválido.
 
 ## Somente uma Central
 
@@ -104,7 +121,7 @@ Se outra máquina tentar assumir ao mesmo tempo, ela não derruba a Central exis
 
 Quando o processo que possui o lock encerra, o sistema de arquivos libera o handle.
 
-## Heartbeat
+## Heartbeat autenticado
 
 Enquanto ativa, a Central atualiza:
 
@@ -117,8 +134,9 @@ O heartbeat contém somente dados operacionais necessários, como:
 - versão do protocolo;
 - identificador do PC Central;
 - horário UTC;
-- chave pública RSA usada para proteger novas consultas;
-- versão do aplicativo.
+- chave pública RSA;
+- versão do aplicativo;
+- assinatura digital.
 
 Não contém:
 
@@ -127,9 +145,25 @@ Não contém:
 - XML;
 - chave de acesso NF-e;
 - CPF/CNPJ;
-- senha.
+- segredo do cliente.
 
-Clientes consideram a Central indisponível quando o heartbeat fica antigo.
+Durante o pareamento, o cliente fixa localmente a chave pública da Central. Depois disso, ele não confia em uma chave diferente apenas porque apareceu no compartilhamento: compara a chave com a que foi pareada e valida a assinatura do heartbeat.
+
+Clientes consideram a Central indisponível quando o heartbeat fica antigo ou não é autenticado corretamente.
+
+## Segurança do pareamento
+
+O diretório `pareamento` funciona somente como transporte temporário para autorizar um PC cliente.
+
+1. a Central gera um código aleatório temporário;
+2. o código deriva uma chave de pareamento;
+3. o cliente envia sua identidade em um envelope AES-GCM;
+4. a Central só abre o pedido enquanto o código estiver ativo;
+5. a Central cria um segredo exclusivo para o cliente e devolve a identidade/chave pública da Central em resposta cifrada;
+6. o cliente guarda segredo e chave pública localmente com DPAPI;
+7. a Central guarda a lista de clientes autorizados localmente com DPAPI.
+
+Arquivos inválidos na pasta de pareamento são descartados e não conseguem bloquear clientes legítimos.
 
 ## Segurança da fila
 
@@ -137,14 +171,19 @@ O compartilhamento não recebe a NF-e em texto puro.
 
 Para uma consulta:
 
-1. cliente gera um GUID e uma chave AES de 256 bits;
-2. chave NF-e é cifrada com AES-GCM;
-3. chave AES é cifrada com a chave pública RSA da Central usando OAEP-SHA256;
-4. envelope cifrado é publicado em `fila`;
-5. Central move o arquivo para `processando` para reivindicá-lo;
-6. Central decifra, valida e executa o fluxo fiscal;
-7. resposta é cifrada com a chave AES da solicitação;
-8. cliente decifra e remove a resposta consumida.
+1. cliente reserva uma sequência monotônica da sua identidade pareada;
+2. gera um GUID e uma chave AES de 256 bits;
+3. chave NF-e é cifrada com AES-GCM;
+4. chave AES é cifrada com a chave pública RSA pareada da Central usando OAEP-SHA256;
+5. o envelope recebe HMAC com o segredo exclusivo do cliente;
+6. envelope cifrado e autenticado é publicado em `fila`;
+7. Central move o arquivo para `processando` para reivindicá-lo;
+8. Central valida cliente, HMAC, sequência, tamanho, horário e payload;
+9. somente então executa o fluxo fiscal;
+10. resposta é cifrada com a chave AES da solicitação;
+11. cliente decifra e remove a resposta consumida.
+
+A sequência precisa ser maior que a última aceita pela Central, bloqueando replay/repetição de um envelope antigo.
 
 A chave AES pendente fica protegida localmente por DPAPI no cliente. A chave RSA privada da Central fica protegida localmente por DPAPI no Central.
 
@@ -164,7 +203,7 @@ O aplicativo **não**:
 
 ### PC Central
 
-Se o PC ainda está configurado como Central mas o compartilhamento fica indisponível, o painel mostra que está aguardando a pasta. Consultas feitas no próprio PC Central podem continuar usando diretamente o fluxo fiscal local enquanto esse PC permanece configurado como Central.
+Se o PC ainda está configurado como Central mas o compartilhamento fica indisponível, o painel mostra que está aguardando a pasta. Enquanto não adquirir o lock e ficar ativo, **não executa consulta fiscal direta**, mesmo no próprio PC.
 
 ## Parar a Central
 
@@ -174,6 +213,7 @@ Isso:
 
 - salva `ConfiguredAsCentral = false` localmente;
 - libera o lock;
+- remove o heartbeat publicado por essa instância;
 - encerra o processamento da fila;
 - impede reassunção automática na próxima inicialização.
 
@@ -189,15 +229,23 @@ O argumento legado `--lan` não habilita exposição de rede.
 
 ## Diagnóstico rápido
 
+### Cliente mostra que não está pareado
+
+1. confirme que `P:\01-Nfe agendamento` está acessível;
+2. confirme que a Central está ativa;
+3. gere um novo código em **Conectar PCs** no Central;
+4. informe o código no cliente e faça o pareamento novamente.
+
 ### Cliente mostra “Central offline”
 
 Confira, nesta ordem:
 
 1. se `P:\01-Nfe agendamento` abre no Explorador;
 2. se existe `.nfe-agendamento` dentro da pasta;
-3. se o PC Central está ligado e com o aplicativo aberto;
-4. se o painel do Central mostra **Central ativa**;
-5. se `status\heartbeat.json` está sendo atualizado.
+3. se o PC cliente está pareado;
+4. se o PC Central está ligado e com o aplicativo aberto;
+5. se o painel do Central mostra **Central ativa**;
+6. se `status\heartbeat.json` está sendo atualizado.
 
 Não desative o Firewall do Windows para testar esse fluxo.
 
@@ -217,6 +265,7 @@ A pasta é transporte, não arquivo permanente.
 - arquivos temporários são ignorados durante publicação;
 - temporários antigos são limpos;
 - respostas expiradas são limpas;
+- arquivos inválidos não bloqueiam a fila nem o pareamento;
 - item antigo em `processando` pode ser recuperado;
 - se já existe resposta daquele pedido, a recuperação não repete a chamada fiscal.
 
@@ -238,16 +287,20 @@ Uma conexão de outro computador à porta 17345 deve ser rejeitada pelo próprio
 2. executar uma cópia local do app em cada PC;
 3. ativar Central somente no PC com A1;
 4. confirmar heartbeat/processador no painel;
-5. consultar NF-e conhecida no Central;
-6. consultar NF-e conhecida em um cliente sem A1;
-7. validar DANFE e download XML no cliente;
-8. verificar que os envelopes no compartilhamento não mostram XML/chave NF-e em texto puro;
-9. reiniciar o PC Central e confirmar reassunção automática;
-10. usar **Parar Central**, reiniciar e confirmar que ele não reassume;
-11. confirmar que arquivos fora de `P:\01-Nfe agendamento` ficaram intocados.
+5. configurar/validar o certificado e consultar NF-e conhecida no Central;
+6. gerar um código de pareamento no Central;
+7. parear PC 2 e PC 3;
+8. consultar NF-e conhecida em um cliente sem A1;
+9. validar DANFE e download XML no cliente;
+10. verificar que os envelopes no compartilhamento não mostram XML/chave NF-e em texto puro;
+11. reiniciar o PC Central e confirmar reassunção automática;
+12. usar **Parar Central**, confirmar remoção do heartbeat, reiniciar e confirmar que ele não reassume;
+13. confirmar que arquivos fora de `P:\01-Nfe agendamento` ficaram intocados.
 
 ## Documentos relacionados
 
+- `README.md`
+- `docs/ATUALIZACAO-E-INICIALIZACAO.md`
 - `docs/superpowers/specs/2026-09-02-shared-folder-queue-design.md`
 - `docs/superpowers/plans/2026-09-02-shared-folder-queue.md`
 

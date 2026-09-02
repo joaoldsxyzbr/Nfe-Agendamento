@@ -6,7 +6,7 @@ Aplicativo Windows interno para consultar, visualizar e baixar NF-e usando o cer
 
 **v0.1.18**
 
-> A `main` já contém a nova arquitetura por pasta compartilhada descrita abaixo. A `v0.1.18` ainda pertence à arquitetura LAN anterior, mas já contém o atualizador integrado. A nova arquitetura entra na próxima release.
+> A `main` já contém a nova arquitetura por pasta compartilhada com pareamento seguro. A `v0.1.18` ainda pertence à arquitetura LAN anterior, mas já contém o atualizador integrado. O pacote atual da `main` é o candidato de teste para a próxima release (`v0.1.19`).
 
 ## Arquitetura atual da `main`
 
@@ -16,7 +16,7 @@ Cada computador executa sua própria cópia do aplicativo e abre a interface som
 http://127.0.0.1:17345
 ```
 
-A comunicação entre os PCs não usa mais uma porta HTTP aberta no PC central. Ela passa exclusivamente pela pasta corporativa:
+A comunicação entre os PCs não usa mais uma porta HTTP aberta no PC Central. Ela passa exclusivamente pela pasta corporativa:
 
 ```text
 P:\01-Nfe agendamento
@@ -25,8 +25,8 @@ P:\01-Nfe agendamento
 Fluxo:
 
 ```text
-PC cliente
-   ↓ pedido criptografado
+PC cliente pareado
+   ↓ pedido criptografado + autenticado
 P:\01-Nfe agendamento
    ↓
 PC Central
@@ -54,6 +54,7 @@ A Central cria somente esta estrutura **dentro da pasta que já deve existir**:
 P:\01-Nfe agendamento\
 ├── .nfe-agendamento
 ├── fila\
+├── pareamento\
 ├── processando\
 ├── respostas\
 └── status\
@@ -66,6 +67,8 @@ Regras de segurança:
 - o aplicativo não acessa pastas irmãs;
 - nomes de arquivos de requisição são GUIDs gerados pelo próprio aplicativo;
 - caminhos são normalizados e validados para permanecer dentro da raiz dedicada;
+- junctions/symlinks/reparse points na árvore operacional são rejeitados;
+- arquivos com nomes inválidos são descartados e não conseguem travar a fila;
 - chave NF-e e XML não são gravados em texto puro no compartilhamento;
 - arquivos da fila são temporários e não funcionam como backup de XML.
 
@@ -79,11 +82,11 @@ No PC que possui o certificado A1:
 2. clique em **Iniciar Central**;
 3. o aplicativo salva localmente que esse PC foi configurado como Central;
 4. ele tenta adquirir o lock exclusivo em `P:\01-Nfe agendamento\status`;
-5. se conseguir, passa a publicar heartbeat e processar a fila.
+5. se conseguir, passa a publicar heartbeat assinado e processar a fila.
 
 A preferência fica armazenada somente nesse PC. Depois de reiniciar o aplicativo ou o Windows, ele tenta reassumir a Central automaticamente.
 
-Ao usar **Parar Central**, a preferência é removida e o PC não tenta reassumir nas próximas inicializações até **Iniciar Central** ser usado novamente.
+Ao usar **Parar Central**, a preferência é removida, o heartbeat ativo é retirado e o PC não tenta reassumir nas próximas inicializações até **Iniciar Central** ser usado novamente.
 
 O papel de Central **não é escolhido automaticamente pela presença do certificado**.
 
@@ -92,6 +95,29 @@ O papel de Central **não é escolhido automaticamente pela presença do certifi
 A Central mantém um lock exclusivo no compartilhamento. Se outro PC configurado como Central tentar assumir enquanto o lock estiver ativo, o painel mostra conflito e não inicia um segundo processador fiscal.
 
 Se o processo central encerrar, o lock é liberado pelo sistema de arquivos e uma nova inicialização configurada como Central pode assumir.
+
+Um PC apenas configurado como Central, mas sem o lock ativo, **não executa consulta fiscal diretamente**.
+
+## Pareamento seguro dos PCs clientes
+
+Antes da primeira consulta em cada PC cliente, faça o pareamento uma vez.
+
+No PC Central ativo:
+
+1. abra o sistema local;
+2. na área **Conectar PCs**, clique em **Gerar código de pareamento**;
+3. copie o código temporário exibido. Ele expira em aproximadamente 10 minutos.
+
+No PC cliente:
+
+1. execute a cópia local do app e abra `http://127.0.0.1:17345`;
+2. informe o código exibido na Central;
+3. clique em **Parear com a Central**;
+4. aguarde a confirmação **PC pareado com a Central com sucesso**.
+
+Depois disso, o cliente guarda localmente sua identidade, segredo e chave pública fixada da Central usando DPAPI. Não é necessário informar o código novamente em cada consulta ou reinicialização.
+
+Se o pareamento local for perdido/corrompido ou a identidade da Central for substituída, gere outro código na Central e repita o pareamento.
 
 ## Uso nos outros PCs
 
@@ -102,22 +128,32 @@ Em cada cliente:
 1. execute sua cópia local de `NfeAgendamento.App.exe`;
 2. abra `http://127.0.0.1:17345`;
 3. não configure nem instale o A1 por causa do NFe Agendamento;
-4. faça a consulta normalmente.
+4. faça o pareamento inicial descrito acima;
+5. depois faça a consulta normalmente.
 
-O cliente verifica o heartbeat da Central, cifra a solicitação e usa `P:\01-Nfe agendamento` como transporte. O backend local mantém o mesmo endpoint usado pela interface web, então o fluxo de consulta continua simples para o usuário.
+O cliente valida o heartbeat assinado da Central, cifra e autentica a solicitação e usa `P:\01-Nfe agendamento` como transporte. O backend local mantém o mesmo endpoint usado pela interface web, então o fluxo de consulta continua simples para o usuário.
 
 A área de configuração do certificado fica indisponível nos PCs cliente.
 
-## Criptografia da fila
+## Criptografia e autenticação da fila
 
 Cada consulta usa uma chave AES de 256 bits exclusiva.
 
 Pedido:
 
-1. cliente gera `requestId` e chave AES aleatórios;
-2. payload é cifrado com AES-GCM;
-3. chave AES é cifrada com a chave pública RSA da Central usando OAEP-SHA256;
-4. somente o envelope cifrado é escrito em `fila`.
+1. cliente reserva uma sequência monotônica de sua identidade pareada;
+2. gera `requestId` e chave AES aleatórios;
+3. payload é cifrado com AES-GCM;
+4. chave AES é cifrada com a chave pública RSA da Central usando OAEP-SHA256;
+5. o envelope recebe autenticação HMAC com o segredo exclusivo daquele cliente;
+6. somente o envelope cifrado/autenticado é escrito em `fila`.
+
+A Central aceita o pedido somente se:
+
+- o cliente estiver previamente autorizado pelo pareamento;
+- o HMAC estiver correto;
+- a sequência for maior que a última aceita, bloqueando replay/repetição;
+- o envelope, tamanho, horário e chave NF-e forem válidos.
 
 Resposta:
 
@@ -128,12 +164,17 @@ Resposta:
 
 A chave AES pendente do cliente e a chave RSA privada da Central ficam somente no armazenamento local do Windows e são protegidas por DPAPI.
 
+### Heartbeat autenticado
+
+O heartbeat contém a identidade da Central, horário, versão, chave pública e assinatura digital. O cliente pareado não passa a confiar em uma chave pública nova apenas porque ela apareceu no compartilhamento: ele compara com a chave da Central fixada durante o pareamento e valida a assinatura.
+
 ## Escrita atômica e recuperação
 
 - publicação usa arquivo temporário no mesmo diretório e renomeação final;
 - o processador ignora arquivos temporários;
 - a Central reivindica um pedido movendo-o de `fila` para `processando`;
 - pedidos adulterados ou com autenticação inválida nunca chegam à SEFAZ;
+- arquivo inválido mais antigo não bloqueia pedidos legítimos da fila nem do pareamento;
 - itens antigos em `processando` podem ser recuperados;
 - se a resposta já existir, a recuperação não repete a chamada fiscal;
 - respostas e temporários antigos são removidos por retenção;
@@ -222,6 +263,8 @@ O atualizador valida a release oficial, o pacote Windows e SHA-256 antes de subs
 
 A **v0.1.18 já contém esse updater**. Assim, quando a próxima release com a arquitetura por pasta compartilhada for publicada, uma instalação v0.1.18 poderá migrar usando **Verificar atualização**. Instalações anteriores que não possuam o updater precisam ser atualizadas manualmente uma vez.
 
+Na primeira execução de um cliente após migrar da arquitetura LAN anterior para a fila compartilhada, é necessário realizar o pareamento inicial com a Central.
+
 Detalhes: [Inicialização e atualização](docs/ATUALIZACAO-E-INICIALIZACAO.md).
 
 ## Dados locais
@@ -239,7 +282,9 @@ Incluem, conforme o papel do PC:
 - cooldown fiscal;
 - auditoria fiscal;
 - chave RSA privada da Central protegida por DPAPI;
-- chaves AES pendentes dos clientes protegidas por DPAPI.
+- chaves AES pendentes dos clientes protegidas por DPAPI;
+- identidade, segredo e chave pública fixada da Central no cliente, protegidos por DPAPI;
+- lista de clientes autorizados no PC Central, protegida por DPAPI.
 
 O compartilhamento é somente transporte efêmero.
 
@@ -249,11 +294,17 @@ O compartilhamento é somente transporte efêmero.
 - HTTP somente em loopback;
 - requisições locais validam Host e Origin;
 - operações mutáveis exigem CSRF;
-- tamanho de requisição é limitado;
+- tamanho de requisição e arquivos da fila é limitado;
 - clientes não administram certificados;
-- AES-GCM autentica pedidos e respostas;
+- pareamento temporário autoriza explicitamente cada PC cliente;
+- heartbeat é assinado e a chave pública da Central fica fixada no cliente pareado;
+- HMAC autentica a identidade de cada cliente;
+- sequência monotônica bloqueia replay de solicitações;
+- AES-GCM autentica e cifra pedidos e respostas;
 - RSA OAEP-SHA256 protege a chave de sessão enviada à Central;
+- junctions/reparse points são rejeitados;
 - somente uma Central mantém o lock do compartilhamento;
+- uma Central sem lock ativo não executa consulta fiscal;
 - nenhuma rotina operacional acessa outras áreas de `P:`;
 - nenhum fallback tenta abrir firewall, mDNS ou servidor LAN.
 
@@ -299,12 +350,15 @@ O workflow executa testes, regressões, build, publish Windows x64 autocontido e
 - [ ] cada PC abre `http://127.0.0.1:17345`;
 - [ ] somente o PC com A1 é marcado manualmente com **Iniciar Central**;
 - [ ] o painel do Central mostra pasta, heartbeat e processador operacionais;
+- [ ] Central gera um código de pareamento;
+- [ ] PC 2 é pareado com sucesso;
+- [ ] PC 3 é pareado com sucesso;
 - [ ] os clientes mostram Central online;
 - [ ] cliente sem A1 consulta uma NF-e conhecida;
 - [ ] XML e DANFE funcionam no cliente;
-- [ ] arquivos em `fila`/`respostas` não expõem chave NF-e ou XML em texto puro;
+- [ ] arquivos em `fila`/`pareamento`/`respostas` não expõem chave NF-e ou XML em texto puro;
 - [ ] reiniciar o Central faz ele tentar reassumir automaticamente;
-- [ ] **Parar Central** impede reassunção automática na inicialização seguinte;
+- [ ] **Parar Central** remove o heartbeat e impede reassunção automática na inicialização seguinte;
 - [ ] desligar o Central faz os clientes mostrarem Central offline;
 - [ ] arquivos fora de `P:\01-Nfe agendamento` permanecem intocados;
 - [ ] nenhuma configuração de Firewall do Windows é solicitada pelo aplicativo.
