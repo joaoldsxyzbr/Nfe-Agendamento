@@ -141,3 +141,40 @@ function paginateProductsByAvailableSpace(products, additionalText) {
 }
 
 paginateProducts = paginateProductsByAvailableSpace;
+
+const DANFE_ZOOM_MIN = 0.6;
+const DANFE_ZOOM_MAX = 2;
+const DANFE_ZOOM_STEP = 0.1;
+let danfeZoom = 1;
+
+function applyDanfeZoom(zoom = danfeZoom) {
+  danfeZoom = Math.min(DANFE_ZOOM_MAX, Math.max(DANFE_ZOOM_MIN, zoom));
+  document.querySelectorAll('#danfe .danfe-page').forEach(page => {
+    page.style.zoom = String(danfeZoom);
+  });
+}
+
+const danfeViewer = document.getElementById('danfe');
+if (danfeViewer) {
+  danfeViewer.addEventListener('wheel', event => {
+    if (!event.ctrlKey || danfeViewer.hidden) return;
+
+    event.preventDefault();
+    const direction = event.deltaY < 0 ? 1 : -1;
+    applyDanfeZoom(Number((danfeZoom + (direction * DANFE_ZOOM_STEP)).toFixed(2)));
+  }, { passive: false });
+}
+
+window.addEventListener('beforeprint', () => {
+  document.querySelectorAll('#danfe .danfe-page').forEach(page => {
+    page.dataset.screenZoom = page.style.zoom || String(danfeZoom);
+    page.style.zoom = '1';
+  });
+});
+
+window.addEventListener('afterprint', () => {
+  document.querySelectorAll('#danfe .danfe-page').forEach(page => {
+    page.style.zoom = page.dataset.screenZoom || String(danfeZoom);
+    delete page.dataset.screenZoom;
+  });
+});
