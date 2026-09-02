@@ -23,6 +23,23 @@ public sealed class SharedQueueSecurityRegressionTests
     }
 
     [Fact]
+    public void Local_interface_exposes_one_time_pairing_flow()
+    {
+        var program = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "Program.cs"));
+        var index = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "index.html"));
+        var app = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "app.js"));
+
+        Assert.Contains("/api/pairing/code", program, StringComparison.Ordinal);
+        Assert.Contains("/api/pairing/client", program, StringComparison.Ordinal);
+        Assert.Contains("id=\"generatePairingCode\"", index, StringComparison.Ordinal);
+        Assert.Contains("id=\"pairingCode\"", index, StringComparison.Ordinal);
+        Assert.Contains("id=\"pairClient\"", index, StringComparison.Ordinal);
+        Assert.Contains("generatePairingCode", app, StringComparison.Ordinal);
+        Assert.Contains("pairClient", app, StringComparison.Ordinal);
+        Assert.Contains("clientPaired", app, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Legacy_central_enabled_aliases_are_removed()
     {
         Assert.Null(typeof(CentralStateService).GetProperty("IsEnabled"));
