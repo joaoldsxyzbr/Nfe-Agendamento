@@ -153,4 +153,19 @@ public sealed class DanfeStaticAssetsTests
         Assert.Contains("white-space: nowrap", css);
         Assert.Contains(".products-table .item-col", css);
     }
+
+    [Fact]
+    public void Danfe_viewer_resets_zoom_shows_hint_and_keeps_ctrl_wheel_zoom_anchored_to_pointer()
+    {
+        var script = Fixture("danfe-compact.js");
+        var css = Fixture("danfe-compact.css");
+
+        Assert.Contains("Ctrl + scroll para zoom", script);
+        Assert.Contains("danfeZoom = 1", script);
+        Assert.Contains("event.ctrlKey", script);
+        Assert.Contains("event.clientX - viewportRect.left", script);
+        Assert.Contains("scroll.scrollLeft =", script);
+        Assert.Contains("scroll.scrollTop =", script);
+        Assert.Contains(".danfe-zoom-hint", css);
+    }
 }
