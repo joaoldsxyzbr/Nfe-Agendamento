@@ -1,210 +1,262 @@
 # NFe Agendamento
 
-Aplicativo Windows interno para consultar, visualizar e baixar NF-e usando o certificado A1 instalado somente no PC central.
+Aplicativo Windows interno para consultar, visualizar e baixar NF-e usando o certificado A1 instalado somente no PC definido como **Central**.
 
 ## Versão publicada
 
 **v0.1.16**
 
-A `main` contém a evolução completa da Central Windows até o **Bloco 6**. A próxima release de teste será a primeira a reunir o fechamento desta etapa, incluindo atualização pelo próprio aplicativo e o acabamento final da Central.
+> A `main` já contém a nova arquitetura por pasta compartilhada descrita abaixo. A v0.1.16 ainda pertence à arquitetura LAN anterior; portanto, estes ajustes só estarão disponíveis na próxima release.
 
-## Arquitetura atual
+## Arquitetura atual da `main`
+
+Cada computador executa sua própria cópia do aplicativo e abre a interface somente em:
 
 ```text
-PCs da equipe
-    ↓ navegador
-http://IP-DO-PC-CENTRAL:17345
-    ↓
-Central NFe Agendamento
-    ↓
-Certificado A1 + cache + fila + SEFAZ
+http://127.0.0.1:17345
 ```
 
-O aplicativo Windows é a Central/administrador. O sistema de consulta continua web para os computadores clientes.
+A comunicação entre os PCs não usa mais uma porta HTTP aberta no PC central. Ela passa exclusivamente pela pasta corporativa:
 
-O certificado A1 e a chave privada permanecem no Windows Certificate Store do PC central. Cache criptografado, cooldown, configuração e auditoria também permanecem armazenados somente no PC central. O aplicativo não envia esses dados para GitHub ou nuvem. Quando um cliente consulta, visualiza ou baixa uma NF-e, o XML solicitado é entregue pela Central ao navegador através da rede interna HTTP; o certificado e a chave privada nunca são enviados ao cliente.
+```text
+P:\01-Nfe agendamento
+```
 
-## Blocos implementados
+Fluxo:
 
-### Bloco 1 — Central Windows
+```text
+PC cliente
+   ↓ pedido criptografado
+P:\01-Nfe agendamento
+   ↓
+PC Central
+   ↓
+Certificado A1 + fila fiscal + cache + SEFAZ
+   ↓ resposta criptografada
+P:\01-Nfe agendamento
+   ↓
+PC cliente
+```
 
-- janela **Central NFe Agendamento**;
-- status ativa/parada;
-- IPv4, porta `17345` e URL de acesso;
-- ações **Iniciar Central**, **Parar Central** e **Abrir sistema**;
-- estado persistido em `%LOCALAPPDATA%\NfeAgendamento\state\central.json`;
-- instalação nova inicia habilitada, mas um arquivo de estado existente e inválido desabilita o acesso remoto por segurança;
-- operação em bandeja.
+O certificado A1 e sua chave privada continuam exclusivamente no Windows Certificate Store do PC Central. O compartilhamento nunca recebe o certificado nem a chave privada fiscal.
 
-### Bloco 2 — Rede e Firewall
+## Pasta compartilhada
 
-- seleção do IPv4 utilizável da rede;
-- diagnóstico de interface, listener e firewall;
-- servidor preparado para atender a LAN em `17345`;
-- Host da LAN aceito somente quando corresponde a um IPv4 realmente atribuído ao PC central, além dos nomes locais explicitamente permitidos;
-- configuração via UAC de regra de entrada TCP estável entre atualizações, restrita à porta `17345`, perfis **Domínio/Privado** e origem `LocalSubnet`, sem vínculo ao caminho do executável;
-- `nfeagendamento.local` continua opcional via mDNS e anuncia o mesmo IPv4 selecionado pelo painel; o IPv4 é o fallback confiável.
+A raiz operacional é fixa:
 
-### Bloco 3 — Robustez fiscal
+```text
+P:\01-Nfe agendamento
+```
 
-- fila fiscal única e serializada;
-- limite de 12 operações únicas admitidas;
-- deduplicação de consultas simultâneas da mesma chave;
-- fila cheia retorna HTTP `429`, status `fila_ocupada` e `Retry-After: 5`;
-- `cStat=656` cria cooldown de uma hora, aplicado primeiro em memória e persistido para sobreviver ao reinício;
-- se a persistência falhar após um `656`, o processo atual continua bloqueado em memória;
-- consultas já aguardando revalidam o cooldown antes de tocar na SEFAZ;
-- até 3 tentativas somente para falhas transitórias: erro de rede sem status HTTP, `408`, `429`, `5xx` e timeout;
-- outros erros HTTP `4xx` não são repetidos automaticamente;
-- timeout e respostas inválidas viram erros controlados;
-- estado fiscal corrompido falha fechado, sem nova consulta à SEFAZ;
-- cache XML corrompido é descartado e tratado como cache miss, sem impedir a consulta;
-- auditoria local sem XML, chave completa, certificado ou CPF/CNPJ.
+A Central cria somente esta estrutura **dentro da pasta que já deve existir**:
 
-### Bloco 4 — Operação pelos clientes
+```text
+P:\01-Nfe agendamento\
+├── .nfe-agendamento
+├── fila\
+├── processando\
+├── respostas\
+└── status\
+```
 
-- bandeja mostra `Acesso: http://IP:17345`;
-- ação **Copiar endereço da Central**;
-- navegador diferencia **Central ocupada** de bloqueio **SEFAZ / cStat=656**;
-- mensagens usam o `Retry-After` e o horário real de desbloqueio;
-- administração de certificado é exclusiva do PC central; clientes remotos não podem listar, consultar nem selecionar certificados.
+Regras de segurança:
 
-### Bloco 5 — Prontidão de release
+- o aplicativo não cria `P:\01-Nfe agendamento` se ela não existir;
+- o aplicativo não enumera nem modifica a raiz `P:\`;
+- o aplicativo não acessa pastas irmãs;
+- nomes de arquivos de requisição são GUIDs gerados pelo próprio aplicativo;
+- caminhos são normalizados e validados para permanecer dentro da raiz dedicada;
+- chave NF-e e XML não são gravados em texto puro no compartilhamento;
+- arquivos da fila são temporários e não funcionam como backup de XML.
 
-- CI e Release Bridge executam testes .NET e todas as regressões JS;
-- existe um único caminho oficial de publicação: **Release Bridge** manual;
-- workflow legado de release por tag foi removido;
-- o Release Bridge faz checkout, testa, empacota e cria a tag/release no **SHA exato do disparo**, sem depender de uma `main` que possa avançar durante a execução;
-- regressão impede dependência de certificado `.pfx/.p12`, credencial fiscal ou transporte SEFAZ real nos testes/workflows;
-- teste comprova que o cooldown `656` continua válido em uma nova instância do serviço e bloqueia o transporte;
-- teste comprova que `/api/bootstrap` expõe somente dados operacionais (`csrfToken`, `lanMode`, `accessUrl`), sem XML ou dados de certificado.
+## Como a Central é definida
 
-### Bloco 6 — Testes, atualização e acabamento
+A Central é escolhida manualmente no painel Windows.
 
-- cobertura específica do modo Central, persistência e acesso local/remoto;
-- testes de inicialização automática sem dependência da flag legada `--lan`;
-- testes do diagnóstico de rede/listener e da regra restrita do Firewall do Windows;
-- testes de segurança para Host, Origin, CSRF, tamanho de requisição, administração de certificado somente local e bloqueio remoto com a Central parada;
-- testes da fila fiscal, liberação de capacidade e rejeição quando cheia;
-- testes de concorrência e deduplicação: a mesma chave compartilha uma única operação em andamento e chaves diferentes podem ser coordenadas independentemente;
-- testes de cache corrompido, cooldown `656` mesmo sem persistência e retry HTTP seletivo;
-- atualizador integrado ao menu da bandeja;
-- pacote de atualização aceito somente pela release oficial do GitHub, com validação de tamanho e SHA-256;
-- extração protegida contra escrita fora da pasta temporária;
-- instalação acontece após o encerramento da instância atual e o aplicativo é reaberto;
-- interface Windows simples, com identidade azul/amarelo e sem alterar o fluxo operacional;
-- CI obrigatório continua executando testes, regressões, build e geração do pacote Windows.
+No PC que possui o certificado A1:
 
-> A aceitação física da LAN continua obrigatória após gerar a release: instalar no PC central e abrir o endereço exibido pelo painel a partir de outro computador. O CI não consegue reproduzir VLAN, ACL, isolamento Wi-Fi ou políticas reais da rede da empresa.
+1. execute `NfeAgendamento.App.exe`;
+2. clique em **Iniciar Central**;
+3. o aplicativo salva localmente que esse PC foi configurado como Central;
+4. ele tenta adquirir o lock exclusivo em `P:\01-Nfe agendamento\status`;
+5. se conseguir, passa a publicar heartbeat e processar a fila.
 
-## Uso no PC central
+A preferência fica armazenada somente nesse PC. Depois de reiniciar o aplicativo ou o Windows, ele tenta reassumir a Central automaticamente.
 
-1. Execute `NfeAgendamento.App.exe`.
-2. Confirme **Central ativa**.
-3. Confira **Rede**, **Servidor** e **Firewall**.
-4. Se necessário, use **Configurar firewall** e autorize o UAC.
-5. Abra o sistema local.
-6. Selecione o certificado A1 válido e a UF autora.
-7. Faça uma consulta individual de teste.
+Ao usar **Parar Central**, a preferência é removida e o PC não tenta reassumir nas próximas inicializações até **Iniciar Central** ser usado novamente.
 
-Fechar a janela mantém o aplicativo na bandeja. Para encerrar completamente, use **Sair**.
+O papel de Central **não é escolhido automaticamente pela presença do certificado**.
 
-### Iniciar com o Windows
+### Somente uma Central por vez
 
-A opção **Iniciar com o Windows** registra apenas o executável da Central no perfil do usuário atual. Não é mais necessário usar nem preservar `--lan`.
+A Central mantém um lock exclusivo no compartilhamento. Se outro PC configurado como Central tentar assumir enquanto o lock estiver ativo, o painel mostra conflito e não inicia um segundo processador fiscal.
 
-O estado **Central ativa/parada** é salvo separadamente. Assim, iniciar automaticamente o programa não depende de argumentos especiais de linha de comando.
+Se o processo central encerrar, o lock é liberado pelo sistema de arquivos e uma nova inicialização configurada como Central pode assumir.
 
 ## Uso nos outros PCs
 
-Use o endereço mostrado no painel ou copiado pela bandeja, por exemplo:
+Você continua distribuindo a pasta do aplicativo normalmente para cada computador.
+
+Em cada cliente:
+
+1. execute sua cópia local de `NfeAgendamento.App.exe`;
+2. abra `http://127.0.0.1:17345`;
+3. não configure nem instale o A1 por causa do NFe Agendamento;
+4. faça a consulta normalmente.
+
+O cliente verifica o heartbeat da Central, cifra a solicitação e usa `P:\01-Nfe agendamento` como transporte. O backend local mantém o mesmo endpoint usado pela interface web, então o fluxo de consulta continua simples para o usuário.
+
+A área de configuração do certificado fica indisponível nos PCs cliente.
+
+## Criptografia da fila
+
+Cada consulta usa uma chave AES de 256 bits exclusiva.
+
+Pedido:
+
+1. cliente gera `requestId` e chave AES aleatórios;
+2. payload é cifrado com AES-GCM;
+3. chave AES é cifrada com a chave pública RSA da Central usando OAEP-SHA256;
+4. somente o envelope cifrado é escrito em `fila`.
+
+Resposta:
+
+1. a Central recupera a chave AES com sua chave RSA privada local;
+2. executa o fluxo fiscal existente;
+3. cifra o resultado com AES-GCM;
+4. cliente recupera a resposta e remove os artefatos consumidos.
+
+A chave AES pendente do cliente e a chave RSA privada da Central ficam somente no armazenamento local do Windows e são protegidas por DPAPI.
+
+## Escrita atômica e recuperação
+
+- publicação usa arquivo temporário no mesmo diretório e renomeação final;
+- o processador ignora arquivos temporários;
+- a Central reivindica um pedido movendo-o de `fila` para `processando`;
+- pedidos adulterados ou com autenticação inválida nunca chegam à SEFAZ;
+- itens antigos em `processando` podem ser recuperados;
+- se a resposta já existir, a recuperação não repete a chamada fiscal;
+- respostas e temporários antigos são removidos por retenção.
+
+## Robustez fiscal
+
+O transporte pela pasta fica **antes** do fluxo fiscal existente. A Central continua usando:
+
+- deduplicação de consultas simultâneas da mesma chave;
+- fila fiscal única e serializada;
+- limite de operações únicas admitidas;
+- cache XML local criptografado;
+- cooldown persistente para `cStat=656`;
+- retry limitado para falhas transitórias;
+- auditoria local sem XML, chave completa, certificado ou CPF/CNPJ.
+
+A consulta em lote permanece removida.
+
+## Firewall e rede
+
+A nova arquitetura multi-PC **não depende mais de conexão HTTP de entrada na porta 17345**.
+
+O servidor web de cada instalação escuta somente em loopback:
 
 ```text
-http://10.0.0.29:17345
+http://127.0.0.1:17345
 ```
 
-Não use `127.0.0.1` em outro computador: esse endereço sempre aponta para o próprio PC que está acessando.
+Portanto:
 
-Se a rede suportar mDNS, também pode funcionar:
+- não é necessário criar regra de entrada para o NFe Agendamento no Firewall do Windows;
+- não é necessário usar IP do PC Central;
+- `nfeagendamento.local` não é usado;
+- mDNS não é usado;
+- `--lan` não habilita exposição de rede;
+- o aplicativo não tenta contornar políticas de firewall da empresa;
+- se `P:` estiver indisponível, o cliente mostra erro operacional em vez de abrir outra rota de rede.
 
-```text
-http://nfeagendamento.local:17345
-```
+## Painel Windows
 
-Os computadores clientes precisam apenas de navegador. Não copie nem instale o certificado A1 neles. A configuração e seleção do certificado ficam disponíveis somente no PC central; os clientes usam o sistema para consulta, visualização e download.
+A janela **Central NFe Agendamento** mostra:
 
-Como o acesso entre a Central e os clientes usa HTTP na LAN, o conteúdo da NF-e solicitado trafega pela rede interna sem TLS fornecido pelo aplicativo. Mantenha a porta restrita a uma rede corporativa confiável e nunca a publique na internet.
+- Papel deste PC;
+- Pasta compartilhada;
+- estado da Central/lock;
+- heartbeat;
+- processador.
+
+Ações principais:
+
+- **Iniciar Central**;
+- **Parar Central**;
+- **Abrir sistema**.
+
+A bandeja mantém:
+
+- **Abrir Central**;
+- **Abrir sistema**;
+- **Configurar certificado** — habilitado apenas no PC configurado como Central;
+- **Verificar atualização**;
+- **Iniciar com o Windows**;
+- **Sair**.
+
+Fechar a janela mantém o aplicativo na bandeja. Para encerrar completamente, use **Sair**.
+
+## Configuração do certificado
+
+Somente o PC configurado como Central pode acessar os endpoints de administração do certificado.
+
+No Central:
+
+1. abra o sistema;
+2. escolha o A1 válido instalado no Windows;
+3. informe a UF autora;
+4. salve;
+5. faça uma consulta conhecida para validar.
+
+O certificado não é copiado para o GitHub, para o compartilhamento nem para os clientes.
 
 ## Atualização pelo próprio aplicativo
 
 No menu da bandeja, use **Verificar atualização**.
 
-Quando existir uma versão nova, o aplicativo:
+O atualizador valida a release oficial, o pacote Windows e SHA-256 antes de substituir arquivos. A **v0.1.16 não possui o updater novo completo**, então a primeira instalação da release que introduzir a arquitetura atual deve ser feita manualmente. Depois disso, o fluxo integrado poderá ser validado de ponta a ponta.
 
-1. consulta a release oficial do projeto;
-2. exige o pacote `Nfe-Agendamento-win-x64.zip` e um digest SHA-256 válido;
-3. pede confirmação antes do download;
-4. baixa o pacote via HTTPS;
-5. confere tamanho e SHA-256;
-6. valida as entradas do ZIP para impedir path traversal;
-7. prepara a atualização em diretório temporário;
-8. inicia o atualizador, encerra a Central, substitui os arquivos e reabre o executável.
+## Dados locais
 
-Se o pacote oficial não puder ser validado, a instalação automática não prossegue e o usuário é orientado a usar a release oficial manualmente.
-
-A **v0.1.16 não possui esse novo updater**. Portanto, a primeira instalação da release que introduzir o Bloco 6 deve ser feita manualmente. Depois disso, as versões seguintes poderão validar o fluxo de atualização pelo próprio app de ponta a ponta.
-
-## Consulta fiscal
-
-A consulta em lote foi removida. Todas as consultas são individuais e coordenadas pela Central.
-
-Quando a fila atingir 12 operações únicas, uma nova chave recebe `429 fila_ocupada`. Isso significa apenas que a Central está ocupada.
-
-Quando a SEFAZ retornar `cStat=656`, a Central aplica imediatamente um bloqueio de uma hora em memória e tenta persistir esse estado. Durante o bloqueio, não force novas tentativas; aguarde o horário informado na interface.
-
-Falhas transitórias de comunicação podem ser tentadas até três vezes com backoff. Erros HTTP permanentes de cliente, como `400`, `401`, `403` e `404`, falham na primeira tentativa e não geram repetição automática.
-
-## Cache e dados locais
-
-Os dados ficam em:
+Dados protegidos ficam em:
 
 ```text
 %LOCALAPPDATA%\NfeAgendamento
 ```
 
-Principais itens:
+Incluem, conforme o papel do PC:
 
+- configuração local `ConfiguredAsCentral`;
 - cache XML criptografado por DPAPI;
-- estado/cooldown fiscal criptografado por DPAPI;
-- configuração da Central;
-- auditoria em `logs\fiscal-audit.jsonl` com rotação aproximada de 2 MB e um backup `.1`.
+- cooldown fiscal;
+- auditoria fiscal;
+- chave RSA privada da Central protegida por DPAPI;
+- chaves AES pendentes dos clientes protegidas por DPAPI.
 
-Se uma entrada do cache XML estiver corrompida, incompatível ou não puder ser validada pelo DPAPI/JSON, ela é apagada e tratada como ausente; a consulta pode seguir normalmente para a fila fiscal e SEFAZ.
-
-A auditoria guarda somente horário UTC, fingerprint curta da chave, status, `cStat`, indicação de cache e duração.
+O compartilhamento é somente transporte efêmero.
 
 ## Segurança
 
-- certificado e chave privada ficam somente no PC central;
-- rotas de administração de certificado são bloqueadas para clientes remotos;
-- Host e Origin são validados;
-- Host remoto precisa corresponder ao IP real da Central ou ao nome interno explicitamente permitido;
-- operações POST exigem CSRF;
-- requisições possuem limite de tamanho;
-- conexões remotas são rejeitadas quando a Central está parada;
-- arquivo de estado da Central existente e inválido desabilita o acesso remoto por segurança;
-- firewall automático é restrito aos perfis Domínio/Privado, TCP `17345` e origem `LocalSubnet`, sem depender do caminho do executável;
-- cache inválido é descartado sem reutilizar conteúdo não validado;
-- um `656` continua bloqueando o processo mesmo se a persistência em disco falhar;
-- atualizações automáticas exigem pacote oficial com SHA-256 válido;
-- a porta não deve ser publicada na internet;
-- o aplicativo não possui autenticação própria: a segurança de acesso depende da rede interna e do estado ativa/parada da Central.
+- A1 e chave privada fiscal somente no Central;
+- HTTP somente em loopback;
+- requisições locais validam Host e Origin;
+- operações mutáveis exigem CSRF;
+- tamanho de requisição é limitado;
+- clientes não administram certificados;
+- AES-GCM autentica pedidos e respostas;
+- RSA OAEP-SHA256 protege a chave de sessão enviada à Central;
+- somente uma Central mantém o lock do compartilhamento;
+- nenhuma rotina operacional acessa outras áreas de `P:`;
+- nenhum fallback tenta abrir firewall, mDNS ou servidor LAN.
 
 ## Mapeamento Fernando Klein
 
-O mapeamento interno é aplicado somente quando o CPF/CNPJ do **emitente** corresponde ao fornecedor configurado. O XML e o `cProd` fiscal original nunca são alterados. Descrições desconhecidas não recebem código inventado.
+O mapeamento interno é aplicado somente quando o CPF/CNPJ do emitente corresponde ao fornecedor configurado. O XML e o `cProd` fiscal original nunca são alterados. Descrições desconhecidas não recebem código inventado.
 
-A regressão automatizada cobre os 17 produtos cadastrados, aliases, normalização, isolamento por emitente e um item desconhecido.
+A regressão automatizada cobre os produtos cadastrados, aliases, normalização, isolamento por emitente e item desconhecido.
 
 ## Desenvolvimento e validação
 
@@ -217,7 +269,9 @@ node tests/js/release-readiness-regression.test.js
 dotnet build Nfe-Agendamento.sln -c Release
 ```
 
-O CI também publica um pacote Windows autocontido de teste e disponibiliza o ZIP como artifact.
+O CI também publica um pacote Windows autocontido de teste como artifact.
+
+Nenhum teste deve depender do `P:` real, de certificado real ou da SEFAZ real. Os testes da fila usam diretórios temporários.
 
 ## Criar uma release
 
@@ -229,33 +283,33 @@ Existe um único fluxo oficial:
 4. informe uma versão maior que a última publicada;
 5. execute.
 
-Antes de publicar, o workflow valida a versão, executa testes e todas as regressões, compila e gera o pacote Windows x64 autocontido. A tag e a release apontam para o mesmo SHA que foi obtido no início do workflow e validado por esses testes, evitando publicar mudanças que tenham entrado posteriormente na `main`.
+O workflow executa testes, regressões, build, publish Windows x64 autocontido e cria a tag/release no SHA validado.
 
-## Checklist de aceitação da release do Bloco 6
+## Checklist físico da próxima release
 
-- [ ] instalar/extrair a nova versão no PC central;
-- [ ] painel Windows abre com identidade azul/amarelo e sem perda dos controles operacionais;
-- [ ] painel mostra **Central ativa**;
-- [ ] **Rede: OK**;
-- [ ] **Servidor: OK**;
-- [ ] **Firewall: OK**;
-- [ ] acesso local em `http://127.0.0.1:17345` funciona;
-- [ ] segundo PC abre o endereço `http://IP-DO-CENTRAL:17345`;
-- [ ] terceiro PC também consegue acessar a mesma Central;
-- [ ] certificado continua somente no PC central e não pode ser administrado pelos clientes;
-- [ ] consulta de uma NF-e conhecida funciona;
-- [ ] duas consultas simultâneas não quebram a fila;
-- [ ] consultas simultâneas da mesma chave não geram chamadas fiscais duplicadas;
-- [ ] download XML e DANFE funcionam no cliente;
-- [ ] **Iniciar com o Windows** relança o aplicativo sem `--lan`;
-- [ ] em uma versão futura à primeira release com updater, **Verificar atualização** instala e reinicia o app corretamente.
+- [ ] todos os PCs conseguem acessar `P:\01-Nfe agendamento`;
+- [ ] cada PC executa sua própria cópia local do aplicativo;
+- [ ] cada PC abre `http://127.0.0.1:17345`;
+- [ ] somente o PC com A1 é marcado manualmente com **Iniciar Central**;
+- [ ] o painel do Central mostra pasta, heartbeat e processador operacionais;
+- [ ] os clientes mostram Central online;
+- [ ] cliente sem A1 consulta uma NF-e conhecida;
+- [ ] XML e DANFE funcionam no cliente;
+- [ ] arquivos em `fila`/`respostas` não expõem chave NF-e ou XML em texto puro;
+- [ ] reiniciar o Central faz ele tentar reassumir automaticamente;
+- [ ] **Parar Central** impede reassunção automática na inicialização seguinte;
+- [ ] desligar o Central faz os clientes mostrarem Central offline;
+- [ ] arquivos fora de `P:\01-Nfe agendamento` permanecem intocados;
+- [ ] nenhuma configuração de Firewall do Windows é solicitada pelo aplicativo.
 
-Não provoque um `656` real apenas para testar o cooldown; persistência e bloqueio após reinício possuem cobertura automatizada.
+Não provoque um `656` real apenas para testar cooldown; esse comportamento possui cobertura automatizada.
 
 ## Documentação técnica
 
 - [Guia operacional da Central](docs/CENTRAL-LAN.md)
-- [Arquitetura atual da Central LAN](docs/superpowers/specs/2026-09-01-central-lan-architecture-design.md)
-- [Plano e estado de verificação](docs/superpowers/plans/2026-09-01-central-lan-architecture.md)
+- [Design atual — fila segura em pasta compartilhada](docs/superpowers/specs/2026-09-02-shared-folder-queue-design.md)
+- [Plano de implementação da fila compartilhada](docs/superpowers/plans/2026-09-02-shared-folder-queue.md)
 - [Design do navegador local](docs/superpowers/specs/2026-08-31-local-browser-nfe-design.md)
 - [Design do DANFE](docs/superpowers/specs/2026-08-31-danfe-fsist-design.md)
+
+A arquitetura LAN anterior foi substituída e permanece apenas em documentos históricos marcados como superseded.
