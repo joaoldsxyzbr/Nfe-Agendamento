@@ -13,14 +13,10 @@ public sealed class WindowsFirewallService
         if (!OperatingSystem.IsWindows())
             return FirewallRuleStatus.Unavailable;
 
-        var executable = Environment.ProcessPath;
-        if (string.IsNullOrWhiteSpace(executable))
-            return FirewallRuleStatus.Unavailable;
-
         try
         {
             var exitCode = await RunPowerShellAsync(
-                BuildCheckRuleScript(executable),
+                BuildCheckRuleScript(),
                 elevated: false,
                 cancellationToken);
 
@@ -42,14 +38,10 @@ public sealed class WindowsFirewallService
         if (!OperatingSystem.IsWindows())
             return false;
 
-        var executable = Environment.ProcessPath;
-        if (string.IsNullOrWhiteSpace(executable))
-            return false;
-
         try
         {
             return await RunPowerShellAsync(
-                BuildEnsureRuleScript(executable),
+                BuildEnsureRuleScript(),
                 elevated: true,
                 cancellationToken) == 0;
         }
@@ -64,36 +56,28 @@ public sealed class WindowsFirewallService
         }
     }
 
-    public static string BuildEnsureRuleScript(string executable)
+    public static string BuildEnsureRuleScript()
     {
-        if (string.IsNullOrWhiteSpace(executable))
-            throw new ArgumentException("Executável inválido.", nameof(executable));
-
-        var escapedProgram = EscapePowerShellLiteral(executable);
         var escapedRuleName = EscapePowerShellLiteral(RuleName);
 
         return "$ErrorActionPreference='Stop'; "
-            + $"$name='{escapedRuleName}'; $program='{escapedProgram}'; "
+            + $"$name='{escapedRuleName}'; "
             + "$existing=Get-NetFirewallRule -DisplayName $name -ErrorAction SilentlyContinue; "
             + "if($existing){$existing | Remove-NetFirewallRule -ErrorAction Stop}; "
-            + $"New-NetFirewallRule -DisplayName $name -Direction Inbound -Action Allow -Protocol TCP -LocalPort {LocalHost.Port} -Profile Private -Program $program -Enabled True -ErrorAction Stop | Out-Null; "
+            + $"New-NetFirewallRule -DisplayName $name -Direction Inbound -Action Allow -Protocol TCP -LocalPort {LocalHost.Port} -Profile Domain,Private -RemoteAddress LocalSubnet -Enabled True -ErrorAction Stop | Out-Null; "
             + "exit 0";
     }
 
-    internal static string BuildCheckRuleScript(string executable)
+    internal static string BuildCheckRuleScript()
     {
-        if (string.IsNullOrWhiteSpace(executable))
-            throw new ArgumentException("Executável inválido.", nameof(executable));
-
-        var escapedProgram = EscapePowerShellLiteral(executable);
         var escapedRuleName = EscapePowerShellLiteral(RuleName);
 
         return "$ErrorActionPreference='SilentlyContinue'; "
-            + $"$name='{escapedRuleName}'; $program='{escapedProgram}'; "
-            + "$rules=Get-NetFirewallRule -DisplayName $name | Where-Object { $_.Enabled -eq 'True' -and $_.Direction -eq 'Inbound' -and $_.Action -eq 'Allow' -and (([int]$_.Profile -band 2) -ne 0) }; "
+            + $"$name='{escapedRuleName}'; "
+            + "$rules=Get-NetFirewallRule -DisplayName $name | Where-Object { $_.Enabled -eq 'True' -and $_.Direction -eq 'Inbound' -and $_.Action -eq 'Allow' -and (([int]$_.Profile -band 3) -eq 3) -and (([int]$_.Profile -band 4) -eq 0) }; "
             + "foreach($rule in $rules){ "
-            + "$port=$rule | Get-NetFirewallPortFilter; $app=$rule | Get-NetFirewallApplicationFilter; "
-            + $"if($port.Protocol -eq 'TCP' -and [string]$port.LocalPort -eq '{LocalHost.Port}' -and $app.Program -ieq $program){{exit 0}} "
+            + "$port=$rule | Get-NetFirewallPortFilter; $address=$rule | Get-NetFirewallAddressFilter; $remote=@($address.RemoteAddress); "
+            + $"if($port.Protocol -eq 'TCP' -and [string]$port.LocalPort -eq '{LocalHost.Port}' -and $remote.Count -eq 1 -and $remote[0] -ieq 'LocalSubnet'){{exit 0}} "
             + "}; exit 1";
     }
 
