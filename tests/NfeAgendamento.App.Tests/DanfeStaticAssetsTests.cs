@@ -86,13 +86,14 @@ public sealed class DanfeStaticAssetsTests
     }
 
     [Fact]
-    public void Application_does_not_expose_batch_lookup()
+    public void Batch_lookup_reuses_individual_endpoint_instead_of_exposing_backend_batch_route()
     {
         var html = Fixture("index.html");
         var program = Fixture("Program.cs");
 
-        Assert.DoesNotContain("Consulta em lote", html, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("batchLookup", html, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Consulta em lote", html, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("id=\"batchInput\"", html, StringComparison.Ordinal);
+        Assert.Contains("/batch.js", html, StringComparison.Ordinal);
         Assert.DoesNotContain("/api/nfe/batch", program, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("BatchLookupService", program, StringComparison.Ordinal);
     }
