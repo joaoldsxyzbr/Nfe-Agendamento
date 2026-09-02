@@ -4,8 +4,14 @@
   display: flex;
   flex-direction: column;
   padding: 4mm;
-  font-size: 7.5px;
-  line-height: 1.08;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 8px;
+  line-height: 1.12;
+}
+
+.danfe-page,
+.danfe-page * {
+  font-family: Arial, Helvetica, sans-serif;
 }
 
 .receipt-stub { min-height: 48px; margin-bottom: 3px; }
@@ -30,7 +36,18 @@
 .products-table.danfe-products-fill { flex: 1; }
 .products-table.danfe-products-fill tbody tr:last-child td { height: 100%; }
 .products-table th,
-.products-table td { padding: 1.7px 2px; }
+.products-table td { padding: 2.3px 2.5px; }
+.products-table th {
+  font-size: 6.4px;
+  line-height: 1.1;
+}
+.products-table td {
+  font-size: 7.2px;
+  line-height: 1.16;
+}
+.products-table .description {
+  font-size: 7.4px;
+}
 .products-table col.item { width: 8mm; }
 .products-table col.code { width: 20mm; }
 .products-table .item-col,
@@ -50,12 +67,12 @@
 .internal-product-code {
   display: block;
   margin-top: 1px;
-  font-size: 0.88em;
+  font-size: 0.95em;
   font-weight: 700;
 }
 .additional-grid { min-height: 72px; }
 .additional-grid > div { padding: 3px 4px; }
-.additional-grid p { font-size: 6px; line-height: 1.12; }
+.additional-grid p { font-size: 6.4px; line-height: 1.14; }
 .danfe-footer { margin-top: 2px; }
 
 @media print {
