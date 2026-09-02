@@ -1,304 +1,254 @@
-# Guia operacional da central
+# Guia operacional da Central
+
+> O nome deste arquivo é mantido para não quebrar links antigos. A arquitetura HTTP LAN foi substituída pela fila segura em pasta compartilhada.
 
 ## Pré-requisitos
 
-- Windows no PC central;
+No PC Central:
+
+- Windows;
 - certificado A1 instalado no usuário que executará o app;
-- PC central e clientes na mesma sub-rede corporativa;
-- permissão para autorizar a regra TCP 17345 no Firewall do Windows;
-- UDP 5353 somente se a descoberta mDNS for usada.
+- acesso de leitura/escrita a `P:\01-Nfe agendamento`.
+
+Nos PCs cliente:
+
+- Windows;
+- cópia local do aplicativo;
+- acesso de leitura/escrita a `P:\01-Nfe agendamento`.
+
+Não é necessário liberar TCP `17345` entre computadores, configurar mDNS ou usar `nfeagendamento.local`.
+
+## Pasta usada pelo aplicativo
+
+A raiz é fixa:
+
+```text
+P:\01-Nfe agendamento
+```
+
+Ela **precisa existir antes** de a Central ser ativada. O aplicativo não cria a raiz e não acessa a raiz `P:\`.
+
+Quando o PC Central é ativado, somente os itens abaixo podem ser criados dentro dela:
+
+```text
+P:\01-Nfe agendamento\
+├── .nfe-agendamento
+├── fila\
+├── processando\
+├── respostas\
+└── status\
+```
+
+O restante do compartilhamento corporativo fica fora do escopo do aplicativo.
 
 ## Primeira configuração
 
-1. Extraia o pacote em uma pasta permanente.
+### No PC que possui o A1
+
+1. Copie/extraia a pasta do NFe Agendamento localmente.
 2. Execute `NfeAgendamento.App.exe`.
-3. Confirme no painel Windows que o status está **Central ativa**.
-4. Confira o IPv4 e o endereço de acesso mostrados na janela.
-5. Confira os indicadores **Rede**, **Servidor** e **Firewall**.
-6. Se o firewall indicar **Precisa configurar**, clique em **Configurar firewall** e autorize o UAC do Windows.
+3. Abra a janela **Central NFe Agendamento**.
+4. Confirme que `P:\01-Nfe agendamento` está acessível.
+5. Clique em **Iniciar Central**.
+6. Aguarde o painel mostrar **Central ativa** e **Processador: Ativo**.
 7. Clique em **Abrir sistema**.
-8. Selecione o certificado A1.
-9. Informe a UF autora.
-10. Faça uma consulta individual de teste.
-11. Teste o download do XML e a visualização do DANFE.
+8. Selecione o certificado A1 e a UF autora.
+9. Salve.
+10. Consulte uma NF-e conhecida.
 
-Não é necessário iniciar o aplicativo com `--lan`. A aplicação Windows mantém o servidor preparado para a LAN e a camada de segurança libera ou bloqueia clientes remotos conforme o estado da Central.
+Ao clicar em **Iniciar Central**, o PC passa a ser marcado localmente como Central. Essa preferência persiste e o aplicativo tenta reassumir a função automaticamente nas próximas inicializações.
 
-Em uma instalação nova, a Central inicia habilitada. O estado fica persistido em:
+### Nos outros PCs
 
-```text
-%LOCALAPPDATA%\NfeAgendamento\state\central.json
-```
+1. Copie/extraia a pasta do NFe Agendamento localmente em cada computador.
+2. Execute `NfeAgendamento.App.exe`.
+3. Não clique em **Iniciar Central**.
+4. Abra **Abrir sistema** ou `http://127.0.0.1:17345`.
+5. A configuração de certificado não fica disponível.
+6. Faça uma consulta de teste.
 
-Se esse arquivo já existir mas estiver corrompido, ilegível ou inválido, a Central adota **desabilitado** para o acesso remoto. Esse fallback é intencionalmente fail-closed; somente a ausência do arquivo em uma instalação nova assume o estado inicial habilitado.
+Cada PC usa seu próprio servidor local. O cliente não abre o site hospedado pelo PC Central.
 
-## Painel Windows
+## Como identificar o papel do PC
 
-A janela principal mostra:
+O painel mostra **Papel deste PC**.
 
-- status da Central;
-- IPv4 detectado;
-- porta `17345`;
-- URL para os demais computadores;
-- status da interface de rede;
-- status do listener do servidor na LAN;
-- status da regra do Firewall do Windows;
-- resumo do problema quando alguma etapa precisa de atenção.
+### Central configurada
 
-A seleção de IPv4 prioriza interfaces utilizáveis com gateway, endereços privados e adaptadores Ethernet/Wi-Fi, evitando escolher primeiro interfaces de túnel, loopback ou endereços APIPA.
+Significa que o usuário clicou em **Iniciar Central** naquele computador e essa escolha foi salva localmente.
 
-Ações:
+Possíveis estados:
 
-- **Iniciar Central**: permite novas conexões vindas da rede;
-- **Parar Central**: bloqueia conexões remotas, mas mantém o acesso local funcionando;
-- **Abrir sistema**: abre `http://127.0.0.1:17345` no PC central;
-- **Configurar firewall**: cria ou corrige a regra de entrada necessária para a Central.
+- **Central ativa** — lock adquirido, heartbeat sendo publicado e processador disponível;
+- **Central aguardando pasta** — `P:\01-Nfe agendamento` não está disponível ou não pode ser usada;
+- **Conflito: outra Central ativa** — outro processo já possui o lock exclusivo.
 
-Fechar a janela apenas minimiza a operação para a bandeja. Para encerrar o servidor, use **Sair** no menu da bandeja.
+### Cliente
 
-## Bandeja do Windows
+O PC não executa consulta fiscal diretamente. Ele usa a fila compartilhada e mostra:
 
-O menu da bandeja mantém as ações rápidas da Central e passa a mostrar o endereço de rede atual. Quando o acesso remoto está disponível, aparece uma linha como:
+- **Central online** quando encontra heartbeat recente;
+- **Central offline** quando não encontra heartbeat válido.
 
-```text
-Acesso: http://10.0.0.29:17345
-```
+## Somente uma Central
 
-A ação **Copiar endereço da Central** envia esse endereço para a área de transferência para que ele possa ser passado aos outros computadores sem redigitação.
-
-Se a Central estiver parada, o menu mostra **Acesso pela rede: desativado**. Se estiver ativa mas nenhum IPv4 utilizável tiver sido identificado, mostra **Acesso pela rede: IP não identificado** e o botão de copiar fica desativado.
-
-## Uso nos clientes
-
-Use preferencialmente o endereço exibido pelo painel ou copiado pelo menu da bandeja. Exemplo:
+A Central mantém aberto um lock exclusivo em:
 
 ```text
-http://10.0.0.29:17345
+P:\01-Nfe agendamento\status\central.lock
 ```
 
-Nunca use `127.0.0.1` nos clientes: esse endereço sempre aponta para o próprio computador que está acessando.
+O arquivo é usado como mecanismo de exclusão mútua do compartilhamento. O lock depende do handle aberto, não do texto contido no arquivo.
 
-Quando a descoberta mDNS funcionar, também pode ser usado:
+Se outra máquina tentar assumir ao mesmo tempo, ela não derruba a Central existente e não processa a fila.
+
+Quando o processo que possui o lock encerra, o sistema de arquivos libera o handle.
+
+## Heartbeat
+
+Enquanto ativa, a Central atualiza:
 
 ```text
-http://nfeagendamento.local:17345
+P:\01-Nfe agendamento\status\heartbeat.json
 ```
 
-O cliente só precisa de navegador. Não instale o certificado A1 nos clientes e não copie a pasta `%LOCALAPPDATA%\NfeAgendamento`.
+O heartbeat contém somente dados operacionais necessários, como:
 
-A administração do certificado é deliberadamente local: clientes remotos recebem `403` ao tentar acessar as rotas de listagem, estado atual ou seleção de certificado. O painel web remoto oculta essa configuração e mantém somente o fluxo operacional de consulta, visualização e download.
-
-O certificado e a chave privada não trafegam para os clientes. Porém, quando um usuário remoto consulta, visualiza ou baixa uma NF-e, o XML correspondente é entregue pela Central ao navegador através da rede interna HTTP. Portanto, a porta `17345` deve permanecer somente em uma LAN corporativa confiável; o aplicativo não fornece TLS para esse tráfego e não deve ser exposto à internet.
-
-## Operação diária
-
-- mantenha o PC central ligado;
-- mantenha o aplicativo aberto ou na bandeja;
-- confirme que o painel mostra **Central ativa**;
-- confirme **Rede: OK**, **Servidor: OK** e **Firewall: OK** antes do primeiro uso em outro PC;
-- use nos clientes o endereço informado pela janela ou copiado pela bandeja;
-- não abra cópias independentes do app em outros PCs;
-- use uma chave por consulta;
-- após `cStat=656`, aguarde o cooldown indicado.
-
-A consulta em lote foi removida. As consultas fiscais são coordenadas no PC central, consultas simultâneas da mesma chave são deduplicadas e o acesso à SEFAZ é serializado.
-
-## Fila fiscal
-
-A Central admite no máximo **12 operações fiscais únicas** ao mesmo tempo: uma em execução e até 11 aguardando. O limite evita que vários computadores acumulem um número indefinido de consultas na memória.
-
-A deduplicação acontece antes da fila. Se dois ou mais computadores pedirem a mesma chave enquanto a primeira consulta ainda estiver em andamento, todos compartilham a mesma operação fiscal e apenas uma chamada pode chegar à SEFAZ.
-
-Quando as 12 vagas estão ocupadas, uma chave diferente recebe:
-
-```text
-HTTP 429
-status: fila_ocupada
-Retry-After: 5
-```
-
-Esse retorno significa somente que a Central está ocupada. Ele não representa `cStat=656`.
-
-No navegador, esse cenário é exibido como **Central ocupada**, usando o valor real do cabeçalho `Retry-After` para informar em quantos segundos tentar novamente.
-
-## Proteção contra cStat=656
-
-Quando a SEFAZ retorna `656`, a Central aplica imediatamente um cooldown de uma hora **em memória** e depois tenta persistir o mesmo estado. A ordem é intencional: uma falha de disco ou permissão não pode liberar novas consultas dentro do processo atual.
-
-Quando a persistência funciona, o cooldown também sobrevive ao encerramento e reinício do aplicativo. Se a persistência falhar após um `656` real, a consulta ainda retorna bloqueada e as próximas consultas no mesmo processo permanecem bloqueadas; somente a durabilidade após reinício depende da gravação bem-sucedida.
-
-Consultas que já estavam aguardando na fila também verificam o cooldown novamente depois de obter a vez de execução. Se uma consulta anterior tiver recebido `656`, as demais são bloqueadas localmente antes de qualquer nova chamada externa.
-
-No navegador, esse retorno é apresentado separadamente da fila cheia: a mensagem informa que o bloqueio veio da **SEFAZ**, mostra o horário exato de liberação e orienta a não repetir a consulta antes desse momento.
-
-O estado de cooldown persistido é protegido por DPAPI. Se um arquivo de cooldown existente estiver corrompido ou não puder ser validado, a Central falha de forma segura: retorna um erro controlado e não envia uma nova consulta à SEFAZ.
-
-## Limites da comunicação fiscal
-
-A consulta individual aplica:
-
-- no máximo 3 tentativas para falhas transitórias de comunicação;
-- são consideradas transitórias: falha de rede sem status HTTP, HTTP `408`, HTTP `429`, respostas HTTP `5xx` e timeout da chamada externa;
-- erros HTTP permanentes de cliente, como `400`, `401`, `403` e `404`, não são repetidos automaticamente;
-- 2 segundos antes da segunda tentativa;
-- 5 segundos antes da terceira tentativa;
-- timeout de 45 segundos na chamada externa;
-- máximo de 10 MB para a resposta fiscal;
-- máximo de 256 KB para o corpo das requisições locais.
-
-Falha de rede após a última tentativa, timeout final ou resposta fiscal inválida são convertidos em erro controlado. Esses casos não deixam exceções de transporte escaparem como erro interno genérico da aplicação.
-
-## Cache XML
-
-O XML obtido com sucesso pode ser mantido no cache local por até 24 horas. O conteúdo é protegido por DPAPI e fica no perfil do usuário do Windows do PC central.
-
-Uma entrada de cache que não puder ser descriptografada, desserializada ou validada contra a chave solicitada é considerada inválida, apagada e tratada como **cache miss**. A primeira consulta não falha apenas porque um arquivo antigo do cache está corrompido; o fluxo segue normalmente para a fila fiscal e, se permitido, para a SEFAZ.
-
-Erros reais de acesso ao sistema de arquivos não são mascarados como cache miss. A autocorreção é limitada ao conteúdo de cache inválido.
-
-## Auditoria fiscal
-
-Cada operação fiscal compartilhada gera um registro operacional em:
-
-```text
-%LOCALAPPDATA%\NfeAgendamento\logs\fiscal-audit.jsonl
-```
-
-O arquivo atual gira ao atingir aproximadamente 2 MB e mantém somente um backup:
-
-```text
-fiscal-audit.jsonl.1
-```
-
-Cada linha contém apenas:
-
+- versão do protocolo;
+- identificador do PC Central;
 - horário UTC;
-- fingerprint SHA-256 de 12 caracteres da chave;
-- status interno da operação;
-- `cStat`, quando disponível;
-- indicação de cache;
-- duração em milissegundos.
+- chave pública RSA usada para proteger novas consultas;
+- versão do aplicativo.
 
-A auditoria não contém XML, chave de acesso completa, certificado, chave privada, CPF/CNPJ nem mensagem integral da SEFAZ. Se o log não puder ser gravado, a operação fiscal continua normalmente.
+Não contém:
+
+- certificado A1;
+- chave privada;
+- XML;
+- chave de acesso NF-e;
+- CPF/CNPJ;
+- senha.
+
+Clientes consideram a Central indisponível quando o heartbeat fica antigo.
+
+## Segurança da fila
+
+O compartilhamento não recebe a NF-e em texto puro.
+
+Para uma consulta:
+
+1. cliente gera um GUID e uma chave AES de 256 bits;
+2. chave NF-e é cifrada com AES-GCM;
+3. chave AES é cifrada com a chave pública RSA da Central usando OAEP-SHA256;
+4. envelope cifrado é publicado em `fila`;
+5. Central move o arquivo para `processando` para reivindicá-lo;
+6. Central decifra, valida e executa o fluxo fiscal;
+7. resposta é cifrada com a chave AES da solicitação;
+8. cliente decifra e remove a resposta consumida.
+
+A chave AES pendente fica protegida localmente por DPAPI no cliente. A chave RSA privada da Central fica protegida localmente por DPAPI no Central.
+
+## O que acontece se `P:` cair
+
+### Cliente
+
+A consulta falha de forma controlada com indicação de pasta/Central indisponível.
+
+O aplicativo **não**:
+
+- abre porta HTTP na LAN;
+- cria regra de firewall;
+- tenta mDNS;
+- procura outra pasta no `P:`;
+- tenta contornar política corporativa.
+
+### PC Central
+
+Se o PC ainda está configurado como Central mas o compartilhamento fica indisponível, o painel mostra que está aguardando a pasta. Consultas feitas no próprio PC Central podem continuar usando diretamente o fluxo fiscal local enquanto esse PC permanece configurado como Central.
+
+## Parar a Central
+
+Use **Parar Central** quando quiser remover o papel deste PC.
+
+Isso:
+
+- salva `ConfiguredAsCentral = false` localmente;
+- libera o lock;
+- encerra o processamento da fila;
+- impede reassunção automática na próxima inicialização.
+
+Para voltar a ser Central, use **Iniciar Central** novamente.
+
+## Iniciar com o Windows
+
+A opção **Iniciar com o Windows** inicia a cópia local do aplicativo no usuário atual.
+
+Se o PC tiver sido configurado como Central, o serviço tenta reassumir o lock automaticamente. Se for Cliente, continua Cliente.
+
+O argumento legado `--lan` não habilita exposição de rede.
+
+## Diagnóstico rápido
+
+### Cliente mostra “Central offline”
+
+Confira, nesta ordem:
+
+1. se `P:\01-Nfe agendamento` abre no Explorador;
+2. se existe `.nfe-agendamento` dentro da pasta;
+3. se o PC Central está ligado e com o aplicativo aberto;
+4. se o painel do Central mostra **Central ativa**;
+5. se `status\heartbeat.json` está sendo atualizado.
+
+Não desative o Firewall do Windows para testar esse fluxo.
+
+### Central mostra “aguardando pasta”
+
+Confirme se a unidade `P:` está mapeada no mesmo usuário do Windows que executa o NFe Agendamento e se a pasta dedicada existe.
+
+### Central mostra conflito
+
+Existe outro processo com o lock. Identifique qual PC está atuando como Central antes de interromper qualquer coisa.
+
+## Arquivos antigos e retenção
+
+A pasta é transporte, não arquivo permanente.
+
+- respostas consumidas são apagadas pelo cliente;
+- arquivos temporários são ignorados durante publicação;
+- temporários antigos são limpos;
+- respostas expiradas são limpas;
+- item antigo em `processando` pode ser recuperado;
+- se já existe resposta daquele pedido, a recuperação não repete a chamada fiscal.
 
 ## Firewall
 
-O painel verifica se existe a regra estável da Central. O botão **Configurar firewall** solicita elevação pelo UAC e recria a regra com estas restrições:
+A operação multi-PC atual não exige regra de entrada criada pelo NFe Agendamento.
 
-- direção de entrada;
-- protocolo TCP;
-- porta local `17345`;
-- perfis **Domínio** e **Privado**;
-- origem limitada a `LocalSubnet`;
-- sem liberação no perfil Público;
-- sem vínculo ao caminho do `NfeAgendamento.App.exe`.
-
-A regra não depende mais da pasta do executável. Atualizar o aplicativo ou mover a instalação não invalida o firewall apenas por mudança de caminho.
-
-Em computadores administrados por política corporativa, o Windows pode impedir alterações locais. Nessa situação, a regra deve ser aplicada pelo administrador da rede.
-
-O UDP `5353` continua opcional e serve apenas para `nfeagendamento.local`. O acesso por IPv4 não depende dele.
-
-Não abra a porta no roteador e não permita o aplicativo em redes públicas.
-
-## Segurança
-
-O servidor fica ouvindo em `0.0.0.0:17345` para poder atender a rede, mas a camada de segurança bloqueia clientes remotos sempre que o painel estiver em **Central parada**.
-
-Continuam sendo aplicados:
-
-- CSRF em operações mutáveis;
-- validação de Host;
-- Host remoto na porta `17345` aceito somente para um IPv4 realmente atribuído ao PC central ou para o nome interno explicitamente permitido `nfeagendamento.local`;
-- validação de Origin consistente com o Host permitido;
-- limite de tamanho das requisições;
-- administração de certificado exclusiva de conexão loopback no PC central;
-- certificado A1 e chave privada somente no PC central;
-- arquivo de estado da Central existente e inválido desabilita acesso remoto;
-- cache e cooldown criptografados por DPAPI;
-- cache inválido descartado antes de reutilização;
-- fila fiscal serializada, limitada e deduplicada;
-- bloqueio imediato em memória após `cStat=656`, com persistência quando possível;
-- auditoria sem dados fiscais completos;
-- regra de firewall limitada à porta `17345`, perfis Domínio/Privado e origem `LocalSubnet`, sem dependência do caminho do executável.
-
-O aplicativo não possui autenticação própria. Enquanto a Central estiver ativa, o acesso deve permanecer restrito à rede interna da empresa.
-
-## Domínio interno
-
-O app anuncia `nfeagendamento.local` por mDNS. O endereço anunciado é obtido pela **mesma seleção de IPv4 usada pelo painel da Central**, evitando que o nome interno aponte para uma interface diferente daquela apresentada ao operador.
-
-A descoberta pode falhar quando a rede bloqueia multicast, separa clientes por VLAN ou aplica isolamento Wi-Fi. Nesses casos, use o IPv4 exibido no painel.
-
-## Release e rastreabilidade
-
-O fluxo oficial de publicação é o **Release Bridge** manual. O workflow trabalha com o SHA imutável associado ao disparo (`github.sha`): o mesmo commit é obtido, testado, compilado, empacotado e usado como destino da tag/release.
-
-Assim, se a `main` receber outro commit enquanto uma publicação estiver em andamento, esse avanço não altera silenciosamente o conteúdo daquela release. A versão publicada corresponde ao código efetivamente validado no próprio workflow.
-
-## Diagnóstico
-
-### Rede não está OK
-
-O app não encontrou um IPv4 utilizável para a Central. Verifique se Ethernet ou Wi-Fi estão conectados e se o PC recebeu um endereço válido da rede.
-
-### Servidor não está OK
-
-A porta `17345` não foi encontrada ouvindo em uma interface de rede. Feche outras instâncias do NFe Agendamento e reinicie o aplicativo. Se a porta já estiver ocupada por outro programa, o app informa o conflito ao iniciar.
-
-### Firewall mostra Precisa configurar
-
-Clique em **Configurar firewall** e confirme o UAC. A regra é recriada para a porta `17345` e deixa de depender da pasta da versão instalada. Se continuar igual, a máquina provavelmente possui política corporativa de firewall e a liberação precisa ser feita pelo administrador.
-
-### IP exibido no painel não abre em outro PC mesmo com tudo OK
-
-1. confirme que o outro PC está na mesma sub-rede da Central;
-2. execute no cliente `Test-NetConnection IP-DO-CENTRAL -Port 17345`;
-3. se o teste falhar apesar dos três indicadores OK, investigue isolamento entre clientes, ACL de rede ou política corporativa fora do computador central.
-
-### `nfeagendamento.local` não abre, mas o IP funciona
-
-O servidor está acessível e o problema está somente na descoberta mDNS. Continue usando o IPv4 mostrado no painel.
-
-### HTTP 429 com `fila_ocupada`
-
-A tela informa que a **Central está ocupada** e mostra o tempo indicado em `Retry-After`. Aguarde esse intervalo e tente novamente. Não é necessário aguardar uma hora e esse retorno não veio da SEFAZ.
-
-### HTTP 429 com `consumo_indevido`
-
-É o tratamento do `cStat=656`. A tela identifica a **SEFAZ**, mostra o horário de liberação e orienta a não repetir a consulta antes dele. Verifique também se outro sistema consulta o mesmo CNPJ.
-
-### Estado fiscal local inválido
-
-A Central não conseguiu validar o arquivo persistido de cooldown. Por segurança, ela não envia uma nova consulta à SEFAZ. Encerre o app e investigue o estado em `%LOCALAPPDATA%\NfeAgendamento\state` antes de continuar a operação.
-
-### Cache XML corrompido
-
-A entrada inválida é descartada automaticamente e a consulta segue como se não houvesse cache. Não é necessário apagar manualmente todo o diretório por causa de uma única entrada corrompida.
-
-### Certificado não aparece
-
-O certificado precisa estar instalado no Windows Certificate Store do usuário que executa o app, dentro da validade e com chave privada acessível. Essa configuração deve ser feita no próprio PC central; a interface remota não possui permissão para administrar certificados.
-
-## Dados locais
-
-O app armazena dados em:
+Cada aplicativo aceita HTTP somente em loopback:
 
 ```text
-%LOCALAPPDATA%\NfeAgendamento
+http://127.0.0.1:17345
 ```
 
-O cache e o estado fiscal são protegidos pelo DPAPI do usuário do Windows. Trocar o usuário do Windows pode impedir o acesso ao cache antigo; nesse caso a entrada de cache que não puder ser validada é descartada, enquanto um estado fiscal persistido inválido continua seguindo a política fail-closed.
+Uma conexão de outro computador à porta 17345 deve ser rejeitada pelo próprio aplicativo/servidor e não faz parte da arquitetura suportada.
 
-A auditoria operacional fica em `logs\fiscal-audit.jsonl` e não contém XML nem identificadores fiscais completos.
+## Teste físico recomendado após cada release relevante
 
-## Limitações atuais
+1. abrir `P:\01-Nfe agendamento` nos três PCs;
+2. executar uma cópia local do app em cada PC;
+3. ativar Central somente no PC com A1;
+4. confirmar heartbeat/processador no painel;
+5. consultar NF-e conhecida no Central;
+6. consultar NF-e conhecida em um cliente sem A1;
+7. validar DANFE e download XML no cliente;
+8. verificar que os envelopes no compartilhamento não mostram XML/chave NF-e em texto puro;
+9. reiniciar o PC Central e confirmar reassunção automática;
+10. usar **Parar Central**, reiniciar e confirmar que ele não reassume;
+11. confirmar que arquivos fora de `P:\01-Nfe agendamento` ficaram intocados.
 
-- o PC central precisa permanecer ligado;
-- a configuração automática do firewall depende de autorização do Windows e pode ser bloqueada por política corporativa;
-- os clientes precisam estar na mesma sub-rede permitida pela regra `LocalSubnet`;
-- o domínio depende de mDNS ou do fallback por IP;
-- o acesso é HTTP dentro da rede interna e o conteúdo solicitado da NF-e trafega sem TLS fornecido pelo aplicativo;
-- não há publicação na internet e a porta `17345` não deve ser exposta externamente;
-- o diagnóstico local não detecta isolamento de VLAN/ACL existente fora do PC central;
-- a consulta fiscal continua sujeita às regras da SEFAZ.
+## Documentos relacionados
+
+- `docs/superpowers/specs/2026-09-02-shared-folder-queue-design.md`
+- `docs/superpowers/plans/2026-09-02-shared-folder-queue.md`
+
+A documentação de LAN anterior é histórica e não deve ser usada para operação da arquitetura atual.
