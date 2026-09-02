@@ -12,26 +12,21 @@ public sealed class LocalRequestSecurityMiddlewareTests
     [InlineData("127.0.0.1:17345", "https://evil.example", 403)]
     [InlineData("127.0.0.1:17345", "http://127.0.0.1:17345", 200)]
     [InlineData("localhost:17345", "http://localhost:17345", 200)]
-    public async Task Security_policy_rejects_unexpected_host_or_origin(
-        string host,
-        string origin,
-        int expectedStatus)
+    public async Task Security_policy_rejects_unexpected_host_or_origin(string host, string origin, int expectedStatus)
     {
-        var csrf = new CsrfTokenService();
-        var middleware = CreateMiddleware(csrf, centralEnabled: true);
-
+        var middleware = CreateMiddleware(new CsrfTokenService());
         var context = CreateContext(HttpMethods.Get, host, origin);
+
         await middleware.InvokeAsync(context);
 
         Assert.Equal(expectedStatus, context.Response.StatusCode);
     }
 
     [Fact]
-    public async Task Arbitrary_remote_hostname_is_rejected_even_when_origin_matches()
+    public async Task Any_non_loopback_client_is_rejected()
     {
-        var csrf = new CsrfTokenService();
-        var middleware = CreateMiddleware(csrf, centralEnabled: true);
-        var context = CreateContext(HttpMethods.Get, "evil.example:17345", "http://evil.example:17345");
+        var middleware = CreateMiddleware(new CsrfTokenService());
+        var context = CreateContext(HttpMethods.Get, "127.0.0.1:17345", "http://127.0.0.1:17345");
         context.Connection.RemoteIpAddress = IPAddress.Parse("10.0.0.30");
 
         await middleware.InvokeAsync(context);
@@ -40,74 +35,21 @@ public sealed class LocalRequestSecurityMiddlewareTests
     }
 
     [Fact]
-    public async Task Security_policy_rejects_non_loopback_when_central_is_stopped()
+    public async Task Mdns_hostname_is_not_accepted_even_from_loopback()
     {
-        var csrf = new CsrfTokenService();
-        var middleware = CreateMiddleware(csrf, centralEnabled: false);
+        var middleware = CreateMiddleware(new CsrfTokenService());
         var context = CreateContext(HttpMethods.Get, "nfeagendamento.local:17345", "http://nfeagendamento.local:17345");
-        context.Connection.RemoteIpAddress = IPAddress.Parse("10.0.0.30");
 
         await middleware.InvokeAsync(context);
 
         Assert.Equal(StatusCodes.Status403Forbidden, context.Response.StatusCode);
-    }
-
-    [Fact]
-    public async Task Security_policy_allows_explicit_internal_hostname_when_central_is_active()
-    {
-        var csrf = new CsrfTokenService();
-        var middleware = CreateMiddleware(csrf, centralEnabled: true);
-        var context = CreateContext(HttpMethods.Get, "nfeagendamento.local:17345", "http://nfeagendamento.local:17345");
-        context.Connection.RemoteIpAddress = IPAddress.Parse("10.0.0.30");
-
-        await middleware.InvokeAsync(context);
-
-        Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
-    }
-
-    [Theory]
-    [InlineData("GET", "/api/certificates")]
-    [InlineData("GET", "/api/certificate/current")]
-    [InlineData("POST", "/api/certificate/select")]
-    public async Task Certificate_administration_is_rejected_for_remote_clients(string method, string path)
-    {
-        var csrf = new CsrfTokenService();
-        var middleware = CreateMiddleware(csrf, centralEnabled: true);
-        var context = CreateContext(method, "nfeagendamento.local:17345", "http://nfeagendamento.local:17345");
-        context.Connection.RemoteIpAddress = IPAddress.Parse("10.0.0.30");
-        context.Request.Path = path;
-        if (HttpMethods.IsPost(method))
-        {
-            context.Request.ContentLength = 2;
-            context.Request.Headers["X-CSRF-Token"] = csrf.CurrentToken;
-        }
-
-        await middleware.InvokeAsync(context);
-
-        Assert.Equal(StatusCodes.Status403Forbidden, context.Response.StatusCode);
-    }
-
-    [Fact]
-    public async Task Fiscal_lookup_remains_allowed_for_remote_clients_when_central_is_active()
-    {
-        var csrf = new CsrfTokenService();
-        var middleware = CreateMiddleware(csrf, centralEnabled: true);
-        var context = CreateContext(HttpMethods.Post, "nfeagendamento.local:17345", "http://nfeagendamento.local:17345");
-        context.Connection.RemoteIpAddress = IPAddress.Parse("10.0.0.30");
-        context.Request.Path = "/api/nfe/lookup";
-        context.Request.ContentLength = 2;
-        context.Request.Headers["X-CSRF-Token"] = csrf.CurrentToken;
-
-        await middleware.InvokeAsync(context);
-
-        Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
     }
 
     [Fact]
     public async Task Post_without_csrf_is_rejected()
     {
         var csrf = new CsrfTokenService();
-        var middleware = CreateMiddleware(csrf, centralEnabled: true);
+        var middleware = CreateMiddleware(csrf);
         var context = CreateContext(HttpMethods.Post, "127.0.0.1:17345", "http://127.0.0.1:17345");
         context.Request.ContentType = "application/json";
         context.Request.ContentLength = 2;
@@ -121,7 +63,7 @@ public sealed class LocalRequestSecurityMiddlewareTests
     public async Task Post_with_valid_csrf_is_allowed()
     {
         var csrf = new CsrfTokenService();
-        var middleware = CreateMiddleware(csrf, centralEnabled: true);
+        var middleware = CreateMiddleware(csrf);
         var context = CreateContext(HttpMethods.Post, "127.0.0.1:17345", "http://127.0.0.1:17345");
         context.Request.ContentType = "application/json";
         context.Request.ContentLength = 2;
@@ -136,7 +78,7 @@ public sealed class LocalRequestSecurityMiddlewareTests
     public async Task Oversized_json_post_is_rejected()
     {
         var csrf = new CsrfTokenService();
-        var middleware = CreateMiddleware(csrf, centralEnabled: true);
+        var middleware = CreateMiddleware(csrf);
         var context = CreateContext(HttpMethods.Post, "127.0.0.1:17345", "http://127.0.0.1:17345");
         context.Request.ContentType = "application/json";
         context.Request.ContentLength = LocalHost.MaxRequestBodyBytes + 1;
@@ -147,22 +89,14 @@ public sealed class LocalRequestSecurityMiddlewareTests
         Assert.Equal(StatusCodes.Status413PayloadTooLarge, context.Response.StatusCode);
     }
 
-    private static LocalRequestSecurityMiddleware CreateMiddleware(CsrfTokenService csrf, bool centralEnabled)
-    {
-        var path = Path.Combine(Path.GetTempPath(), $"nfe-security-{Guid.NewGuid():N}", "central.json");
-        var store = new CentralSettingsStore(path);
-        var state = new CentralStateService(store);
-        state.SetEnabled(centralEnabled);
-
-        return new LocalRequestSecurityMiddleware(
+    private static LocalRequestSecurityMiddleware CreateMiddleware(CsrfTokenService csrf) =>
+        new(
             next: context =>
             {
                 context.Response.StatusCode = StatusCodes.Status200OK;
                 return Task.CompletedTask;
             },
-            csrf,
-            state);
-    }
+            csrf);
 
     private static DefaultHttpContext CreateContext(string method, string host, string? origin)
     {
@@ -170,8 +104,7 @@ public sealed class LocalRequestSecurityMiddlewareTests
         context.Connection.RemoteIpAddress = IPAddress.Loopback;
         context.Request.Method = method;
         context.Request.Host = HostString.FromUriComponent(host);
-        if (!string.IsNullOrWhiteSpace(origin))
-            context.Request.Headers.Origin = origin;
+        if (!string.IsNullOrWhiteSpace(origin)) context.Request.Headers.Origin = origin;
         return context;
     }
 }
