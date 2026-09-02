@@ -118,6 +118,40 @@
       </aside>
     </section>
 
+    <section class="panel batch-panel" aria-labelledby="batchTitle">
+      <div class="panel-heading">
+        <div>
+          <p class="panel-kicker">CONSULTA EM LOTE</p>
+          <h2 id="batchTitle">Consultar várias NF-e</h2>
+          <p>Cole uma chave por linha. Este PC envia uma consulta por vez para a fila segura.</p>
+        </div>
+        <span class="step-badge muted-badge">03</span>
+      </div>
+
+      <div class="field">
+        <label for="batchInput">Chaves de acesso</label>
+        <textarea id="batchInput" rows="6" spellcheck="false" autocomplete="off" placeholder="Cole uma chave de 44 dígitos por linha"></textarea>
+        <p id="batchInputSummary" class="muted batch-input-summary">Nenhuma chave informada.</p>
+      </div>
+
+      <div class="batch-actions">
+        <button id="clearBatch" class="secondary" type="button">Limpar</button>
+        <button id="cancelBatch" class="secondary" type="button" hidden>Cancelar lote</button>
+        <button id="startBatch" class="primary" type="button">Iniciar lote</button>
+      </div>
+
+      <p id="batchSummary" class="status batch-summary" aria-live="polite"></p>
+
+      <div id="batchTableWrap" class="batch-table-wrap" hidden>
+        <table class="batch-table">
+          <thead>
+            <tr><th>#</th><th>Chave</th><th>Status</th><th>Ações</th></tr>
+          </thead>
+          <tbody id="batchResults"></tbody>
+        </table>
+      </div>
+    </section>
+
     <section id="danfe" class="danfe" role="dialog" aria-modal="true" aria-label="Visualização do DANFE" hidden></section>
   </main>
   <script>
@@ -135,6 +169,7 @@
   </script>
   <script src="/lookup-feedback.js" defer></script>
   <script src="/app.js" defer></script>
+  <script src="/batch.js" defer></script>
   <script src="/pairing.js" defer></script>
   <script src="/product-mapping.js" defer></script>
   <script src="/danfe-compact.js" defer></script>
