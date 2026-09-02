@@ -4,9 +4,9 @@ Aplicativo Windows interno para consultar, visualizar e baixar NF-e usando o cer
 
 ## Versão publicada
 
-**v0.1.16**
+**v0.1.18**
 
-> A `main` já contém a nova arquitetura por pasta compartilhada descrita abaixo. A v0.1.16 ainda pertence à arquitetura LAN anterior; portanto, estes ajustes só estarão disponíveis na próxima release.
+> A `main` já contém a nova arquitetura por pasta compartilhada descrita abaixo. A `v0.1.18` ainda pertence à arquitetura LAN anterior, mas já contém o atualizador integrado. A nova arquitetura entra na próxima release.
 
 ## Arquitetura atual da `main`
 
@@ -136,7 +136,8 @@ A chave AES pendente do cliente e a chave RSA privada da Central ficam somente n
 - pedidos adulterados ou com autenticação inválida nunca chegam à SEFAZ;
 - itens antigos em `processando` podem ser recuperados;
 - se a resposta já existir, a recuperação não repete a chamada fiscal;
-- respostas e temporários antigos são removidos por retenção.
+- respostas e temporários antigos são removidos por retenção;
+- pedido que ainda está em `fila` é removido pelo próprio cliente se a consulta for abandonada ou exceder o timeout.
 
 ## Robustez fiscal
 
@@ -217,7 +218,11 @@ O certificado não é copiado para o GitHub, para o compartilhamento nem para os
 
 No menu da bandeja, use **Verificar atualização**.
 
-O atualizador valida a release oficial, o pacote Windows e SHA-256 antes de substituir arquivos. A **v0.1.16 não possui o updater novo completo**, então a primeira instalação da release que introduzir a arquitetura atual deve ser feita manualmente. Depois disso, o fluxo integrado poderá ser validado de ponta a ponta.
+O atualizador valida a release oficial, o pacote Windows e SHA-256 antes de substituir arquivos.
+
+A **v0.1.18 já contém esse updater**. Assim, quando a próxima release com a arquitetura por pasta compartilhada for publicada, uma instalação v0.1.18 poderá migrar usando **Verificar atualização**. Instalações anteriores que não possuam o updater precisam ser atualizadas manualmente uma vez.
+
+Detalhes: [Inicialização e atualização](docs/ATUALIZACAO-E-INICIALIZACAO.md).
 
 ## Dados locais
 
@@ -283,6 +288,8 @@ Existe um único fluxo oficial:
 4. informe uma versão maior que a última publicada;
 5. execute.
 
+A última versão publicada é `v0.1.18`; portanto, a próxima release deve usar uma versão superior, como `v0.1.19`.
+
 O workflow executa testes, regressões, build, publish Windows x64 autocontido e cria a tag/release no SHA validado.
 
 ## Checklist físico da próxima release
@@ -307,6 +314,7 @@ Não provoque um `656` real apenas para testar cooldown; esse comportamento poss
 ## Documentação técnica
 
 - [Guia operacional da Central](docs/CENTRAL-LAN.md)
+- [Inicialização e atualização](docs/ATUALIZACAO-E-INICIALIZACAO.md)
 - [Design atual — fila segura em pasta compartilhada](docs/superpowers/specs/2026-09-02-shared-folder-queue-design.md)
 - [Plano de implementação da fila compartilhada](docs/superpowers/plans/2026-09-02-shared-folder-queue.md)
 - [Design do navegador local](docs/superpowers/specs/2026-08-31-local-browser-nfe-design.md)
