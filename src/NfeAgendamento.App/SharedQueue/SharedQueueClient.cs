@@ -6,6 +6,7 @@ namespace NfeAgendamento.App.SharedQueue;
 
 public sealed record SharedQueueClientStatus(
     bool ShareAvailable,
+    bool IsPaired,
     bool CentralOnline,
     string? CentralId,
     DateTimeOffset? LastHeartbeatUtc,
@@ -16,13 +17,22 @@ public sealed class SharedQueueClient
     private static readonly TimeSpan HeartbeatMaxAge = TimeSpan.FromSeconds(10);
     private readonly SharedQueuePaths _paths;
     private readonly PendingRequestSecretStore _pendingSecrets;
+    private readonly ClientPairingStore _pairingStore;
     private readonly TimeSpan _pollInterval;
     private readonly TimeSpan _timeout;
 
     public SharedQueueClient(
         SharedQueuePaths paths,
+        PendingRequestSecretStore pendingSecrets,
+        ClientPairingStore pairingStore)
+        : this(paths, pendingSecrets, pairingStore, TimeSpan.FromMilliseconds(250), TimeSpan.FromSeconds(90))
+    {
+    }
+
+    public SharedQueueClient(
+        SharedQueuePaths paths,
         PendingRequestSecretStore pendingSecrets)
-        : this(paths, pendingSecrets, TimeSpan.FromMilliseconds(250), TimeSpan.FromSeconds(90))
+        : this(paths, pendingSecrets, new ClientPairingStore(), TimeSpan.FromMilliseconds(250), TimeSpan.FromSeconds(90))
     {
     }
 
@@ -31,38 +41,62 @@ public sealed class SharedQueueClient
         PendingRequestSecretStore pendingSecrets,
         TimeSpan pollInterval,
         TimeSpan timeout)
+        : this(paths, pendingSecrets, new ClientPairingStore(), pollInterval, timeout)
+    {
+    }
+
+    public SharedQueueClient(
+        SharedQueuePaths paths,
+        PendingRequestSecretStore pendingSecrets,
+        ClientPairingStore pairingStore,
+        TimeSpan pollInterval,
+        TimeSpan timeout)
     {
         _paths = paths ?? throw new ArgumentNullException(nameof(paths));
         _pendingSecrets = pendingSecrets ?? throw new ArgumentNullException(nameof(pendingSecrets));
+        _pairingStore = pairingStore ?? throw new ArgumentNullException(nameof(pairingStore));
         if (pollInterval <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(pollInterval));
         if (timeout <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(timeout));
         _pollInterval = pollInterval;
         _timeout = timeout;
     }
 
+    public bool IsPaired => _pairingStore.IsPaired;
+
     public SharedQueueClientStatus GetStatus()
     {
         if (!_paths.ValidateForClient())
-            return new SharedQueueClientStatus(false, false, null, null, $"A pasta '{SharedQueuePaths.DefaultRoot}' não está disponível ou não foi inicializada.");
+            return new SharedQueueClientStatus(false, IsPaired, false, null, null, $"A pasta '{SharedQueuePaths.DefaultRoot}' não está disponível ou não foi inicializada.");
+
+        var pairing = _pairingStore.Load();
+        if (pairing is null)
+            return new SharedQueueClientStatus(true, false, false, null, null, "Este PC ainda não foi pareado com a Central.");
 
         try
         {
-            var heartbeat = ReadHeartbeat();
+            var heartbeat = ReadHeartbeat(pairing.CentralPublicKey);
             if (heartbeat is null)
-                return new SharedQueueClientStatus(true, false, null, null, "Central offline ou indisponível.");
+                return new SharedQueueClientStatus(true, true, false, pairing.CentralId, null, "Central offline ou indisponível.");
 
-            var online = DateTimeOffset.UtcNow - heartbeat.UpdatedUtc <= HeartbeatMaxAge
-                && heartbeat.UpdatedUtc <= DateTimeOffset.UtcNow.AddMinutes(1);
+            var now = DateTimeOffset.UtcNow;
+            var online = now - heartbeat.UpdatedUtc <= HeartbeatMaxAge
+                && heartbeat.UpdatedUtc <= now.AddMinutes(1);
             return new SharedQueueClientStatus(
+                true,
                 true,
                 online,
                 heartbeat.CentralId,
                 heartbeat.UpdatedUtc,
                 online ? null : "Central offline ou indisponível.");
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or FormatException)
+        catch (Exception ex) when (ex is IOException
+            or UnauthorizedAccessException
+            or JsonException
+            or FormatException
+            or CryptographicException
+            or InvalidDataException)
         {
-            return new SharedQueueClientStatus(true, false, null, null, ex.Message);
+            return new SharedQueueClientStatus(true, true, false, pairing.CentralId, null, ex.Message);
         }
     }
 
@@ -74,38 +108,49 @@ public sealed class SharedQueueClient
         var status = GetStatus();
         if (!status.ShareAvailable)
             return Failure($"A pasta compartilhada '{SharedQueuePaths.DefaultRoot}' não está disponível.");
+        if (!status.IsPaired)
+            return Failure("Este PC ainda não foi pareado com a Central.");
         if (!status.CentralOnline)
-            return Failure("Central offline ou indisponível.");
+            return Failure(status.Message ?? "Central offline ou indisponível.");
 
-        QueueHeartbeat heartbeat;
+        ClientRequestCredentials credentials;
         try
         {
-            heartbeat = ReadHeartbeat() ?? throw new InvalidDataException("Heartbeat da Central indisponível.");
+            credentials = _pairingStore.ReserveCredentials();
+            _ = ReadHeartbeat(credentials.CentralPublicKey)
+                ?? throw new InvalidDataException("Heartbeat da Central indisponível.");
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or FormatException or InvalidDataException)
+        catch (Exception ex) when (ex is IOException
+            or UnauthorizedAccessException
+            or JsonException
+            or FormatException
+            or CryptographicException
+            or InvalidDataException
+            or InvalidOperationException)
         {
             return Failure($"Não foi possível validar a Central: {ex.Message}");
-        }
-
-        byte[] publicKey;
-        try
-        {
-            publicKey = Convert.FromBase64String(heartbeat.PublicKeyBase64);
-        }
-        catch (FormatException)
-        {
-            return Failure("A identidade pública da Central é inválida.");
         }
 
         var requestId = Guid.NewGuid();
         ClientRequestMaterial material;
         try
         {
-            material = SharedQueueCrypto.CreateClientRequest(requestId, accessKey, publicKey);
+            material = SharedQueueCrypto.CreateClientRequest(
+                requestId,
+                accessKey,
+                credentials.CentralPublicKey,
+                credentials.ClientId,
+                credentials.Sequence,
+                credentials.ClientSecret);
         }
         catch (CryptographicException)
         {
             return Failure("Não foi possível proteger a consulta para envio à Central.");
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(credentials.ClientSecret);
+            CryptographicOperations.ZeroMemory(credentials.CentralPublicKey);
         }
 
         try
@@ -134,29 +179,59 @@ public sealed class SharedQueueClient
         {
             throw;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CryptographicException or JsonException)
+        catch (Exception ex) when (ex is IOException
+            or UnauthorizedAccessException
+            or CryptographicException
+            or JsonException
+            or InvalidDataException)
         {
             return Failure($"Falha na comunicação com a Central: {ex.Message}");
         }
         finally
         {
-            // Só remove o pedido se ele ainda estiver aguardando em fila. Se a Central já
-            // o moveu para processando, a operação pode terminar sem ser cancelada pelo cliente.
             TryDelete(_paths.RequestPath(requestId));
             _pendingSecrets.Delete(requestId);
             CryptographicOperations.ZeroMemory(material.AesKey);
         }
     }
 
-    private QueueHeartbeat? ReadHeartbeat()
+    private QueueHeartbeat? ReadHeartbeat(byte[] pinnedPublicKey)
     {
         var path = _paths.StatusPath("heartbeat.json");
         if (!File.Exists(path))
             return null;
 
-        var heartbeat = JsonSerializer.Deserialize<QueueHeartbeat>(File.ReadAllBytes(path));
-        if (heartbeat is null || heartbeat.Version != SharedQueueCrypto.ProtocolVersion || string.IsNullOrWhiteSpace(heartbeat.PublicKeyBase64))
-            return null;
+        var bytes = SharedQueueFileIO.ReadAllBytes(path, SharedQueueFileIO.MaxHeartbeatBytes);
+        var heartbeat = JsonSerializer.Deserialize<QueueHeartbeat>(bytes);
+        if (heartbeat is null
+            || heartbeat.Version != SharedQueueCrypto.ProtocolVersion
+            || string.IsNullOrWhiteSpace(heartbeat.PublicKeyBase64))
+        {
+            throw new InvalidDataException("Heartbeat da Central inválido.");
+        }
+
+        byte[] advertisedKey;
+        try
+        {
+            advertisedKey = Convert.FromBase64String(heartbeat.PublicKeyBase64);
+        }
+        catch (FormatException ex)
+        {
+            throw new InvalidDataException("Identidade pública da Central inválida.", ex);
+        }
+
+        try
+        {
+            if (!advertisedKey.AsSpan().SequenceEqual(pinnedPublicKey))
+                throw new InvalidDataException("A identidade da Central mudou. Faça o pareamento novamente.");
+            if (!SharedQueueCrypto.VerifyHeartbeatSignature(heartbeat, pinnedPublicKey))
+                throw new InvalidDataException("A assinatura do heartbeat da Central é inválida.");
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(advertisedKey);
+        }
+
         return heartbeat;
     }
 
@@ -166,8 +241,14 @@ public sealed class SharedQueueClient
         var temporary = _paths.RequestTemporaryPath(envelope.RequestId);
         try
         {
-            await File.WriteAllBytesAsync(temporary, JsonSerializer.SerializeToUtf8Bytes(envelope), cancellationToken);
-            File.Move(temporary, target, overwrite: false);
+            var bytes = JsonSerializer.SerializeToUtf8Bytes(envelope);
+            await SharedQueueFileIO.WriteAtomicAsync(
+                temporary,
+                target,
+                bytes,
+                SharedQueueFileIO.MaxRequestBytes,
+                overwrite: false,
+                cancellationToken);
         }
         finally
         {
@@ -177,7 +258,7 @@ public sealed class SharedQueueClient
 
     private async Task<NfeLookupResult> ReadResponseAsync(Guid requestId, string responsePath, CancellationToken cancellationToken)
     {
-        var bytes = await File.ReadAllBytesAsync(responsePath, cancellationToken);
+        var bytes = await SharedQueueFileIO.ReadAllBytesAsync(responsePath, SharedQueueFileIO.MaxResponseBytes, cancellationToken);
         var envelope = JsonSerializer.Deserialize<QueueResponseEnvelope>(bytes)
             ?? throw new InvalidDataException("Resposta da Central inválida.");
         if (envelope.RequestId != requestId)
