@@ -27,16 +27,17 @@ public sealed class SharedQueueSecurityRegressionTests
     {
         var program = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "Program.cs"));
         var index = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "index.html"));
-        var app = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "app.js"));
+        var pairing = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "pairing.js"));
 
         Assert.Contains("/api/pairing/code", program, StringComparison.Ordinal);
         Assert.Contains("/api/pairing/client", program, StringComparison.Ordinal);
         Assert.Contains("id=\"generatePairingCode\"", index, StringComparison.Ordinal);
         Assert.Contains("id=\"pairingCode\"", index, StringComparison.Ordinal);
         Assert.Contains("id=\"pairClient\"", index, StringComparison.Ordinal);
-        Assert.Contains("generatePairingCode", app, StringComparison.Ordinal);
-        Assert.Contains("pairClient", app, StringComparison.Ordinal);
-        Assert.Contains("clientPaired", app, StringComparison.Ordinal);
+        Assert.Contains("/pairing.js", index, StringComparison.Ordinal);
+        Assert.Contains("generatePairingCode", pairing, StringComparison.Ordinal);
+        Assert.Contains("pairClient", pairing, StringComparison.Ordinal);
+        Assert.Contains("clientPaired", pairing, StringComparison.Ordinal);
     }
 
     [Fact]
