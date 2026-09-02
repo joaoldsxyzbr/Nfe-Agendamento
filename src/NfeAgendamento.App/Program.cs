@@ -19,7 +19,6 @@ internal static class Program
         if (StartupManager.IsEnabled())
             StartupManager.SetEnabled(true);
 
-        // Aceita atalhos antigos sem voltar a expor o servidor na LAN.
         var appArgs = args
             .Where(argument => !string.Equals(argument, "--lan", StringComparison.OrdinalIgnoreCase))
             .ToArray();
@@ -38,6 +37,11 @@ internal static class Program
         builder.Services.AddSingleton<SharedQueuePaths>();
         builder.Services.AddSingleton<CentralKeyStore>();
         builder.Services.AddSingleton<PendingRequestSecretStore>();
+        builder.Services.AddSingleton<ClientPairingStore>();
+        builder.Services.AddSingleton<AuthorizedClientStore>();
+        builder.Services.AddSingleton<PairingCodeService>();
+        builder.Services.AddSingleton<SharedQueuePairingClient>();
+        builder.Services.AddSingleton<SharedQueuePairingProcessor>();
         builder.Services.AddSingleton<SharedQueueClient>();
         builder.Services.AddSingleton<SharedQueueCentralService>();
         builder.Services.AddHostedService(sp => sp.GetRequiredService<SharedQueueCentralService>());
@@ -71,11 +75,49 @@ internal static class Program
                 csrfToken = csrf.CurrentToken,
                 configuredAsCentral = state.IsConfiguredAsCentral,
                 centralActive = central.IsActive,
+                clientPaired = state.IsConfiguredAsCentral || clientStatus.IsPaired,
                 centralOnline = state.IsConfiguredAsCentral ? central.IsActive : clientStatus.CentralOnline,
                 shareAvailable = state.IsConfiguredAsCentral ? central.ShareAvailable : clientStatus.ShareAvailable,
                 centralId = state.IsConfiguredAsCentral ? Environment.MachineName : clientStatus.CentralId,
                 sharedFolder = SharedQueuePaths.DefaultRoot
             });
+        });
+
+        app.MapPost("/api/pairing/code", (
+            CentralStateService state,
+            SharedQueueCentralService central,
+            PairingCodeService pairingCodes) =>
+        {
+            if (!state.IsConfiguredAsCentral || !central.IsActive)
+            {
+                return Results.Json(
+                    new { status = "central_inactive", message = "Ative este PC como Central antes de gerar o código de pareamento." },
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+
+            var info = pairingCodes.Generate();
+            return Results.Ok(new { code = info.Code, expiresUtc = info.ExpiresUtc });
+        });
+
+        app.MapPost("/api/pairing/client", async (
+            PairClientRequest? request,
+            CentralStateService state,
+            SharedQueuePairingClient pairingClient,
+            CancellationToken cancellationToken) =>
+        {
+            if (state.IsConfiguredAsCentral)
+            {
+                return Results.Json(
+                    new { status = "central_mode", message = "O PC Central não precisa ser pareado como cliente." },
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+            if (request is null || string.IsNullOrWhiteSpace(request.Code))
+                return Results.BadRequest(new { status = "invalid_pairing_code", message = "Informe o código exibido no PC Central." });
+
+            var result = await pairingClient.PairAsync(request.Code, cancellationToken);
+            return result.Success
+                ? Results.Ok(new { status = "paired", message = result.Message })
+                : Results.Json(new { status = "pairing_failed", message = result.Message }, statusCode: StatusCodes.Status409Conflict);
         });
 
         app.MapGet("/api/certificates", (CentralStateService state, CertificateService certificates) =>
@@ -207,3 +249,4 @@ internal static class Program
 
 internal sealed record CertificateSelectRequest(string Thumbprint, string UfAutor);
 internal sealed record LookupRequest(string AccessKey);
+internal sealed record PairClientRequest(string Code);
