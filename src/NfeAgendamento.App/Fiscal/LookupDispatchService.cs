@@ -26,6 +26,18 @@ public sealed class LookupDispatchService
 
         if (_centralState.IsConfiguredAsCentral)
         {
+            var runtime = _services.GetRequiredService<SharedQueueCentralService>();
+            if (!runtime.IsActive)
+            {
+                var message = runtime.Status switch
+                {
+                    CentralRuntimeStatus.Conflict => "Outra Central já está ativa. Este PC não enviará consulta fiscal diretamente.",
+                    CentralRuntimeStatus.ShareUnavailable => "Este PC está configurado como Central, mas a pasta compartilhada está indisponível.",
+                    _ => "A Central deste PC ainda não está ativa."
+                };
+                return Task.FromResult(new NfeLookupResult(NfeLookupStatus.Failed, null, null, message, false));
+            }
+
             return _services
                 .GetRequiredService<NfeLookupService>()
                 .LookupAsync(accessKey, cancellationToken);
