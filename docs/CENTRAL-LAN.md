@@ -4,7 +4,7 @@
 
 - Windows no PC central;
 - certificado A1 instalado no usuário que executará o app;
-- PC central e clientes na mesma rede privada;
+- PC central e clientes na mesma sub-rede corporativa;
 - permissão para autorizar a regra TCP 17345 no Firewall do Windows;
 - UDP 5353 somente se a descoberta mDNS for usada.
 
@@ -183,16 +183,17 @@ A auditoria não contém XML, chave de acesso completa, certificado, chave priva
 
 ## Firewall
 
-O painel verifica se existe uma regra compatível com o executável atual. O botão **Configurar firewall** solicita elevação pelo UAC e recria a regra da Central com estas restrições:
+O painel verifica se existe a regra estável da Central. O botão **Configurar firewall** solicita elevação pelo UAC e recria a regra com estas restrições:
 
 - direção de entrada;
 - protocolo TCP;
 - porta local `17345`;
-- perfil **Privado**;
-- vinculada ao caminho atual do `NfeAgendamento.App.exe`;
-- sem liberação no perfil Público.
+- perfis **Domínio** e **Privado**;
+- origem limitada a `LocalSubnet`;
+- sem liberação no perfil Público;
+- sem vínculo ao caminho do `NfeAgendamento.App.exe`.
 
-Se o executável for movido para outra pasta, o painel pode pedir a configuração novamente porque a regra fica vinculada ao caminho do programa.
+A regra não depende mais da pasta do executável. Atualizar o aplicativo ou mover a instalação não invalida o firewall apenas por mudança de caminho.
 
 Em computadores administrados por política corporativa, o Windows pode impedir alterações locais. Nessa situação, a regra deve ser aplicada pelo administrador da rede.
 
@@ -219,7 +220,7 @@ Continuam sendo aplicados:
 - fila fiscal serializada, limitada e deduplicada;
 - bloqueio imediato em memória após `cStat=656`, com persistência quando possível;
 - auditoria sem dados fiscais completos;
-- regra de firewall limitada ao perfil Privado e ao executável atual.
+- regra de firewall limitada à porta `17345`, perfis Domínio/Privado e origem `LocalSubnet`, sem dependência do caminho do executável.
 
 O aplicativo não possui autenticação própria. Enquanto a Central estiver ativa, o acesso deve permanecer restrito à rede interna da empresa.
 
@@ -247,11 +248,11 @@ A porta `17345` não foi encontrada ouvindo em uma interface de rede. Feche outr
 
 ### Firewall mostra Precisa configurar
 
-Clique em **Configurar firewall** e confirme o UAC. Se continuar igual, a máquina provavelmente possui política corporativa de firewall e a liberação precisa ser feita pelo administrador.
+Clique em **Configurar firewall** e confirme o UAC. A regra é recriada para a porta `17345` e deixa de depender da pasta da versão instalada. Se continuar igual, a máquina provavelmente possui política corporativa de firewall e a liberação precisa ser feita pelo administrador.
 
 ### IP exibido no painel não abre em outro PC mesmo com tudo OK
 
-1. confirme que o outro PC está na mesma rede ou VLAN com comunicação permitida;
+1. confirme que o outro PC está na mesma sub-rede da Central;
 2. execute no cliente `Test-NetConnection IP-DO-CENTRAL -Port 17345`;
 3. se o teste falhar apesar dos três indicadores OK, investigue isolamento entre clientes, ACL de rede ou política corporativa fora do computador central.
 
@@ -295,6 +296,7 @@ A auditoria operacional fica em `logs\fiscal-audit.jsonl` e não contém XML nem
 
 - o PC central precisa permanecer ligado;
 - a configuração automática do firewall depende de autorização do Windows e pode ser bloqueada por política corporativa;
+- os clientes precisam estar na mesma sub-rede permitida pela regra `LocalSubnet`;
 - o domínio depende de mDNS ou do fallback por IP;
 - o acesso é HTTP dentro da rede interna e o conteúdo solicitado da NF-e trafega sem TLS fornecido pelo aplicativo;
 - não há publicação na internet e a porta `17345` não deve ser exposta externamente;
