@@ -1,6 +1,7 @@
 using NfeAgendamento.App.Certificates;
 using NfeAgendamento.App.Fiscal;
 using NfeAgendamento.App.Security;
+using NfeAgendamento.App.SharedQueue;
 using NfeAgendamento.App.Storage;
 
 namespace NfeAgendamento.App;
@@ -18,12 +19,13 @@ internal static class Program
         if (StartupManager.IsEnabled())
             StartupManager.SetEnabled(true);
 
+        // Aceita atalhos antigos sem voltar a expor o servidor na LAN.
         var appArgs = args
             .Where(argument => !string.Equals(argument, "--lan", StringComparison.OrdinalIgnoreCase))
             .ToArray();
 
         var builder = WebApplication.CreateBuilder(appArgs);
-        LocalHost.Configure(builder, ["--lan"]);
+        LocalHost.Configure(builder);
         builder.Services.AddSingleton(settingsStore);
         builder.Services.AddSingleton(centralState);
         builder.Services.AddSingleton<CsrfTokenService>();
@@ -33,7 +35,16 @@ internal static class Program
         builder.Services.AddSingleton<FiscalOperationGate>();
         builder.Services.AddSingleton<FiscalRequestCoordinator>();
         builder.Services.AddSingleton<FiscalAuditLog>();
+        builder.Services.AddSingleton<SharedQueuePaths>();
+        builder.Services.AddSingleton<CentralKeyStore>();
+        builder.Services.AddSingleton<PendingRequestSecretStore>();
+        builder.Services.AddSingleton<SharedQueueClient>();
+        builder.Services.AddSingleton<SharedQueueCentralService>();
+        builder.Services.AddHostedService(sp => sp.GetRequiredService<SharedQueueCentralService>());
+        builder.Services.AddSingleton<SharedQueueProcessor>();
+        builder.Services.AddHostedService<SharedQueueProcessingHostedService>();
         builder.Services.AddScoped<NfeLookupService>();
+        builder.Services.AddScoped<LookupDispatchService>();
         builder.Services.AddScoped<INfeDistributionTransport>(sp =>
         {
             var certificates = sp.GetRequiredService<CertificateService>();
@@ -48,24 +59,54 @@ internal static class Program
         app.UseDefaultFiles();
         app.UseStaticFiles();
 
-        app.MapGet("/api/bootstrap", (CsrfTokenService csrf, CentralStateService state) =>
-            Results.Ok(new
+        app.MapGet("/api/bootstrap", (
+            CsrfTokenService csrf,
+            CentralStateService state,
+            SharedQueueCentralService central,
+            SharedQueueClient queueClient) =>
+        {
+            var clientStatus = queueClient.GetStatus();
+            return Results.Ok(new
             {
                 csrfToken = csrf.CurrentToken,
-                lanMode = state.IsEnabled,
-                accessUrl = CentralNetworkInfo.GetAccessUrl(state.IsEnabled)
-            }));
-        app.MapGet("/api/certificates", (CertificateService certificates) =>
-            Results.Ok(certificates.ListValidCertificates()));
-        app.MapGet("/api/certificate/current", async (CertificateService certificates, CancellationToken cancellationToken) =>
+                configuredAsCentral = state.IsConfiguredAsCentral,
+                centralActive = central.IsActive,
+                centralOnline = state.IsConfiguredAsCentral ? central.IsActive : clientStatus.CentralOnline,
+                shareAvailable = state.IsConfiguredAsCentral ? central.ShareAvailable : clientStatus.ShareAvailable,
+                centralId = state.IsConfiguredAsCentral ? Environment.MachineName : clientStatus.CentralId,
+                sharedFolder = SharedQueuePaths.DefaultRoot
+            });
+        });
+
+        app.MapGet("/api/certificates", (CentralStateService state, CertificateService certificates) =>
         {
+            if (!state.IsConfiguredAsCentral)
+                return Results.Json(new { status = "client_mode", message = "O certificado é administrado somente no PC Central." }, statusCode: StatusCodes.Status403Forbidden);
+            return Results.Ok(certificates.ListValidCertificates());
+        });
+
+        app.MapGet("/api/certificate/current", async (
+            CentralStateService state,
+            CertificateService certificates,
+            CancellationToken cancellationToken) =>
+        {
+            if (!state.IsConfiguredAsCentral)
+                return Results.Json(new { status = "client_mode", message = "O certificado é administrado somente no PC Central." }, statusCode: StatusCodes.Status403Forbidden);
+
             var current = await certificates.GetCurrentAsync(cancellationToken);
             return current is null
                 ? Results.NoContent()
                 : Results.Ok(new { current.Thumbprint, current.Subject, current.NotAfter, ufAutor = certificates.GetCurrentAuthorityState() });
         });
-        app.MapPost("/api/certificate/select", async (CertificateSelectRequest? request, CertificateService certificates, CancellationToken cancellationToken) =>
+
+        app.MapPost("/api/certificate/select", async (
+            CertificateSelectRequest? request,
+            CentralStateService state,
+            CertificateService certificates,
+            CancellationToken cancellationToken) =>
         {
+            if (!state.IsConfiguredAsCentral)
+                return Results.Json(new { status = "client_mode", message = "O certificado é administrado somente no PC Central." }, statusCode: StatusCodes.Status403Forbidden);
             if (request is null || string.IsNullOrWhiteSpace(request.Thumbprint) || string.IsNullOrWhiteSpace(request.UfAutor))
                 return Results.BadRequest(new { status = "invalid_certificate", message = "Selecione o certificado e informe a UF autora." });
             try
@@ -78,13 +119,14 @@ internal static class Program
                 return Results.BadRequest(new { status = "invalid_certificate", message = ex.Message });
             }
         });
+
         app.MapPost("/api/nfe/lookup", async (LookupRequest? request, HttpContext context, CancellationToken cancellationToken) =>
         {
             if (request is null || !AccessKeyValidator.IsValid(request.AccessKey))
                 return Results.BadRequest(new { status = "invalid_key", message = "Informe uma chave NF-e válida com 44 dígitos." });
             try
             {
-                var lookup = context.RequestServices.GetRequiredService<NfeLookupService>();
+                var lookup = context.RequestServices.GetRequiredService<LookupDispatchService>();
                 var result = await lookup.LookupAsync(request.AccessKey, cancellationToken);
                 return result.Status switch
                 {
@@ -120,7 +162,6 @@ internal static class Program
             return;
         }
 
-        using var networkName = NetworkNameService.Start();
         Application.Run(new TrayApplicationContext(centralState));
         await app.StopAsync();
     }
