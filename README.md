@@ -42,7 +42,7 @@ O certificado A1 e a chave privada permanecem no Windows Certificate Store do PC
 - diagnóstico de interface, listener e firewall;
 - servidor preparado para atender a LAN em `17345`;
 - Host da LAN aceito somente quando corresponde a um IPv4 realmente atribuído ao PC central, além dos nomes locais explicitamente permitidos;
-- configuração via UAC de regra de entrada TCP restrita ao perfil **Privado**, porta `17345` e executável atual;
+- configuração via UAC de regra de entrada TCP estável entre atualizações, restrita à porta `17345`, perfis **Domínio/Privado** e origem `LocalSubnet`, sem vínculo ao caminho do executável;
 - `nfeagendamento.local` continua opcional via mDNS e anuncia o mesmo IPv4 selecionado pelo painel; o IPv4 é o fallback confiável.
 
 ### Bloco 3 — Robustez fiscal
@@ -193,7 +193,7 @@ A auditoria guarda somente horário UTC, fingerprint curta da chave, status, `cS
 - requisições possuem limite de tamanho;
 - conexões remotas são rejeitadas quando a Central está parada;
 - arquivo de estado da Central existente e inválido desabilita o acesso remoto por segurança;
-- firewall automático é restrito a rede Privada, TCP `17345` e executável atual;
+- firewall automático é restrito aos perfis Domínio/Privado, TCP `17345` e origem `LocalSubnet`, sem depender do caminho do executável;
 - cache inválido é descartado sem reutilizar conteúdo não validado;
 - um `656` continua bloqueando o processo mesmo se a persistência em disco falhar;
 - atualizações automáticas exigem pacote oficial com SHA-256 válido;
