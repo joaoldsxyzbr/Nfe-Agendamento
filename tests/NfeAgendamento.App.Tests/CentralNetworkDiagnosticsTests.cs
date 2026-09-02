@@ -45,7 +45,7 @@ public sealed class CentralNetworkDiagnosticsTests
     }
 
     [Fact]
-    public void Diagnostic_is_ready_when_lan_listener_and_private_firewall_rule_are_ok()
+    public void Diagnostic_is_ready_when_lan_listener_and_firewall_rule_are_ok()
     {
         var snapshot = CentralNetworkDiagnostics.Evaluate(
             centralEnabled: true,
@@ -92,14 +92,16 @@ public sealed class CentralNetworkDiagnosticsTests
     }
 
     [Fact]
-    public void Firewall_script_is_restricted_to_private_profile_tcp_port_and_current_program()
+    public void Firewall_script_is_stable_and_restricted_to_local_subnet()
     {
-        var script = WindowsFirewallService.BuildEnsureRuleScript(@"C:\NfeAgendamento\NfeAgendamento.App.exe");
+        var script = WindowsFirewallService.BuildEnsureRuleScript();
 
         Assert.Contains("LocalPort 17345", script, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Protocol TCP", script, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Profile Private", script, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains(@"C:\NfeAgendamento\NfeAgendamento.App.exe", script, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Profile Domain,Private", script, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("RemoteAddress LocalSubnet", script, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("-Program", script, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Profile Any", script, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Profile Public", script, StringComparison.OrdinalIgnoreCase);
     }
 }
