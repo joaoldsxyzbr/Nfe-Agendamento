@@ -8,7 +8,7 @@ public sealed class CentralFormThemeIntegrationTests
         File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "CentralForm.cs"));
 
     [Fact]
-    public void Central_form_applies_brand_theme_without_changing_its_operational_structure()
+    public void Central_form_keeps_brand_theme_and_shows_shared_queue_status()
     {
         var source = CentralFormSource();
 
@@ -20,5 +20,10 @@ public sealed class CentralFormThemeIntegrationTests
         Assert.Contains("Text = \"Iniciar Central\"", source, StringComparison.Ordinal);
         Assert.Contains("Text = \"Parar Central\"", source, StringComparison.Ordinal);
         Assert.Contains("Text = \"Abrir sistema\"", source, StringComparison.Ordinal);
+        Assert.Contains("Papel deste PC", source, StringComparison.Ordinal);
+        Assert.Contains("Pasta compartilhada", source, StringComparison.Ordinal);
+        Assert.Contains("SharedQueuePaths.DefaultRoot", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Configurar firewall", source, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("WindowsFirewallService", source, StringComparison.Ordinal);
     }
 }
