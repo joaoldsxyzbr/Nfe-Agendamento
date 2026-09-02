@@ -29,6 +29,7 @@
     <Content Include="..\..\src\NfeAgendamento.App\TrayApplicationContext.cs" Link="Fixtures\TrayApplicationContext.cs" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\src\NfeAgendamento.App\CentralForm.cs" Link="Fixtures\CentralForm.cs" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\src\NfeAgendamento.App\wwwroot\app.js" Link="Fixtures\app.js" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\src\NfeAgendamento.App\wwwroot\pairing.js" Link="Fixtures\pairing.js" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\src\NfeAgendamento.App\wwwroot\product-mapping.js" Link="Fixtures\product-mapping.js" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\src\NfeAgendamento.App\wwwroot\danfe-compact.js" Link="Fixtures\danfe-compact.js" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\src\NfeAgendamento.App\wwwroot\index.html" Link="Fixtures\index.html" CopyToOutputDirectory="PreserveNewest" />
