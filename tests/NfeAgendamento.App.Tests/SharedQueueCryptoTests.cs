@@ -35,7 +35,7 @@ public sealed class SharedQueueCryptoTests
         var created = SharedQueueCrypto.CreateClientRequest(Guid.NewGuid(), AccessKey, rsa.ExportSubjectPublicKeyInfo());
         created.Envelope.Ciphertext[0] ^= 0x01;
 
-        Assert.Throws<CryptographicException>(() => SharedQueueCrypto.OpenRequest(created.Envelope, rsa));
+        Assert.ThrowsAny<CryptographicException>(() => SharedQueueCrypto.OpenRequest(created.Envelope, rsa));
     }
 
     [Fact]
@@ -66,7 +66,7 @@ public sealed class SharedQueueCryptoTests
         var result = new NfeLookupResult(NfeLookupStatus.NotFound, null, "137", "Não localizado.", false);
         var envelope = SharedQueueCrypto.CreateResponse(requestId, result, aesKey);
 
-        Assert.Throws<CryptographicException>(() => SharedQueueCrypto.OpenResponse(envelope, wrongKey));
+        Assert.ThrowsAny<CryptographicException>(() => SharedQueueCrypto.OpenResponse(envelope, wrongKey));
     }
 
     [Fact]
