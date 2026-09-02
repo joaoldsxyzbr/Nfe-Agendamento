@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text.Json;
 using NfeAgendamento.App.Fiscal;
 using NfeAgendamento.App.SharedQueue;
@@ -21,20 +22,32 @@ public sealed class SharedQueueClientCleanupTests
             var paths = new SharedQueuePaths(share);
             paths.InitializeAsCentral();
             var keyStore = new CentralKeyStore(Path.Combine(root, "central.key"));
+            var publicKey = keyStore.GetOrCreatePublicKey();
             var heartbeat = new QueueHeartbeat(
                 SharedQueueCrypto.ProtocolVersion,
                 "CA03",
                 DateTimeOffset.UtcNow,
-                Convert.ToBase64String(keyStore.GetOrCreatePublicKey()),
+                Convert.ToBase64String(publicKey),
                 "test");
+            using (var privateKey = keyStore.OpenPrivateKey())
+                heartbeat = heartbeat with { SignatureBase64 = SharedQueueCrypto.SignHeartbeat(heartbeat, privateKey) };
             await File.WriteAllBytesAsync(
                 paths.StatusPath("heartbeat.json"),
                 JsonSerializer.SerializeToUtf8Bytes(heartbeat));
+
+            var pairing = new ClientPairingStore(Path.Combine(root, "client-pairing.bin"));
+            pairing.SavePaired(
+                Guid.NewGuid(),
+                "CA02",
+                RandomNumberGenerator.GetBytes(32),
+                publicKey,
+                "CA03");
 
             var pending = new PendingRequestSecretStore(pendingRoot);
             var client = new SharedQueueClient(
                 paths,
                 pending,
+                pairing,
                 TimeSpan.FromMilliseconds(20),
                 TimeSpan.FromMilliseconds(100));
 
