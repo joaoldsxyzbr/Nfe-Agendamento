@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using NfeAgendamento.App.SharedQueue;
 
 namespace NfeAgendamento.App;
 
@@ -8,32 +9,34 @@ public sealed class CentralForm : Form
         ["Iniciar Central", "Parar Central", "Abrir sistema"];
 
     private readonly CentralStateService _centralState;
-    private readonly WindowsFirewallService _firewall;
+    private readonly SharedQueueCentralService _centralRuntime;
+    private readonly SharedQueueClient _queueClient;
     private readonly System.Windows.Forms.Timer _refreshTimer;
-    private readonly Label _statusValue;
-    private readonly Label _ipValue;
-    private readonly Label _portValue;
-    private readonly Label _urlValue;
-    private readonly Label _networkValue;
-    private readonly Label _listenerValue;
-    private readonly Label _firewallValue;
+    private readonly Label _roleValue;
+    private readonly Label _shareValue;
+    private readonly Label _centralValue;
+    private readonly Label _heartbeatValue;
+    private readonly Label _processorValue;
     private readonly Label _summaryValue;
     private readonly Button _startButton;
     private readonly Button _stopButton;
-    private readonly Button _firewallButton;
     private bool _refreshing;
 
-    public CentralForm(CentralStateService centralState, WindowsFirewallService? firewall = null)
+    public CentralForm(
+        CentralStateService centralState,
+        SharedQueueCentralService centralRuntime,
+        SharedQueueClient queueClient)
     {
         _centralState = centralState ?? throw new ArgumentNullException(nameof(centralState));
-        _firewall = firewall ?? new WindowsFirewallService();
+        _centralRuntime = centralRuntime ?? throw new ArgumentNullException(nameof(centralRuntime));
+        _queueClient = queueClient ?? throw new ArgumentNullException(nameof(queueClient));
 
         Text = "NFe Agendamento - Central";
         StartPosition = FormStartPosition.CenterScreen;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = true;
-        ClientSize = new Size(590, 500);
+        ClientSize = new Size(590, 465);
         Font = new Font("Segoe UI", 10F, FontStyle.Regular, GraphicsUnit.Point);
         Icon = Icon.ExtractAssociatedIcon(Environment.ProcessPath ?? string.Empty) ?? SystemIcons.Application;
         BackColor = CentralTheme.Background;
@@ -51,7 +54,7 @@ public sealed class CentralForm : Form
 
         var subtitle = new Label
         {
-            Text = "Controle e diagnóstico do acesso dos outros computadores.",
+            Text = "Comunicação segura pela pasta compartilhada da empresa.",
             AutoSize = true,
             Location = new Point(31, 62),
             ForeColor = CentralTheme.MutedText,
@@ -65,19 +68,17 @@ public sealed class CentralForm : Form
             BackColor = CentralTheme.BrandYellow
         };
 
-        _statusValue = CreateValueLabel(190, 106);
-        _ipValue = CreateValueLabel(190, 140);
-        _portValue = CreateValueLabel(190, 174);
-        _urlValue = CreateValueLabel(190, 208);
-        _urlValue.MaximumSize = new Size(360, 0);
-        _networkValue = CreateValueLabel(190, 258);
-        _listenerValue = CreateValueLabel(190, 292);
-        _firewallValue = CreateValueLabel(190, 326);
+        _roleValue = CreateValueLabel(210, 112);
+        _shareValue = CreateValueLabel(210, 150);
+        _shareValue.MaximumSize = new Size(345, 0);
+        _centralValue = CreateValueLabel(210, 188);
+        _heartbeatValue = CreateValueLabel(210, 226);
+        _processorValue = CreateValueLabel(210, 264);
         _summaryValue = new Label
         {
             AutoSize = false,
-            Location = new Point(31, 366),
-            Size = new Size(528, 48),
+            Location = new Point(31, 312),
+            Size = new Size(528, 55),
             ForeColor = CentralTheme.MutedText,
             BackColor = Color.Transparent
         };
@@ -85,79 +86,65 @@ public sealed class CentralForm : Form
         Controls.Add(title);
         Controls.Add(subtitle);
         Controls.Add(brandAccent);
-        Controls.Add(CreateCaption("Status", 31, 106));
-        Controls.Add(CreateCaption("IP deste PC", 31, 140));
-        Controls.Add(CreateCaption("Porta", 31, 174));
-        Controls.Add(CreateCaption("Acesso pela rede", 31, 208));
-        Controls.Add(CreateCaption("Rede", 31, 258));
-        Controls.Add(CreateCaption("Servidor", 31, 292));
-        Controls.Add(CreateCaption("Firewall", 31, 326));
-        Controls.Add(_statusValue);
-        Controls.Add(_ipValue);
-        Controls.Add(_portValue);
-        Controls.Add(_urlValue);
-        Controls.Add(_networkValue);
-        Controls.Add(_listenerValue);
-        Controls.Add(_firewallValue);
+        Controls.Add(CreateCaption("Papel deste PC", 31, 112));
+        Controls.Add(CreateCaption("Pasta compartilhada", 31, 150));
+        Controls.Add(CreateCaption("Central", 31, 188));
+        Controls.Add(CreateCaption("Heartbeat", 31, 226));
+        Controls.Add(CreateCaption("Processador", 31, 264));
+        Controls.Add(_roleValue);
+        Controls.Add(_shareValue);
+        Controls.Add(_centralValue);
+        Controls.Add(_heartbeatValue);
+        Controls.Add(_processorValue);
         Controls.Add(_summaryValue);
 
         _startButton = new Button
         {
             Text = "Iniciar Central",
-            Size = new Size(125, 38),
-            Location = new Point(31, 438)
+            Size = new Size(155, 38),
+            Location = new Point(31, 395)
         };
         StylePrimaryButton(_startButton, CentralTheme.BrandBlue, Color.White);
         _startButton.Click += (_, _) =>
         {
-            _centralState.SetEnabled(true);
-            _ = RefreshDiagnosticsAsync();
+            _centralState.SetConfiguredAsCentral(true);
+            RefreshDiagnostics();
         };
 
         _stopButton = new Button
         {
             Text = "Parar Central",
-            Size = new Size(125, 38),
-            Location = new Point(166, 438)
+            Size = new Size(155, 38),
+            Location = new Point(201, 395)
         };
         StyleOutlineButton(_stopButton);
         _stopButton.Click += (_, _) =>
         {
-            _centralState.SetEnabled(false);
-            _ = RefreshDiagnosticsAsync();
+            _centralState.SetConfiguredAsCentral(false);
+            RefreshDiagnostics();
         };
 
         var openButton = new Button
         {
             Text = "Abrir sistema",
-            Size = new Size(125, 38),
-            Location = new Point(301, 438)
+            Size = new Size(155, 38),
+            Location = new Point(371, 395)
         };
         StylePrimaryButton(openButton, CentralTheme.BrandBlueSoft, Color.White);
         openButton.Click += (_, _) => OpenSystem();
 
-        _firewallButton = new Button
-        {
-            Text = "Configurar firewall",
-            Size = new Size(133, 38),
-            Location = new Point(436, 438)
-        };
-        StylePrimaryButton(_firewallButton, CentralTheme.BrandYellow, CentralTheme.Text);
-        _firewallButton.Click += async (_, _) => await ConfigureFirewallAsync();
-
         Controls.Add(_startButton);
         Controls.Add(_stopButton);
         Controls.Add(openButton);
-        Controls.Add(_firewallButton);
 
-        _refreshTimer = new System.Windows.Forms.Timer { Interval = 10000 };
-        _refreshTimer.Tick += async (_, _) => await RefreshDiagnosticsAsync();
+        _refreshTimer = new System.Windows.Forms.Timer { Interval = 2000 };
+        _refreshTimer.Tick += (_, _) => RefreshDiagnostics();
 
         _centralState.Changed += CentralStateChanged;
-        Shown += async (_, _) =>
+        Shown += (_, _) =>
         {
             _refreshTimer.Start();
-            await RefreshDiagnosticsAsync();
+            RefreshDiagnostics();
         };
         FormClosed += (_, _) =>
         {
@@ -166,7 +153,7 @@ public sealed class CentralForm : Form
             _centralState.Changed -= CentralStateChanged;
         };
 
-        RefreshBasicStatus();
+        RefreshDiagnostics();
     }
 
     private static Label CreateCaption(string text, int x, int y) => new()
@@ -212,31 +199,14 @@ public sealed class CentralForm : Form
     {
         if (InvokeRequired)
         {
-            BeginInvoke(new Action(() => _ = RefreshDiagnosticsAsync()));
+            BeginInvoke(new Action(RefreshDiagnostics));
             return;
         }
 
-        _ = RefreshDiagnosticsAsync();
+        RefreshDiagnostics();
     }
 
-    private void RefreshBasicStatus()
-    {
-        var enabled = _centralState.IsEnabled;
-        var address = CentralNetworkInfo.FindLanIPv4();
-
-        _statusValue.Text = enabled ? "Central ativa" : "Central parada";
-        _statusValue.ForeColor = enabled ? CentralTheme.Success : CentralTheme.MutedText;
-        _ipValue.Text = address?.ToString() ?? "Não identificado";
-        _portValue.Text = LocalHost.Port.ToString(System.Globalization.CultureInfo.InvariantCulture);
-        _urlValue.Text = enabled && address is not null
-            ? CentralNetworkInfo.BuildAccessUrl(address)
-            : "Acesso externo desativado";
-
-        _startButton.Enabled = !enabled;
-        _stopButton.Enabled = enabled;
-    }
-
-    private async Task RefreshDiagnosticsAsync()
+    private void RefreshDiagnostics()
     {
         if (_refreshing || IsDisposed)
             return;
@@ -244,22 +214,25 @@ public sealed class CentralForm : Form
         _refreshing = true;
         try
         {
-            RefreshBasicStatus();
-            var firewallStatus = _centralState.IsEnabled
-                ? await _firewall.GetStatusAsync()
-                : FirewallRuleStatus.Unavailable;
-            var snapshot = CentralNetworkDiagnostics.Capture(_centralState.IsEnabled, firewallStatus);
+            var configuredAsCentral = _centralState.IsConfiguredAsCentral;
+            var clientStatus = _queueClient.GetStatus();
 
-            if (IsDisposed)
-                return;
+            _roleValue.Text = configuredAsCentral ? "Central configurada" : "Cliente";
+            _roleValue.ForeColor = configuredAsCentral ? CentralTheme.BrandBlue : CentralTheme.Text;
 
-            SetHealthLabel(_networkValue, snapshot.NetworkStatus);
-            SetHealthLabel(_listenerValue, snapshot.ListenerStatus);
-            SetHealthLabel(_firewallValue, snapshot.FirewallStatus);
-            _summaryValue.Text = snapshot.Summary;
-            _summaryValue.ForeColor = SummaryColor(snapshot);
-            _urlValue.Text = _centralState.IsEnabled ? snapshot.AccessUrl : "Acesso externo desativado";
-            _firewallButton.Enabled = _centralState.IsEnabled && snapshot.FirewallStatus != NetworkHealthStatus.Ok;
+            var shareAvailable = configuredAsCentral ? _centralRuntime.ShareAvailable : clientStatus.ShareAvailable;
+            _shareValue.Text = shareAvailable
+                ? $"OK — {SharedQueuePaths.DefaultRoot}"
+                : $"Indisponível — {SharedQueuePaths.DefaultRoot}";
+            _shareValue.ForeColor = shareAvailable ? CentralTheme.Success : CentralTheme.Danger;
+
+            if (configuredAsCentral)
+                RefreshConfiguredCentral();
+            else
+                RefreshClient(clientStatus);
+
+            _startButton.Enabled = !configuredAsCentral;
+            _stopButton.Enabled = configuredAsCentral;
         }
         finally
         {
@@ -267,65 +240,89 @@ public sealed class CentralForm : Form
         }
     }
 
-    private static void SetHealthLabel(Label label, NetworkHealthStatus status)
+    private void RefreshConfiguredCentral()
     {
-        label.Text = HealthText(status);
-        label.ForeColor = status switch
+        switch (_centralRuntime.Status)
         {
-            NetworkHealthStatus.Ok => CentralTheme.Success,
-            NetworkHealthStatus.ActionRequired => CentralTheme.Warning,
-            NetworkHealthStatus.Error => CentralTheme.Danger,
-            _ => CentralTheme.MutedText
-        };
-    }
+            case CentralRuntimeStatus.Active:
+                _centralValue.Text = "Central ativa";
+                _centralValue.ForeColor = CentralTheme.Success;
+                _processorValue.Text = "Ativo";
+                _processorValue.ForeColor = CentralTheme.Success;
+                _summaryValue.Text = "Este PC está processando as consultas enviadas pelos demais computadores.";
+                _summaryValue.ForeColor = CentralTheme.Success;
+                break;
 
-    private static Color SummaryColor(NetworkDiagnosticSnapshot snapshot)
-    {
-        if (snapshot.NetworkStatus == NetworkHealthStatus.Error
-            || snapshot.ListenerStatus == NetworkHealthStatus.Error
-            || snapshot.FirewallStatus == NetworkHealthStatus.Error)
-            return CentralTheme.Danger;
+            case CentralRuntimeStatus.Conflict:
+                _centralValue.Text = "Conflito: outra Central ativa";
+                _centralValue.ForeColor = CentralTheme.Warning;
+                _processorValue.Text = "Parado";
+                _processorValue.ForeColor = CentralTheme.Warning;
+                _summaryValue.Text = "Outro computador já assumiu a Central. Pare a Central neste PC ou encerre a outra instância antes de tentar novamente.";
+                _summaryValue.ForeColor = CentralTheme.Warning;
+                break;
 
-        if (snapshot.NetworkStatus == NetworkHealthStatus.ActionRequired
-            || snapshot.ListenerStatus == NetworkHealthStatus.ActionRequired
-            || snapshot.FirewallStatus == NetworkHealthStatus.ActionRequired)
-            return CentralTheme.Warning;
+            case CentralRuntimeStatus.ShareUnavailable:
+                _centralValue.Text = "Central aguardando pasta";
+                _centralValue.ForeColor = CentralTheme.Danger;
+                _processorValue.Text = "Aguardando pasta";
+                _processorValue.ForeColor = CentralTheme.Danger;
+                _summaryValue.Text = $"Não foi possível usar {SharedQueuePaths.DefaultRoot}. O aplicativo não tentará abrir portas ou alterar o firewall.";
+                _summaryValue.ForeColor = CentralTheme.Danger;
+                break;
 
-        if (snapshot.NetworkStatus == NetworkHealthStatus.Ok
-            && snapshot.ListenerStatus == NetworkHealthStatus.Ok
-            && snapshot.FirewallStatus == NetworkHealthStatus.Ok)
-            return CentralTheme.Success;
-
-        return CentralTheme.MutedText;
-    }
-
-    private async Task ConfigureFirewallAsync()
-    {
-        _firewallButton.Enabled = false;
-        _summaryValue.Text = "Solicitando permissão do Windows para configurar a porta 17345...";
-        _summaryValue.ForeColor = CentralTheme.Warning;
-
-        var configured = await _firewall.EnsureRuleAsync();
-        if (!configured)
-        {
-            MessageBox.Show(
-                "O firewall não foi configurado. Autorize a solicitação do Windows ou peça apoio ao administrador da rede.",
-                "NFe Agendamento",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Warning);
+            default:
+                _centralValue.Text = "Iniciando Central...";
+                _centralValue.ForeColor = CentralTheme.Warning;
+                _processorValue.Text = "Aguardando";
+                _processorValue.ForeColor = CentralTheme.MutedText;
+                _summaryValue.Text = "Aguardando a Central assumir o lock da pasta compartilhada.";
+                _summaryValue.ForeColor = CentralTheme.MutedText;
+                break;
         }
 
-        await RefreshDiagnosticsAsync();
+        SetHeartbeat(_centralRuntime.LastHeartbeatUtc);
     }
 
-    private static string HealthText(NetworkHealthStatus status) => status switch
+    private void RefreshClient(SharedQueueClientStatus status)
     {
-        NetworkHealthStatus.Ok => "OK",
-        NetworkHealthStatus.ActionRequired => "Precisa configurar",
-        NetworkHealthStatus.Error => "Erro",
-        NetworkHealthStatus.Inactive => "Inativo",
-        _ => "Não verificado"
-    };
+        if (status.CentralOnline)
+        {
+            _centralValue.Text = string.IsNullOrWhiteSpace(status.CentralId)
+                ? "Central online"
+                : $"Central online — {status.CentralId}";
+            _centralValue.ForeColor = CentralTheme.Success;
+            _processorValue.Text = "Remoto";
+            _processorValue.ForeColor = CentralTheme.Success;
+            _summaryValue.Text = "Este PC é cliente. As consultas serão enviadas de forma criptografada pela pasta compartilhada.";
+            _summaryValue.ForeColor = CentralTheme.Success;
+        }
+        else
+        {
+            _centralValue.Text = "Central offline";
+            _centralValue.ForeColor = CentralTheme.Danger;
+            _processorValue.Text = "Indisponível";
+            _processorValue.ForeColor = CentralTheme.MutedText;
+            _summaryValue.Text = status.Message ?? "A Central não está disponível no momento.";
+            _summaryValue.ForeColor = CentralTheme.Danger;
+        }
+
+        SetHeartbeat(status.LastHeartbeatUtc);
+    }
+
+    private void SetHeartbeat(DateTimeOffset? heartbeatUtc)
+    {
+        if (heartbeatUtc is null)
+        {
+            _heartbeatValue.Text = "Sem heartbeat";
+            _heartbeatValue.ForeColor = CentralTheme.MutedText;
+            return;
+        }
+
+        var seconds = Math.Max(0, (int)Math.Round((DateTimeOffset.UtcNow - heartbeatUtc.Value).TotalSeconds));
+        _heartbeatValue.Text = seconds <= 2 ? "Agora" : $"Há {seconds} s";
+        _heartbeatValue.ForeColor = seconds <= 10 ? CentralTheme.Success : CentralTheme.Warning;
+    }
 
     private static void OpenSystem()
     {
