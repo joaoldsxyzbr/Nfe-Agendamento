@@ -1,7 +1,9 @@
 const assert = require('assert');
+const fs = require('fs');
 const path = require('path');
 
 const batchPath = path.resolve(__dirname, '../../src/NfeAgendamento.App/wwwroot/batch.js');
+const indexPath = path.resolve(__dirname, '../../src/NfeAgendamento.App/wwwroot/index.html');
 const {
   parseBatchInput,
   runSequentialBatch,
@@ -113,7 +115,19 @@ async function main() {
   const manifestation = classifyLookupFailure(409, { status: 'manifestation_required' }, null);
   assert.strictEqual(manifestation.kind, 'manifestation_required');
 
-  console.log('OK: lote normaliza entrada, limita 50 itens, executa em série, cancela e respeita bloqueios.');
+  const index = fs.readFileSync(indexPath, 'utf8');
+  assert.ok(index.includes('id="batchInput"'), 'textarea do lote ausente');
+  assert.ok(index.includes('id="startBatch"'), 'botão iniciar lote ausente');
+  assert.ok(index.includes('id="cancelBatch"'), 'botão cancelar lote ausente');
+  assert.ok(index.includes('id="clearBatch"'), 'botão limpar lote ausente');
+  assert.ok(index.includes('id="batchResults"'), 'tabela de resultados do lote ausente');
+  assert.ok(index.includes('<script src="/batch.js" defer></script>'), 'batch.js não está carregado na interface');
+
+  const batchSource = fs.readFileSync(batchPath, 'utf8');
+  assert.ok(!batchSource.includes('localStorage'), 'lote não pode persistir chaves/XML em localStorage');
+  assert.ok(!batchSource.includes('indexedDB'), 'lote não pode persistir chaves/XML em IndexedDB');
+
+  console.log('OK: lote normaliza entrada, limita 50 itens, executa em série, cancela, respeita bloqueios e está integrado à interface.');
 }
 
 main().catch(error => {
