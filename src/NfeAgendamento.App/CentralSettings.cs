@@ -71,9 +71,6 @@ public sealed class CentralStateService
         }
     }
 
-    // Compatibilidade temporária enquanto a interface LAN antiga é removida.
-    public bool IsEnabled => IsConfiguredAsCentral;
-
     public event EventHandler? Changed;
 
     public void SetConfiguredAsCentral(bool configuredAsCentral)
@@ -89,7 +86,4 @@ public sealed class CentralStateService
 
         Changed?.Invoke(this, EventArgs.Empty);
     }
-
-    // Compatibilidade temporária enquanto consumidores existentes migram para o novo nome.
-    public void SetEnabled(bool enabled) => SetConfiguredAsCentral(enabled);
 }
