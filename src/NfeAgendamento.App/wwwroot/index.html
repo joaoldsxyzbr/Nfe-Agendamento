@@ -14,23 +14,24 @@
     <header class="app-header">
       <div class="brand">
         <div>
-          <p class="eyebrow">CENTRAL FISCAL LOCAL</p>
           <h1>NFe Agendamento</h1>
-          <p class="hero-subtitle">Consulta de NF-e simples, local e segura.</p>
+          <p class="hero-subtitle">Consulta e gerenciamento de NF-e</p>
         </div>
       </div>
       <div class="connection-pill"><span class="connection-dot"></span> Serviço local ativo</div>
     </header>
 
-    <section class="workspace-grid">
-      <article class="panel lookup-panel primary-panel">
-        <div class="panel-heading">
-          <div>
-            <p class="panel-kicker">CONSULTA PRIORITÁRIA</p>
-            <h2>Consultar uma NF-e</h2>
-            <p>Cole a chave de acesso completa. A comunicação entre os PCs é protegida pelo aplicativo.</p>
-          </div>
-          <span class="step-badge">01</span>
+    <nav class="app-tabs" role="tablist" aria-label="Áreas do NFe Agendamento">
+      <button class="tab-button" type="button" role="tab" aria-selected="true" aria-controls="tabPanelLookup" id="tabLookup" data-tab="lookup">Consulta</button>
+      <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="tabPanelBatch" id="tabBatch" data-tab="batch" tabindex="-1">Lotes</button>
+      <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="tabPanelConfig" id="tabConfig" data-tab="config" tabindex="-1">Configurar</button>
+    </nav>
+
+    <section id="tabPanelLookup" class="tab-panel" role="tabpanel" aria-labelledby="tabLookup">
+      <div class="work-surface lookup-panel">
+        <div class="section-heading">
+          <h2>Consultar NF-e</h2>
+          <p>Informe a chave de acesso de 44 dígitos.</p>
         </div>
 
         <div class="field">
@@ -40,9 +41,9 @@
           </div>
           <div class="lookup-actions-row">
             <button id="newLookup" class="secondary new-lookup-button" type="button">Nova consulta</button>
-            <button id="lookup" class="primary" type="button"><span>Consultar NF-e</span><b>→</b></button>
+            <button id="lookup" class="primary" type="button"><span>Consultar NF-e</span></button>
           </div>
-          <div class="input-hint">No PC Central, a consulta usa o certificado A1. Nos demais PCs, o pedido é enviado de forma criptografada pela pasta compartilhada.</div>
+          <div class="input-hint">No cliente, o pedido segue pela fila segura até o PC Central.</div>
         </div>
 
         <p id="status" class="status" aria-live="polite"></p>
@@ -51,104 +52,98 @@
           <button id="printDanfe" class="action-button" type="button">Imprimir / Salvar PDF</button>
           <button id="download" class="action-button" type="button">Baixar XML</button>
         </div>
-      </article>
+      </div>
+    </section>
 
-      <aside id="centralConfigPanel" class="panel certificate-panel">
-        <div class="panel-heading compact-heading">
-          <div>
-            <p class="panel-kicker">CONFIGURAÇÃO DA CENTRAL</p>
-            <h2>Certificado digital</h2>
-            <p>Disponível somente no PC configurado como Central.</p>
-          </div>
-          <span class="step-badge muted-badge">02</span>
+    <section id="tabPanelBatch" class="tab-panel" role="tabpanel" aria-labelledby="tabBatch" hidden>
+      <div class="work-surface batch-panel" aria-labelledby="batchTitle">
+        <div class="section-heading">
+          <h2 id="batchTitle">Consulta em lote</h2>
+          <p>Cole uma chave por linha. O processamento continua serializado pela fila segura.</p>
         </div>
 
         <div class="field">
-          <label for="certificateSelect">Certificado</label>
-          <select id="certificateSelect">
-            <option value="">Selecione um certificado...</option>
-          </select>
-          <p id="certificateStatus" class="muted"></p>
+          <label for="batchInput">Chaves de acesso</label>
+          <textarea id="batchInput" rows="7" spellcheck="false" autocomplete="off" placeholder="Cole uma chave de 44 dígitos por linha"></textarea>
+          <p id="batchInputSummary" class="muted batch-input-summary">Nenhuma chave informada.</p>
         </div>
 
-        <div class="certificate-actions">
-          <div class="field uf-field">
-            <label for="ufAutor">UF autora</label>
-            <select id="ufAutor" aria-label="UF autora da empresa">
-              <option value="11">RO</option><option value="12">AC</option><option value="13">AM</option><option value="14">RR</option><option value="15">PA</option><option value="16">AP</option><option value="17">TO</option><option value="21">MA</option><option value="22">PI</option><option value="23">CE</option><option value="24">RN</option><option value="25">PB</option><option value="26">PE</option><option value="27">AL</option><option value="28">SE</option><option value="29">BA</option><option value="31">MG</option><option value="32">ES</option><option value="33">RJ</option><option value="35">SP</option><option value="41">PR</option><option value="42" selected>SC</option><option value="43">RS</option><option value="50">MS</option><option value="51">MT</option><option value="52">GO</option><option value="53">DF</option>
-            </select>
-          </div>
-          <button id="saveCertificate" class="secondary" type="button">Salvar</button>
+        <div class="batch-actions">
+          <button id="clearBatch" class="secondary" type="button">Limpar</button>
+          <button id="cancelBatch" class="secondary" type="button" hidden>Cancelar lote</button>
+          <button id="startBatch" class="primary" type="button">Iniciar lote</button>
         </div>
 
-        <div class="pairing-block">
-          <div class="field">
-            <label>Autorizar outro PC</label>
-            <p class="muted pairing-help">Gere um código temporário e digite-o somente no computador que você quer conectar.</p>
-          </div>
-          <button id="generatePairingCode" class="secondary pairing-button" type="button">Gerar código de pareamento</button>
-          <div id="centralPairingResult" class="pairing-code-box" hidden>
-            <span class="pairing-code-label">Código temporário</span>
-            <strong id="centralPairingCode" class="pairing-code"></strong>
-            <span id="centralPairingExpiry" class="muted"></span>
-          </div>
-          <p id="centralPairingStatus" class="muted pairing-status" aria-live="polite"></p>
-        </div>
-      </aside>
+        <p id="batchSummary" class="status batch-summary" aria-live="polite"></p>
 
-      <aside id="clientPairingPanel" class="panel client-pairing-panel" hidden>
-        <div class="panel-heading compact-heading">
-          <div>
-            <p class="panel-kicker">CONFIGURAÇÃO DESTE PC</p>
-            <h2>Conectar à Central</h2>
-            <p>O pareamento é feito uma única vez neste computador.</p>
-          </div>
-          <span class="step-badge muted-badge">02</span>
+        <div id="batchTableWrap" class="batch-table-wrap" hidden>
+          <table class="batch-table">
+            <thead>
+              <tr><th>#</th><th>Chave</th><th>Status</th><th>Ações</th></tr>
+            </thead>
+            <tbody id="batchResults"></tbody>
+          </table>
         </div>
-
-        <p id="clientPairingStatus" class="status" aria-live="polite"></p>
-        <div id="clientPairingForm">
-          <div class="field">
-            <label for="pairingCode">Código exibido no PC Central</label>
-            <input id="pairingCode" maxlength="29" autocomplete="off" spellcheck="false" placeholder="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX">
-            <div class="input-hint">No PC Central, use “Gerar código de pareamento” e informe o código aqui.</div>
-          </div>
-          <button id="pairClient" class="primary pairing-button" type="button">Parear com a Central</button>
-        </div>
-      </aside>
+      </div>
     </section>
 
-    <section class="panel batch-panel" aria-labelledby="batchTitle">
-      <div class="panel-heading">
-        <div>
-          <p class="panel-kicker">CONSULTA EM LOTE</p>
-          <h2 id="batchTitle">Consultar várias NF-e</h2>
-          <p>Cole uma chave por linha. Este PC envia uma consulta por vez para a fila segura.</p>
-        </div>
-        <span class="step-badge muted-badge">03</span>
-      </div>
+    <section id="tabPanelConfig" class="tab-panel" role="tabpanel" aria-labelledby="tabConfig" hidden>
+      <div class="config-layout">
+        <section id="centralConfigPanel" class="work-surface certificate-panel">
+          <div class="section-heading">
+            <h2>Central e certificado</h2>
+            <p>Configurações disponíveis no PC definido como Central.</p>
+          </div>
 
-      <div class="field">
-        <label for="batchInput">Chaves de acesso</label>
-        <textarea id="batchInput" rows="6" spellcheck="false" autocomplete="off" placeholder="Cole uma chave de 44 dígitos por linha"></textarea>
-        <p id="batchInputSummary" class="muted batch-input-summary">Nenhuma chave informada.</p>
-      </div>
+          <div class="field">
+            <label for="certificateSelect">Certificado</label>
+            <select id="certificateSelect">
+              <option value="">Selecione um certificado...</option>
+            </select>
+            <p id="certificateStatus" class="muted"></p>
+          </div>
 
-      <div class="batch-actions">
-        <button id="clearBatch" class="secondary" type="button">Limpar</button>
-        <button id="cancelBatch" class="secondary" type="button" hidden>Cancelar lote</button>
-        <button id="startBatch" class="primary" type="button">Iniciar lote</button>
-      </div>
+          <div class="certificate-actions">
+            <div class="field uf-field">
+              <label for="ufAutor">UF autora</label>
+              <select id="ufAutor" aria-label="UF autora da empresa">
+                <option value="11">RO</option><option value="12">AC</option><option value="13">AM</option><option value="14">RR</option><option value="15">PA</option><option value="16">AP</option><option value="17">TO</option><option value="21">MA</option><option value="22">PI</option><option value="23">CE</option><option value="24">RN</option><option value="25">PB</option><option value="26">PE</option><option value="27">AL</option><option value="28">SE</option><option value="29">BA</option><option value="31">MG</option><option value="32">ES</option><option value="33">RJ</option><option value="35">SP</option><option value="41">PR</option><option value="42" selected>SC</option><option value="43">RS</option><option value="50">MS</option><option value="51">MT</option><option value="52">GO</option><option value="53">DF</option>
+              </select>
+            </div>
+            <button id="saveCertificate" class="secondary" type="button">Salvar</button>
+          </div>
 
-      <p id="batchSummary" class="status batch-summary" aria-live="polite"></p>
+          <div class="pairing-block">
+            <div class="field">
+              <label>Autorizar outro PC</label>
+              <p class="muted pairing-help">Gere um código temporário para conectar um novo computador.</p>
+            </div>
+            <button id="generatePairingCode" class="secondary pairing-button" type="button">Gerar código de pareamento</button>
+            <div id="centralPairingResult" class="pairing-code-box" hidden>
+              <span class="pairing-code-label">Código temporário</span>
+              <strong id="centralPairingCode" class="pairing-code"></strong>
+              <span id="centralPairingExpiry" class="muted"></span>
+            </div>
+            <p id="centralPairingStatus" class="muted pairing-status" aria-live="polite"></p>
+          </div>
+        </section>
 
-      <div id="batchTableWrap" class="batch-table-wrap" hidden>
-        <table class="batch-table">
-          <thead>
-            <tr><th>#</th><th>Chave</th><th>Status</th><th>Ações</th></tr>
-          </thead>
-          <tbody id="batchResults"></tbody>
-        </table>
+        <section id="clientPairingPanel" class="work-surface client-pairing-panel" hidden>
+          <div class="section-heading">
+            <h2>Conectar à Central</h2>
+            <p>O pareamento é necessário somente na primeira configuração deste PC.</p>
+          </div>
+
+          <p id="clientPairingStatus" class="status" aria-live="polite"></p>
+          <div id="clientPairingForm">
+            <div class="field">
+              <label for="pairingCode">Código exibido no PC Central</label>
+              <input id="pairingCode" maxlength="29" autocomplete="off" spellcheck="false" placeholder="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX">
+              <div class="input-hint">Gere o código no PC Central e informe-o aqui.</div>
+            </div>
+            <button id="pairClient" class="primary pairing-button" type="button">Parear com a Central</button>
+          </div>
+        </section>
       </div>
     </section>
 
@@ -171,6 +166,7 @@
   <script src="/app.js" defer></script>
   <script src="/batch.js" defer></script>
   <script src="/pairing.js" defer></script>
+  <script src="/tabs.js" defer></script>
   <script src="/product-mapping.js" defer></script>
   <script src="/danfe-compact.js" defer></script>
 </body>
