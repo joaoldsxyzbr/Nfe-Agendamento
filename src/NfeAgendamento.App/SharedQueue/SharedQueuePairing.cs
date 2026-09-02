@@ -655,15 +655,10 @@ public sealed class SharedQueuePairingProcessor
         if (!_paths.ValidateForClient() || !_codes.TryGetActiveKey(out var pairingKey))
             return false;
 
-        string? candidate = null;
         try
         {
-            candidate = Directory.EnumerateFiles(_paths.PairingDirectory, "*.pair.req", SearchOption.TopDirectoryOnly)
-                .OrderBy(File.GetCreationTimeUtc)
-                .FirstOrDefault();
-            if (candidate is null || !TryParseId(candidate, out var requestId))
-                return false;
-            if (SharedQueueFileIO.IsReparsePoint(candidate))
+            var candidate = FindNextValidCandidate(out var requestId);
+            if (candidate is null)
                 return false;
 
             var processing = _paths.PairingProcessingPath(requestId);
@@ -741,6 +736,49 @@ public sealed class SharedQueuePairingProcessor
         {
             CryptographicOperations.ZeroMemory(pairingKey);
         }
+    }
+
+    private string? FindNextValidCandidate(out Guid requestId)
+    {
+        requestId = Guid.Empty;
+        string[] candidates;
+        try
+        {
+            candidates = Directory.EnumerateFiles(_paths.PairingDirectory, "*.pair.req", SearchOption.TopDirectoryOnly)
+                .OrderBy(File.GetCreationTimeUtc)
+                .ToArray();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or DirectoryNotFoundException)
+        {
+            return null;
+        }
+
+        foreach (var candidate in candidates)
+        {
+            if (!TryParseId(candidate, out var parsedId))
+            {
+                TryDelete(candidate);
+                continue;
+            }
+
+            try
+            {
+                if (SharedQueueFileIO.IsReparsePoint(candidate))
+                {
+                    TryDelete(candidate);
+                    continue;
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+            {
+                continue;
+            }
+
+            requestId = parsedId;
+            return candidate;
+        }
+
+        return null;
     }
 
     private static bool TryParseId(string path, out Guid requestId)
