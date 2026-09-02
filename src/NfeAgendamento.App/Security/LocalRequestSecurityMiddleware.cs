@@ -8,8 +8,7 @@ public sealed class LocalRequestSecurityMiddleware
     private static readonly HashSet<string> AllowedHosts = new(StringComparer.OrdinalIgnoreCase)
     {
         "127.0.0.1:17345",
-        "localhost:17345",
-        "nfeagendamento.local:17345"
+        "localhost:17345"
     };
 
     private static readonly HashSet<string> AllowedOrigins = new(StringComparer.OrdinalIgnoreCase)
@@ -20,40 +19,30 @@ public sealed class LocalRequestSecurityMiddleware
 
     private readonly RequestDelegate _next;
     private readonly CsrfTokenService _csrf;
-    private readonly CentralStateService _centralState;
 
-    public LocalRequestSecurityMiddleware(RequestDelegate next, CsrfTokenService csrf, CentralStateService centralState)
+    public LocalRequestSecurityMiddleware(RequestDelegate next, CsrfTokenService csrf)
     {
         _next = next ?? throw new ArgumentNullException(nameof(next));
         _csrf = csrf ?? throw new ArgumentNullException(nameof(csrf));
-        _centralState = centralState ?? throw new ArgumentNullException(nameof(centralState));
     }
 
     public async Task InvokeAsync(HttpContext context)
     {
-        var isLoopback = context.Connection.RemoteIpAddress is not null
-            && IPAddress.IsLoopback(context.Connection.RemoteIpAddress);
-        if (!isLoopback && !_centralState.IsEnabled)
+        var remoteIp = context.Connection.RemoteIpAddress;
+        if (remoteIp is null || !IPAddress.IsLoopback(remoteIp))
         {
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
             return;
         }
 
-        if (!isLoopback && IsCertificateAdministrationPath(context.Request.Path))
-        {
-            context.Response.StatusCode = StatusCodes.Status403Forbidden;
-            return;
-        }
-
-        if (!AllowedHosts.Contains(context.Request.Host.Value)
-            && !(_centralState.IsEnabled && CentralNetworkInfo.IsLocalLanHost(context.Request.Host)))
+        if (!AllowedHosts.Contains(context.Request.Host.Value))
         {
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
             return;
         }
 
         var origin = context.Request.Headers.Origin.ToString();
-        if (!string.IsNullOrWhiteSpace(origin) && !IsAllowedOrigin(origin, context.Request.Host, _centralState.IsEnabled))
+        if (!string.IsNullOrWhiteSpace(origin) && !AllowedOrigins.Contains(origin))
         {
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
             return;
@@ -75,22 +64,6 @@ public sealed class LocalRequestSecurityMiddleware
         }
 
         await _next(context);
-    }
-
-    private static bool IsCertificateAdministrationPath(PathString path) =>
-        path.StartsWithSegments("/api/certificates", StringComparison.OrdinalIgnoreCase)
-        || path.StartsWithSegments("/api/certificate", StringComparison.OrdinalIgnoreCase);
-
-    private static bool IsAllowedOrigin(string origin, HostString requestHost, bool centralEnabled)
-    {
-        if (AllowedOrigins.Contains(origin))
-            return true;
-
-        return centralEnabled
-            && Uri.TryCreate(origin, UriKind.Absolute, out var parsed)
-            && string.Equals(parsed.Scheme, "http", StringComparison.OrdinalIgnoreCase)
-            && string.Equals(parsed.Host, requestHost.Host, StringComparison.OrdinalIgnoreCase)
-            && parsed.Port == LocalHost.Port;
     }
 
     private static bool IsMutating(string method) =>
