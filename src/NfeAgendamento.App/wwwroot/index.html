@@ -53,7 +53,7 @@
         </div>
       </article>
 
-      <aside class="panel certificate-panel">
+      <aside id="centralConfigPanel" class="panel certificate-panel">
         <div class="panel-heading compact-heading">
           <div>
             <p class="panel-kicker">CONFIGURAÇÃO DA CENTRAL</p>
@@ -80,6 +80,41 @@
           </div>
           <button id="saveCertificate" class="secondary" type="button">Salvar</button>
         </div>
+
+        <div class="pairing-block">
+          <div class="field">
+            <label>Autorizar outro PC</label>
+            <p class="muted pairing-help">Gere um código temporário e digite-o somente no computador que você quer conectar.</p>
+          </div>
+          <button id="generatePairingCode" class="secondary pairing-button" type="button">Gerar código de pareamento</button>
+          <div id="centralPairingResult" class="pairing-code-box" hidden>
+            <span class="pairing-code-label">Código temporário</span>
+            <strong id="centralPairingCode" class="pairing-code"></strong>
+            <span id="centralPairingExpiry" class="muted"></span>
+          </div>
+          <p id="centralPairingStatus" class="muted pairing-status" aria-live="polite"></p>
+        </div>
+      </aside>
+
+      <aside id="clientPairingPanel" class="panel client-pairing-panel" hidden>
+        <div class="panel-heading compact-heading">
+          <div>
+            <p class="panel-kicker">CONFIGURAÇÃO DESTE PC</p>
+            <h2>Conectar à Central</h2>
+            <p>O pareamento é feito uma única vez neste computador.</p>
+          </div>
+          <span class="step-badge muted-badge">02</span>
+        </div>
+
+        <p id="clientPairingStatus" class="status" aria-live="polite"></p>
+        <div id="clientPairingForm">
+          <div class="field">
+            <label for="pairingCode">Código exibido no PC Central</label>
+            <input id="pairingCode" maxlength="29" autocomplete="off" spellcheck="false" placeholder="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX">
+            <div class="input-hint">No PC Central, use “Gerar código de pareamento” e informe o código aqui.</div>
+          </div>
+          <button id="pairClient" class="primary pairing-button" type="button">Parear com a Central</button>
+        </div>
       </aside>
     </section>
 
@@ -100,6 +135,7 @@
   </script>
   <script src="/lookup-feedback.js" defer></script>
   <script src="/app.js" defer></script>
+  <script src="/pairing.js" defer></script>
   <script src="/product-mapping.js" defer></script>
   <script src="/danfe-compact.js" defer></script>
 </body>
