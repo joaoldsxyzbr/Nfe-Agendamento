@@ -79,7 +79,7 @@ public sealed class SharedQueueCryptoTests
         try
         {
             await store.SaveAsync(id, secret);
-            var path = store.PathForTesting(id);
+            var path = Directory.EnumerateFiles(root, "*.key", SearchOption.TopDirectoryOnly).Single();
             var raw = await File.ReadAllBytesAsync(path);
 
             Assert.NotEqual(secret, raw);
