@@ -25,17 +25,20 @@ public sealed class SharedQueueGroupBootstrapTests
         legacyAuthorized.Authorize(clientId, "PC-02", clientSecret);
 
         var centralCandidate = new CandidateStateStore(Path.Combine(temp.Path, "central-candidate.bin"));
+        var centralPairing = new ClientPairingStore(Path.Combine(temp.Path, "central-client.bin"));
         var bootstrap = new SharedQueueGroupBootstrapService(
             paths,
             centralState,
             centralKeys,
             legacyAuthorized,
-            new ClientPairingStore(Path.Combine(temp.Path, "central-client.bin")),
+            centralPairing,
             centralCandidate);
 
         await bootstrap.EnsureBootstrapAsync();
         Assert.True(centralCandidate.IsReady);
         Assert.True(new SharedGroupIdentityStore(paths).Exists);
+        Assert.True(centralPairing.IsPaired);
+        Assert.Equal(expectedPublic, centralPairing.Load()!.CentralPublicKey);
 
         var clientPairing = new ClientPairingStore(Path.Combine(temp.Path, "client-pairing.bin"));
         clientPairing.SavePaired(clientId, "PC-02", clientSecret, expectedPublic, "PC-CENTRAL");
