@@ -11,6 +11,23 @@ public sealed class SharedQueueAutomaticLeaderTests
     private const string AccessKey = "42260912345678000123550010000000011000000015";
 
     [Fact]
+    public void Lease_health_fails_closed_after_release()
+    {
+        using var temp = new TempDirectory();
+        var share = Path.Combine(temp.Path, "share");
+        Directory.CreateDirectory(share);
+        var paths = new SharedQueuePaths(share);
+        paths.InitializeAsCentral();
+
+        var lease = SharedQueueCentralLease.TryAcquire(paths);
+        Assert.NotNull(lease);
+        Assert.True(lease!.IsHealthy);
+
+        lease.Dispose();
+        Assert.False(lease.IsHealthy);
+    }
+
+    [Fact]
     public async Task Exactly_one_candidate_leads_and_second_takes_over_with_same_public_key()
     {
         using var temp = new TempDirectory();
@@ -40,14 +57,14 @@ public sealed class SharedQueueAutomaticLeaderTests
         await first.TryActivateOnceAsync();
         await second.TryActivateOnceAsync();
 
-        Assert.True(first.IsActive);
+        Assert.True(first.CanProcessWork());
         Assert.False(second.IsActive);
         Assert.Equal(CentralRuntimeStatus.Standby, second.Status);
 
         first.Dispose();
         await second.TryActivateOnceAsync();
 
-        Assert.True(second.IsActive);
+        Assert.True(second.CanProcessWork());
         Assert.Equal(expectedPublic, secondKeys.GetOrCreatePublicKey());
 
         CryptographicOperations.ZeroMemory(groupKey);
