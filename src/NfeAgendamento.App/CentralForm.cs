@@ -5,10 +5,8 @@ namespace NfeAgendamento.App;
 
 public sealed class CentralForm : Form
 {
-    public static IReadOnlyList<string> PrimaryActionLabels { get; } =
-        ["Iniciar Central", "Parar Central", "Abrir sistema"];
+    public static IReadOnlyList<string> PrimaryActionLabels { get; } = ["Abrir sistema"];
 
-    private readonly CentralStateService _centralState;
     private readonly SharedQueueCentralService _centralRuntime;
     private readonly SharedQueueClient _queueClient;
     private readonly System.Windows.Forms.Timer _refreshTimer;
@@ -18,8 +16,6 @@ public sealed class CentralForm : Form
     private readonly Label _heartbeatValue;
     private readonly Label _processorValue;
     private readonly Label _summaryValue;
-    private readonly Button _startButton;
-    private readonly Button _stopButton;
     private bool _refreshing;
 
     public CentralForm(
@@ -27,16 +23,16 @@ public sealed class CentralForm : Form
         SharedQueueCentralService centralRuntime,
         SharedQueueClient queueClient)
     {
-        _centralState = centralState ?? throw new ArgumentNullException(nameof(centralState));
+        ArgumentNullException.ThrowIfNull(centralState); // mantido apenas para compatibilidade da migração legada.
         _centralRuntime = centralRuntime ?? throw new ArgumentNullException(nameof(centralRuntime));
         _queueClient = queueClient ?? throw new ArgumentNullException(nameof(queueClient));
 
-        Text = "NFe Agendamento - Central";
+        Text = "NFe Agendamento - Fila";
         StartPosition = FormStartPosition.CenterScreen;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = true;
-        ClientSize = new Size(590, 465);
+        ClientSize = new Size(590, 445);
         Font = new Font("Segoe UI", 10F, FontStyle.Regular, GraphicsUnit.Point);
         Icon = Icon.ExtractAssociatedIcon(Environment.ProcessPath ?? string.Empty) ?? SystemIcons.Application;
         BackColor = CentralTheme.Background;
@@ -44,7 +40,7 @@ public sealed class CentralForm : Form
 
         var title = new Label
         {
-            Text = "Central NFe Agendamento",
+            Text = "Fila NFe Agendamento",
             Font = new Font("Segoe UI Semibold", 18F, FontStyle.Bold, GraphicsUnit.Point),
             AutoSize = true,
             Location = new Point(28, 24),
@@ -54,7 +50,7 @@ public sealed class CentralForm : Form
 
         var subtitle = new Label
         {
-            Text = "Comunicação segura pela pasta compartilhada da empresa.",
+            Text = "A liderança é escolhida automaticamente entre os PCs autorizados.",
             AutoSize = true,
             Location = new Point(31, 62),
             ForeColor = CentralTheme.MutedText,
@@ -88,7 +84,7 @@ public sealed class CentralForm : Form
         Controls.Add(brandAccent);
         Controls.Add(CreateCaption("Papel deste PC", 31, 112));
         Controls.Add(CreateCaption("Pasta compartilhada", 31, 150));
-        Controls.Add(CreateCaption("Central", 31, 188));
+        Controls.Add(CreateCaption("Líder da fila", 31, 188));
         Controls.Add(CreateCaption("Heartbeat", 31, 226));
         Controls.Add(CreateCaption("Processador", 31, 264));
         Controls.Add(_roleValue);
@@ -98,49 +94,18 @@ public sealed class CentralForm : Form
         Controls.Add(_processorValue);
         Controls.Add(_summaryValue);
 
-        _startButton = new Button
-        {
-            Text = "Iniciar Central",
-            Size = new Size(155, 38),
-            Location = new Point(31, 395)
-        };
-        StylePrimaryButton(_startButton, CentralTheme.BrandBlue, Color.White);
-        _startButton.Click += (_, _) =>
-        {
-            _centralState.SetConfiguredAsCentral(true);
-            RefreshDiagnostics();
-        };
-
-        _stopButton = new Button
-        {
-            Text = "Parar Central",
-            Size = new Size(155, 38),
-            Location = new Point(201, 395)
-        };
-        StyleOutlineButton(_stopButton);
-        _stopButton.Click += (_, _) =>
-        {
-            _centralState.SetConfiguredAsCentral(false);
-            RefreshDiagnostics();
-        };
-
         var openButton = new Button
         {
             Text = "Abrir sistema",
-            Size = new Size(155, 38),
-            Location = new Point(371, 395)
+            Size = new Size(528, 38),
+            Location = new Point(31, 385)
         };
-        StylePrimaryButton(openButton, CentralTheme.BrandBlueSoft, Color.White);
+        StylePrimaryButton(openButton, CentralTheme.BrandBlue, Color.White);
         openButton.Click += (_, _) => OpenSystem();
-
-        Controls.Add(_startButton);
-        Controls.Add(_stopButton);
         Controls.Add(openButton);
 
         _refreshTimer = new System.Windows.Forms.Timer { Interval = 2000 };
         _refreshTimer.Tick += (_, _) => RefreshDiagnostics();
-
-        _centralState.Changed += CentralStateChanged;
         Shown += (_, _) =>
         {
             _refreshTimer.Start();
@@ -150,7 +115,6 @@ public sealed class CentralForm : Form
         {
             _refreshTimer.Stop();
             _refreshTimer.Dispose();
-            _centralState.Changed -= CentralStateChanged;
         };
 
         RefreshDiagnostics();
@@ -184,28 +148,6 @@ public sealed class CentralForm : Form
         button.UseVisualStyleBackColor = false;
     }
 
-    private static void StyleOutlineButton(Button button)
-    {
-        button.FlatStyle = FlatStyle.Flat;
-        button.FlatAppearance.BorderSize = 1;
-        button.FlatAppearance.BorderColor = CentralTheme.BrandBlue;
-        button.BackColor = CentralTheme.Surface;
-        button.ForeColor = CentralTheme.BrandBlue;
-        button.Cursor = Cursors.Hand;
-        button.UseVisualStyleBackColor = false;
-    }
-
-    private void CentralStateChanged(object? sender, EventArgs e)
-    {
-        if (InvokeRequired)
-        {
-            BeginInvoke(new Action(RefreshDiagnostics));
-            return;
-        }
-
-        RefreshDiagnostics();
-    }
-
     private void RefreshDiagnostics()
     {
         if (_refreshing || IsDisposed)
@@ -214,100 +156,72 @@ public sealed class CentralForm : Form
         _refreshing = true;
         try
         {
-            var configuredAsCentral = _centralState.IsConfiguredAsCentral;
             var clientStatus = _queueClient.GetStatus();
-
-            _roleValue.Text = configuredAsCentral ? "Central configurada" : "Cliente";
-            _roleValue.ForeColor = configuredAsCentral ? CentralTheme.BrandBlue : CentralTheme.Text;
-
-            var shareAvailable = configuredAsCentral ? _centralRuntime.ShareAvailable : clientStatus.ShareAvailable;
+            var shareAvailable = _centralRuntime.ShareAvailable || clientStatus.ShareAvailable;
             _shareValue.Text = shareAvailable
                 ? $"OK — {SharedQueuePaths.DefaultRoot}"
                 : $"Indisponível — {SharedQueuePaths.DefaultRoot}";
             _shareValue.ForeColor = shareAvailable ? CentralTheme.Success : CentralTheme.Danger;
 
-            if (configuredAsCentral)
-                RefreshConfiguredCentral();
-            else
-                RefreshClient(clientStatus);
+            switch (_centralRuntime.Status)
+            {
+                case CentralRuntimeStatus.Active:
+                    _roleValue.Text = "Líder automático";
+                    _roleValue.ForeColor = CentralTheme.BrandBlue;
+                    _centralValue.Text = $"Este PC — {Environment.MachineName}";
+                    _centralValue.ForeColor = CentralTheme.Success;
+                    _processorValue.Text = "Ativo";
+                    _processorValue.ForeColor = CentralTheme.Success;
+                    _summaryValue.Text = "Este PC está processando a fila. Se ele sair, outro PC autorizado pode assumir automaticamente.";
+                    _summaryValue.ForeColor = CentralTheme.Success;
+                    SetHeartbeat(_centralRuntime.LastHeartbeatUtc);
+                    break;
 
-            _startButton.Enabled = !configuredAsCentral;
-            _stopButton.Enabled = configuredAsCentral;
+                case CentralRuntimeStatus.Standby:
+                    _roleValue.Text = "Candidato em espera";
+                    _roleValue.ForeColor = CentralTheme.Text;
+                    _centralValue.Text = string.IsNullOrWhiteSpace(clientStatus.CentralId)
+                        ? "Outro PC está processando"
+                        : clientStatus.CentralId;
+                    _centralValue.ForeColor = clientStatus.CentralOnline ? CentralTheme.Success : CentralTheme.Warning;
+                    _processorValue.Text = "Standby";
+                    _processorValue.ForeColor = CentralTheme.MutedText;
+                    _summaryValue.Text = "Outro PC possui o lock da fila. Este PC assumirá automaticamente se o líder sair.";
+                    _summaryValue.ForeColor = CentralTheme.MutedText;
+                    SetHeartbeat(clientStatus.LastHeartbeatUtc);
+                    break;
+
+                case CentralRuntimeStatus.ShareUnavailable:
+                    _roleValue.Text = "Aguardando pasta";
+                    _roleValue.ForeColor = CentralTheme.Danger;
+                    _centralValue.Text = "Indisponível";
+                    _centralValue.ForeColor = CentralTheme.Danger;
+                    _processorValue.Text = "Parado";
+                    _processorValue.ForeColor = CentralTheme.Danger;
+                    _summaryValue.Text = $"Não foi possível usar {SharedQueuePaths.DefaultRoot}. Nenhuma consulta fiscal será iniciada sem a pasta compartilhada.";
+                    _summaryValue.ForeColor = CentralTheme.Danger;
+                    SetHeartbeat(null);
+                    break;
+
+                default:
+                    _roleValue.Text = clientStatus.IsPaired ? "Candidato" : "Não autorizado";
+                    _roleValue.ForeColor = clientStatus.IsPaired ? CentralTheme.Text : CentralTheme.Warning;
+                    _centralValue.Text = clientStatus.CentralOnline
+                        ? clientStatus.CentralId ?? "Líder online"
+                        : "Aguardando líder";
+                    _centralValue.ForeColor = clientStatus.CentralOnline ? CentralTheme.Success : CentralTheme.Warning;
+                    _processorValue.Text = clientStatus.IsPaired ? "Aguardando eleição" : "Indisponível";
+                    _processorValue.ForeColor = CentralTheme.MutedText;
+                    _summaryValue.Text = clientStatus.Message ?? "Este PC ainda está entrando no grupo da fila compartilhada.";
+                    _summaryValue.ForeColor = CentralTheme.MutedText;
+                    SetHeartbeat(clientStatus.LastHeartbeatUtc);
+                    break;
+            }
         }
         finally
         {
             _refreshing = false;
         }
-    }
-
-    private void RefreshConfiguredCentral()
-    {
-        switch (_centralRuntime.Status)
-        {
-            case CentralRuntimeStatus.Active:
-                _centralValue.Text = "Central ativa";
-                _centralValue.ForeColor = CentralTheme.Success;
-                _processorValue.Text = "Ativo";
-                _processorValue.ForeColor = CentralTheme.Success;
-                _summaryValue.Text = "Este PC está processando as consultas enviadas pelos demais computadores.";
-                _summaryValue.ForeColor = CentralTheme.Success;
-                break;
-
-            case CentralRuntimeStatus.Conflict:
-                _centralValue.Text = "Conflito: outra Central ativa";
-                _centralValue.ForeColor = CentralTheme.Warning;
-                _processorValue.Text = "Parado";
-                _processorValue.ForeColor = CentralTheme.Warning;
-                _summaryValue.Text = "Outro computador já assumiu a Central. Pare a Central neste PC ou encerre a outra instância antes de tentar novamente.";
-                _summaryValue.ForeColor = CentralTheme.Warning;
-                break;
-
-            case CentralRuntimeStatus.ShareUnavailable:
-                _centralValue.Text = "Central aguardando pasta";
-                _centralValue.ForeColor = CentralTheme.Danger;
-                _processorValue.Text = "Aguardando pasta";
-                _processorValue.ForeColor = CentralTheme.Danger;
-                _summaryValue.Text = $"Não foi possível usar {SharedQueuePaths.DefaultRoot}. O aplicativo não tentará abrir portas ou alterar o firewall.";
-                _summaryValue.ForeColor = CentralTheme.Danger;
-                break;
-
-            default:
-                _centralValue.Text = "Iniciando Central...";
-                _centralValue.ForeColor = CentralTheme.Warning;
-                _processorValue.Text = "Aguardando";
-                _processorValue.ForeColor = CentralTheme.MutedText;
-                _summaryValue.Text = "Aguardando a Central assumir o lock da pasta compartilhada.";
-                _summaryValue.ForeColor = CentralTheme.MutedText;
-                break;
-        }
-
-        SetHeartbeat(_centralRuntime.LastHeartbeatUtc);
-    }
-
-    private void RefreshClient(SharedQueueClientStatus status)
-    {
-        if (status.CentralOnline)
-        {
-            _centralValue.Text = string.IsNullOrWhiteSpace(status.CentralId)
-                ? "Central online"
-                : $"Central online — {status.CentralId}";
-            _centralValue.ForeColor = CentralTheme.Success;
-            _processorValue.Text = "Remoto";
-            _processorValue.ForeColor = CentralTheme.Success;
-            _summaryValue.Text = "Este PC é cliente. As consultas serão enviadas de forma criptografada pela pasta compartilhada.";
-            _summaryValue.ForeColor = CentralTheme.Success;
-        }
-        else
-        {
-            _centralValue.Text = "Central offline";
-            _centralValue.ForeColor = CentralTheme.Danger;
-            _processorValue.Text = "Indisponível";
-            _processorValue.ForeColor = CentralTheme.MutedText;
-            _summaryValue.Text = status.Message ?? "A Central não está disponível no momento.";
-            _summaryValue.ForeColor = CentralTheme.Danger;
-        }
-
-        SetHeartbeat(status.LastHeartbeatUtc);
     }
 
     private void SetHeartbeat(DateTimeOffset? heartbeatUtc)
