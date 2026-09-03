@@ -10,10 +10,11 @@ public sealed class PortalFallbackStaticAssetsTests
     public void Consumo_indevido_offers_portal_fallback_only_on_central()
     {
         var html = Fixture("index.html");
-        var script = Fixture("app.js");
+        var script = Fixture("portal-fallback.js");
         var program = Fixture("Program.cs");
 
         Assert.Contains("id=\"portalFallback\"", html, StringComparison.Ordinal);
+        Assert.Contains("/portal-fallback.js", html, StringComparison.Ordinal);
         Assert.Contains("/api/nfe/portal-fallback", script, StringComparison.Ordinal);
         Assert.Contains("configuredAsCentral", script, StringComparison.Ordinal);
         Assert.Contains("consumo_indevido", script, StringComparison.Ordinal);
@@ -24,7 +25,7 @@ public sealed class PortalFallbackStaticAssetsTests
     public void Portal_fallback_does_not_automate_captcha()
     {
         var program = Fixture("Program.cs");
-        var script = Fixture("app.js");
+        var script = Fixture("portal-fallback.js");
 
         Assert.DoesNotContain("hcaptcha.com/siteverify", program, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("hcaptcha.com/siteverify", script, StringComparison.OrdinalIgnoreCase);
