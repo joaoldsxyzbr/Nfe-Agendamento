@@ -7,6 +7,7 @@ namespace NfeAgendamento.App.SharedQueue;
 public enum CentralRuntimeStatus
 {
     Client,
+    Standby,
     Active,
     ShareUnavailable,
     Conflict
@@ -18,6 +19,7 @@ public sealed class SharedQueueCentralService : BackgroundService
     private readonly CentralStateService _centralState;
     private readonly SharedQueuePaths _paths;
     private readonly CentralKeyStore _keyStore;
+    private readonly SharedQueueGroupBootstrapService? _groupBootstrap;
     private SharedQueueCentralLease? _lease;
     private CentralRuntimeStatus _status = CentralRuntimeStatus.Client;
     private string? _lastError;
@@ -27,10 +29,20 @@ public sealed class SharedQueueCentralService : BackgroundService
         CentralStateService centralState,
         SharedQueuePaths paths,
         CentralKeyStore keyStore)
+        : this(centralState, paths, keyStore, null)
+    {
+    }
+
+    public SharedQueueCentralService(
+        CentralStateService centralState,
+        SharedQueuePaths paths,
+        CentralKeyStore keyStore,
+        SharedQueueGroupBootstrapService? groupBootstrap)
     {
         _centralState = centralState ?? throw new ArgumentNullException(nameof(centralState));
         _paths = paths ?? throw new ArgumentNullException(nameof(paths));
         _keyStore = keyStore ?? throw new ArgumentNullException(nameof(keyStore));
+        _groupBootstrap = groupBootstrap;
         _centralState.Changed += CentralStateChanged;
     }
 
@@ -58,7 +70,8 @@ public sealed class SharedQueueCentralService : BackgroundService
 
     public async Task TryActivateOnceAsync(CancellationToken cancellationToken = default)
     {
-        if (!_centralState.IsConfiguredAsCentral)
+        var automaticMode = _groupBootstrap is not null;
+        if (!automaticMode && !_centralState.IsConfiguredAsCentral)
         {
             ReleaseLease(CentralRuntimeStatus.Client, null);
             return;
@@ -81,10 +94,22 @@ public sealed class SharedQueueCentralService : BackgroundService
             _paths.InitializeAsCentral();
             cancellationToken.ThrowIfCancellationRequested();
 
+            if (automaticMode)
+            {
+                await _groupBootstrap!.EnsureBootstrapAsync(cancellationToken);
+                if (!_groupBootstrap.IsCandidateReady)
+                {
+                    ReleaseLease(CentralRuntimeStatus.Client, "Este PC ainda não está autorizado a assumir a fila.");
+                    return;
+                }
+            }
+
             var acquired = SharedQueueCentralLease.TryAcquire(_paths);
             if (acquired is null)
             {
-                ReleaseLease(CentralRuntimeStatus.Conflict, "Já existe outra Central ativa na pasta compartilhada.");
+                ReleaseLease(
+                    automaticMode ? CentralRuntimeStatus.Standby : CentralRuntimeStatus.Conflict,
+                    automaticMode ? "A fila já está sendo processada por outro PC." : "Já existe outra Central ativa na pasta compartilhada.");
                 return;
             }
 
@@ -101,7 +126,7 @@ public sealed class SharedQueueCentralService : BackgroundService
         {
             throw;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CryptographicException or InvalidDataException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CryptographicException or InvalidDataException or InvalidOperationException)
         {
             ReleaseLease(CentralRuntimeStatus.ShareUnavailable, ex.Message);
         }
@@ -167,7 +192,7 @@ public sealed class SharedQueueCentralService : BackgroundService
         {
             try
             {
-                if (!_centralState.IsConfiguredAsCentral)
+                if (_groupBootstrap is null && !_centralState.IsConfiguredAsCentral)
                 {
                     ReleaseLease(CentralRuntimeStatus.Client, null);
                     await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken);
@@ -179,7 +204,7 @@ public sealed class SharedQueueCentralService : BackgroundService
                 else
                     await PublishHeartbeatAsync(stoppingToken);
 
-                await Task.Delay(IsActive ? TimeSpan.FromSeconds(2) : TimeSpan.FromSeconds(5), stoppingToken);
+                await Task.Delay(IsActive ? TimeSpan.FromSeconds(2) : TimeSpan.FromSeconds(3), stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -199,7 +224,7 @@ public sealed class SharedQueueCentralService : BackgroundService
 
     private void CentralStateChanged(object? sender, EventArgs e)
     {
-        if (!_centralState.IsConfiguredAsCentral)
+        if (_groupBootstrap is null && !_centralState.IsConfiguredAsCentral)
             ReleaseLease(CentralRuntimeStatus.Client, null);
     }
 
