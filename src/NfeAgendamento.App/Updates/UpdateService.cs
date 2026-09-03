@@ -8,7 +8,7 @@ using System.Text.Json.Serialization;
 
 namespace NfeAgendamento.App.Updates;
 
-public sealed record UpdatePackage(Uri DownloadUrl, long Size, string Sha256);
+public sealed record UpdatePackage(Uri DownloadUrl, long Size, string Sha256, Uri SignatureUrl);
 
 public sealed record UpdateCheckResult(
     Version CurrentVersion,
@@ -34,12 +34,19 @@ public sealed class UpdateService : IDisposable
     private const long MaxSignatureBytes = 16L * 1024;
     private readonly HttpClient _httpClient;
     private readonly Version _currentVersion;
+    private readonly byte[] _signingPublicKey;
 
-    public UpdateService(HttpClient? httpClient = null, Version? currentVersion = null)
+    public UpdateService(
+        HttpClient? httpClient = null,
+        Version? currentVersion = null,
+        byte[]? signingPublicKey = null)
     {
         _httpClient = httpClient ?? new HttpClient();
         _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("NfeAgendamento-Updater/1.0");
         _currentVersion = currentVersion ?? Assembly.GetEntryAssembly()?.GetName().Version ?? new Version(0, 0, 0);
+        _signingPublicKey = (signingPublicKey ?? UpdateSigningKey.GetSubjectPublicKeyInfo()).ToArray();
+        if (_signingPublicKey.Length == 0)
+            throw new ArgumentException("Chave pública de assinatura de update inválida.", nameof(signingPublicKey));
     }
 
     public async Task<UpdateCheckResult> CheckAsync(CancellationToken cancellationToken = default)
@@ -67,7 +74,7 @@ public sealed class UpdateService : IDisposable
     {
         ArgumentNullException.ThrowIfNull(update);
         if (!update.CanInstall || update.LatestVersion is null || update.Package is null)
-            throw new InvalidOperationException("A release encontrada não possui um pacote Windows instalável.");
+            throw new InvalidOperationException("A release encontrada não possui um pacote Windows instalável e assinado.");
         if (string.IsNullOrWhiteSpace(installDirectory))
             throw new ArgumentException("Pasta de instalação inválida.", nameof(installDirectory));
         if (processId <= 0)
@@ -104,6 +111,17 @@ public sealed class UpdateService : IDisposable
         {
             await DownloadPackageAsync(update.Package, packagePath, cancellationToken);
             VerifyPackageIntegrity(packagePath, update.Package);
+
+            var signature = await DownloadSignatureAsync(update.Package.SignatureUrl, cancellationToken);
+            try
+            {
+                VerifyPackageSignature(packagePath, signature);
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(signature);
+            }
+
             ExtractPackageSafely(packagePath, staging);
 
             var executable = Path.Combine(staging, "NfeAgendamento.App.exe");
@@ -156,6 +174,7 @@ public sealed class UpdateService : IDisposable
     public void Dispose()
     {
         _httpClient.Dispose();
+        CryptographicOperations.ZeroMemory(_signingPublicKey);
     }
 
     private static UpdatePackage? BuildPackage(IReadOnlyList<GitHubReleaseAsset>? assets)
@@ -172,11 +191,11 @@ public sealed class UpdateService : IDisposable
             || signature.Size <= 0
             || signature.Size > MaxSignatureBytes
             || !TryGetTrustedGitHubUri(asset.DownloadUrl, out var downloadUrl)
-            || !TryGetTrustedGitHubUri(signature.DownloadUrl, out _))
+            || !TryGetTrustedGitHubUri(signature.DownloadUrl, out var signatureUrl))
             return null;
 
         var digest = NormalizeDigest(asset.Digest);
-        return digest is null ? null : new UpdatePackage(downloadUrl, asset.Size, digest);
+        return digest is null ? null : new UpdatePackage(downloadUrl, asset.Size, digest, signatureUrl);
     }
 
     private static bool TryGetTrustedGitHubUri(string? value, out Uri uri)
@@ -198,8 +217,7 @@ public sealed class UpdateService : IDisposable
         string destination,
         CancellationToken cancellationToken)
     {
-        if (!string.Equals(package.DownloadUrl.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(package.DownloadUrl.Host, "github.com", StringComparison.OrdinalIgnoreCase))
+        if (!TryGetTrustedGitHubUri(package.DownloadUrl.ToString(), out _))
             throw new InvalidDataException("Endereço do pacote de atualização inválido.");
         if (package.Size <= 0 || package.Size > MaxPackageBytes)
             throw new InvalidDataException("Tamanho do pacote de atualização inválido.");
@@ -234,6 +252,51 @@ public sealed class UpdateService : IDisposable
             throw new InvalidDataException("O tamanho do pacote baixado não corresponde ao publicado pelo GitHub.");
     }
 
+    private async Task<byte[]> DownloadSignatureAsync(Uri signatureUrl, CancellationToken cancellationToken)
+    {
+        if (!TryGetTrustedGitHubUri(signatureUrl.ToString(), out _))
+            throw new InvalidDataException("Endereço da assinatura de atualização inválido.");
+
+        using var response = await _httpClient.GetAsync(
+            signatureUrl,
+            HttpCompletionOption.ResponseHeadersRead,
+            cancellationToken);
+        response.EnsureSuccessStatusCode();
+
+        if (response.Content.Headers.ContentLength is > MaxSignatureBytes)
+            throw new InvalidDataException("Assinatura de atualização excede o limite permitido.");
+
+        await using var input = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var output = new MemoryStream();
+        var buffer = new byte[4096];
+        long total = 0;
+        while (true)
+        {
+            var read = await input.ReadAsync(buffer, cancellationToken);
+            if (read == 0)
+                break;
+
+            total += read;
+            if (total > MaxSignatureBytes)
+                throw new InvalidDataException("Assinatura de atualização excede o limite permitido.");
+
+            output.Write(buffer, 0, read);
+        }
+
+        var encoded = Encoding.ASCII.GetString(output.ToArray()).Trim();
+        try
+        {
+            var signature = Convert.FromBase64String(encoded);
+            if (signature.Length == 0 || signature.Length > 2048)
+                throw new InvalidDataException("Assinatura de atualização possui tamanho inválido.");
+            return signature;
+        }
+        catch (FormatException ex)
+        {
+            throw new InvalidDataException("Assinatura de atualização possui formato inválido.", ex);
+        }
+    }
+
     private static void VerifyPackageIntegrity(string packagePath, UpdatePackage package)
     {
         using var stream = File.OpenRead(packagePath);
@@ -251,6 +314,25 @@ public sealed class UpdateService : IDisposable
         if (expectedHash.Length != actualHash.Length
             || !CryptographicOperations.FixedTimeEquals(actualHash, expectedHash))
             throw new InvalidDataException("A verificação de integridade da atualização falhou.");
+    }
+
+    private void VerifyPackageSignature(string packagePath, byte[] signature)
+    {
+        try
+        {
+            using var rsa = RSA.Create();
+            rsa.ImportSubjectPublicKeyInfo(_signingPublicKey, out var bytesRead);
+            if (bytesRead != _signingPublicKey.Length)
+                throw new InvalidDataException("Chave pública de assinatura de atualização inválida.");
+
+            using var stream = File.OpenRead(packagePath);
+            if (!rsa.VerifyData(stream, signature, HashAlgorithmName.SHA256, RSASignaturePadding.Pss))
+                throw new InvalidDataException("A assinatura criptográfica da atualização é inválida.");
+        }
+        catch (CryptographicException ex)
+        {
+            throw new InvalidDataException("Não foi possível validar a assinatura criptográfica da atualização.", ex);
+        }
     }
 
     private static void ExtractPackageSafely(string packagePath, string stagingDirectory)
