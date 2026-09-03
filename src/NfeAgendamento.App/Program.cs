@@ -1,5 +1,6 @@
 using NfeAgendamento.App.Certificates;
 using NfeAgendamento.App.Fiscal;
+using NfeAgendamento.App.Portal;
 using NfeAgendamento.App.Security;
 using NfeAgendamento.App.SharedQueue;
 using NfeAgendamento.App.Storage;
@@ -30,6 +31,7 @@ internal static class Program
         builder.Services.AddSingleton<CsrfTokenService>();
         builder.Services.AddSingleton<CertificateService>();
         builder.Services.AddSingleton<EncryptedXmlCache>();
+        builder.Services.AddSingleton<PortalNfeFallbackLauncher>();
         builder.Services.AddSingleton<FiscalCooldownStore>();
         builder.Services.AddSingleton<FiscalOperationGate>();
         builder.Services.AddSingleton<FiscalRequestCoordinator>();
@@ -188,6 +190,39 @@ internal static class Program
             {
                 return Results.Json(new { status = "configuration_error", message = ex.Message }, statusCode: 409);
             }
+        });
+
+        app.MapPost("/api/nfe/portal-fallback", (
+            LookupRequest? request,
+            CentralStateService state,
+            PortalNfeFallbackLauncher launcher) =>
+        {
+            if (request is null || !AccessKeyValidator.IsValid(request.AccessKey))
+                return Results.BadRequest(new { status = "invalid_key", message = "Informe uma chave NF-e válida com 44 dígitos." });
+
+            if (!state.IsConfiguredAsCentral)
+            {
+                return Results.Json(
+                    new { status = "client_mode", message = "A consulta alternativa pelo Portal da NF-e só pode ser aberta no PC Central." },
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+
+            var result = launcher.TryLaunch(request.AccessKey);
+            return result.Status switch
+            {
+                PortalFallbackLaunchStatus.Started => Results.Json(
+                    new { status = "started", message = result.Message },
+                    statusCode: StatusCodes.Status202Accepted),
+                PortalFallbackLaunchStatus.Busy => Results.Json(
+                    new { status = "portal_busy", message = result.Message },
+                    statusCode: StatusCodes.Status409Conflict),
+                PortalFallbackLaunchStatus.RuntimeMissing => Results.Json(
+                    new { status = "webview2_missing", message = result.Message },
+                    statusCode: StatusCodes.Status409Conflict),
+                _ => Results.Json(
+                    new { status = "configuration_error", message = result.Message },
+                    statusCode: StatusCodes.Status409Conflict)
+            };
         });
 
         try
