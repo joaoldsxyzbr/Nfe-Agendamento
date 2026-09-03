@@ -30,14 +30,16 @@ internal static class Program
         builder.Services.AddSingleton(centralState);
         builder.Services.AddSingleton<CsrfTokenService>();
         builder.Services.AddSingleton<CertificateService>();
-        builder.Services.AddSingleton<EncryptedXmlCache>();
+        builder.Services.AddSingleton<SharedQueuePaths>();
+        builder.Services.AddSingleton<CandidateStateStore>();
+        builder.Services.AddSingleton<EncryptedXmlCache>(sp => new EncryptedXmlCache(
+            sp.GetRequiredService<SharedQueuePaths>(),
+            sp.GetRequiredService<CandidateStateStore>()));
         builder.Services.AddSingleton<PortalNfeFallbackLauncher>();
         builder.Services.AddSingleton<FiscalCooldownStore>();
         builder.Services.AddSingleton<FiscalOperationGate>();
         builder.Services.AddSingleton<FiscalRequestCoordinator>();
         builder.Services.AddSingleton<FiscalAuditLog>();
-        builder.Services.AddSingleton<SharedQueuePaths>();
-        builder.Services.AddSingleton<CandidateStateStore>();
         builder.Services.AddSingleton<SharedGroupIdentityStore>();
         builder.Services.AddSingleton<CandidateBundleStore>();
         builder.Services.AddSingleton<CentralKeyStore>();
@@ -186,10 +188,18 @@ internal static class Program
 
         app.MapPost("/api/nfe/portal-fallback", (
             LookupRequest? request,
+            SharedQueueCentralService central,
             PortalNfeFallbackLauncher launcher) =>
         {
             if (request is null || !AccessKeyValidator.IsValid(request.AccessKey))
                 return Results.BadRequest(new { status = "invalid_key", message = "Informe uma chave NF-e válida com 44 dígitos." });
+
+            if (!central.CanProcessWork())
+            {
+                return Results.Json(
+                    new { status = "leader_inactive", message = "A consulta alternativa deve ser aberta no PC que está processando a fila neste momento." },
+                    statusCode: StatusCodes.Status409Conflict);
+            }
 
             var result = launcher.TryLaunch(request.AccessKey);
             return result.Status switch
