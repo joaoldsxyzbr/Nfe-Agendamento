@@ -9,7 +9,7 @@ public sealed class TrayApplicationContextTests
     public void MenuLabels_contains_only_the_supported_tray_actions()
     {
         Assert.Equal(
-            ["Abrir Central", "Abrir sistema", "Configurar certificado", "Verificar atualização", "Iniciar com o Windows", "Sair"],
+            ["Status da fila", "Abrir sistema", "Configurar certificado", "Verificar atualização", "Iniciar com o Windows", "Sair"],
             TrayApplicationContext.MenuLabels);
     }
 
