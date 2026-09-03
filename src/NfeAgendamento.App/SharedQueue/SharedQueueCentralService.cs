@@ -68,6 +68,25 @@ public sealed class SharedQueueCentralService : BackgroundService
 
     public bool ShareAvailable => _paths.ValidateForClient();
 
+    public bool CanProcessWork()
+    {
+        SharedQueueCentralLease? lease;
+        lock (_sync)
+        {
+            if (_status != CentralRuntimeStatus.Active || _lease is null)
+                return false;
+            lease = _lease;
+        }
+
+        if (lease.IsHealthy)
+            return true;
+
+        ReleaseLease(
+            CentralRuntimeStatus.ShareUnavailable,
+            "O lock exclusivo da fila foi perdido. Nenhum novo trabalho fiscal será iniciado até a liderança ser readquirida.");
+        return false;
+    }
+
     public async Task TryActivateOnceAsync(CancellationToken cancellationToken = default)
     {
         var automaticMode = _groupBootstrap is not null;
@@ -134,11 +153,8 @@ public sealed class SharedQueueCentralService : BackgroundService
 
     public async Task PublishHeartbeatAsync(CancellationToken cancellationToken = default)
     {
-        lock (_sync)
-        {
-            if (_lease is null || _status != CentralRuntimeStatus.Active)
-                return;
-        }
+        if (!CanProcessWork())
+            return;
 
         var now = DateTimeOffset.UtcNow;
         var publicKey = _keyStore.GetOrCreatePublicKey();
