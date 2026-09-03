@@ -43,13 +43,13 @@
             <button id="newLookup" class="secondary new-lookup-button" type="button">Nova consulta</button>
             <button id="lookup" class="primary" type="button"><span>Consultar NF-e</span></button>
           </div>
-          <div class="input-hint">No cliente, o pedido segue pela fila segura até o PC Central.</div>
+          <div class="input-hint">O pedido usa a fila segura; o líder atual processa a consulta automaticamente.</div>
         </div>
 
         <p id="status" class="status" aria-live="polite"></p>
         <div id="portalFallbackPanel" class="portal-fallback-panel" hidden>
           <button id="portalFallback" class="secondary" type="button">Consultar pela Fazenda</button>
-          <span id="portalFallbackHint" class="muted">Abre o Portal Nacional no PC Central. O hCaptcha continua manual.</span>
+          <span id="portalFallbackHint" class="muted">Abre o Portal Nacional neste PC. O hCaptcha continua manual.</span>
         </div>
         <div id="actions" class="actions" hidden>
           <button id="viewDanfe" class="action-button featured-action" type="button">Visualizar DANFE</button>
@@ -95,8 +95,8 @@
       <div class="config-layout">
         <section id="centralConfigPanel" class="work-surface certificate-panel">
           <div class="section-heading">
-            <h2>Central e certificado</h2>
-            <p>Configurações disponíveis no PC definido como Central.</p>
+            <h2>Certificado e fila</h2>
+            <p>O certificado A1 é configurado localmente. A liderança da fila é automática.</p>
           </div>
 
           <div class="field">
@@ -120,9 +120,9 @@
           <div class="pairing-block">
             <div class="field">
               <label>Autorizar outro PC</label>
-              <p class="muted pairing-help">Gere um código temporário para conectar um novo computador.</p>
+              <p class="muted pairing-help">O PC que estiver processando a fila pode gerar um código temporário para autorizar outro computador.</p>
             </div>
-            <button id="generatePairingCode" class="secondary pairing-button" type="button">Gerar código de pareamento</button>
+            <button id="generatePairingCode" class="secondary pairing-button" type="button">Gerar código de autorização</button>
             <div id="centralPairingResult" class="pairing-code-box" hidden>
               <span class="pairing-code-label">Código temporário</span>
               <strong id="centralPairingCode" class="pairing-code"></strong>
@@ -134,18 +134,18 @@
 
         <section id="clientPairingPanel" class="work-surface client-pairing-panel" hidden>
           <div class="section-heading">
-            <h2>Conectar à Central</h2>
-            <p>O pareamento é necessário somente na primeira configuração deste PC.</p>
+            <h2>Autorizar este PC</h2>
+            <p>Esta autorização é necessária somente na primeira configuração deste computador.</p>
           </div>
 
           <p id="clientPairingStatus" class="status" aria-live="polite"></p>
           <div id="clientPairingForm">
             <div class="field">
-              <label for="pairingCode">Código exibido no PC Central</label>
+              <label for="pairingCode">Código exibido pelo líder atual</label>
               <input id="pairingCode" maxlength="29" autocomplete="off" spellcheck="false" placeholder="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX">
-              <div class="input-hint">Gere o código no PC Central e informe-o aqui.</div>
+              <div class="input-hint">Gere o código no PC que estiver processando a fila e informe-o aqui.</div>
             </div>
-            <button id="pairClient" class="primary pairing-button" type="button">Parear com a Central</button>
+            <button id="pairClient" class="primary pairing-button" type="button">Autorizar este PC</button>
           </div>
         </section>
       </div>
