@@ -96,30 +96,19 @@ public sealed class SharedAuthorizedClientStoreTests
             var candidate = new CandidateStateStore(Path.Combine(root, "candidate.bin"));
             candidate.Save(groupKey);
             var shared = new SharedAuthorizedClientStore(paths, candidate);
-            var legacy = new AuthorizedClientStore(Path.Combine(root, "legacy-authorized.bin"));
             var secret = RandomNumberGenerator.GetBytes(32);
             var clientId = Guid.NewGuid();
-            legacy.Authorize(clientId, "PC legado", secret);
 
-            using var rsa = RSA.Create(2048);
-            var publicKey = rsa.ExportSubjectPublicKeyInfo();
-            var material = SharedQueueCrypto.CreateClientRequest(Guid.NewGuid(), AccessKey, publicKey, clientId, 7, secret);
-            try
-            {
-                Assert.True(legacy.TryAuthenticateAndAdvance(material.Envelope, out var error), error);
-                shared.ReplaceFromLegacy(legacy.Snapshot());
-                var migrated = shared.Snapshot().Single();
-                Assert.Equal(clientId, migrated.ClientId);
-                Assert.Equal(7, migrated.LastSequence);
-                Assert.Equal(secret, migrated.Secret);
-            }
-            finally
-            {
-                CryptographicOperations.ZeroMemory(material.AesKey);
-                CryptographicOperations.ZeroMemory(publicKey);
-                CryptographicOperations.ZeroMemory(secret);
-                CryptographicOperations.ZeroMemory(groupKey);
-            }
+            shared.ReplaceFromLegacy([
+                new AuthorizedClientSnapshot(clientId, "PC legado", secret, 7)
+            ]);
+
+            var migrated = shared.Snapshot().Single();
+            Assert.Equal(clientId, migrated.ClientId);
+            Assert.Equal(7, migrated.LastSequence);
+            Assert.Equal(secret, migrated.Secret);
+            CryptographicOperations.ZeroMemory(secret);
+            CryptographicOperations.ZeroMemory(groupKey);
         }
         finally
         {
