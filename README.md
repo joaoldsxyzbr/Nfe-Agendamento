@@ -4,10 +4,10 @@ Aplicativo Windows interno para consultar, visualizar e baixar NF-e. Cada PC usa
 
 ## Versão
 
-- última release publicada: **v0.1.24**;
-- `main`: candidata **v0.1.25**.
+- última release publicada: **v0.1.25**;
+- `main`: alinhada à **v0.1.25**.
 
-A candidata v0.1.25 acrescenta **fencing fiscal imediatamente antes do envio à SEFAZ**, atualização com **backup, health check local e rollback automático**, migração para **.NET 10 LTS** e novos gates de segurança no CI/release. A assinatura independente de pacotes continua condicionada ao provisionamento de uma chave privada em GitHub Secret; nenhuma chave privada é versionada no repositório.
+A versão v0.1.25 acrescenta **fencing fiscal imediatamente antes do envio à SEFAZ**, atualização com **backup, health check local e rollback automático**, migração para **.NET 10 LTS** e novos gates de segurança no CI/release. A assinatura independente de pacotes continua condicionada ao provisionamento de uma chave privada em GitHub Secret; nenhuma chave privada é versionada no repositório.
 
 ## Arquitetura atual
 
@@ -248,7 +248,7 @@ O CI também publica Windows x64 autocontido, compacta o ZIP e disponibiliza art
 
 ## Checklist da v0.1.25
 
-Automatizado exigido para a release:
+Automatizado validado para a release:
 
 - testes .NET completos;
 - fencing de liderança antes do envio fiscal;
@@ -283,7 +283,7 @@ Não provoque `cStat=656` real apenas para testar.
 
 ## Release
 
-A última release publicada ainda é **v0.1.24**; a `main` está sendo validada como candidata **v0.1.25**.
+A última release publicada é **v0.1.25** e a `main` permanece alinhada à versão **v0.1.25**.
 
 A publicação oficial usa o workflow **Release Bridge**, que restaura dependências, audita vulnerabilidades, testa, compila, publica o pacote Windows e prende a tag ao SHA efetivamente validado.
 
