@@ -12,7 +12,8 @@ public sealed class SharedQueuePaths
         "central.lock",
         "heartbeat.json",
         "group-identity.bin",
-        "authorized-clients.bin"
+        "authorized-clients.bin",
+        "fiscal-cooldown.bin"
     };
 
     private readonly string _rootWithSeparator;
@@ -36,6 +37,7 @@ public sealed class SharedQueuePaths
     public string StatusDirectory => ChildDirectory("status");
     public string PairingDirectory => ChildDirectory("pareamento");
     public string CandidatesDirectory => ChildDirectory("candidatos");
+    public string CacheDirectory => ChildDirectory("cache");
     public string MarkerPath => EnsureInsideRoot(Path.Combine(Root, ".nfe-agendamento"));
     public string GroupIdentityPath => StatusPath("group-identity.bin");
     public string AuthorizedClientsPath => StatusPath("authorized-clients.bin");
@@ -109,6 +111,7 @@ public sealed class SharedQueuePaths
         EnsureDirectory(StatusDirectory);
         EnsureDirectory(PairingDirectory);
         EnsureDirectory(CandidatesDirectory);
+        EnsureDirectory(CacheDirectory);
 
         if (File.Exists(MarkerPath))
             SharedQueueFileIO.EnsureNotReparsePoint(MarkerPath);
@@ -160,6 +163,8 @@ public sealed class SharedQueuePaths
             SharedQueueFileIO.EnsureNotReparsePoint(PairingDirectory);
             if (Directory.Exists(CandidatesDirectory))
                 SharedQueueFileIO.EnsureNotReparsePoint(CandidatesDirectory);
+            if (Directory.Exists(CacheDirectory))
+                SharedQueueFileIO.EnsureNotReparsePoint(CacheDirectory);
             SharedQueueFileIO.EnsureNotReparsePoint(MarkerPath);
 
             var markerBytes = SharedQueueFileIO.ReadAllBytes(MarkerPath, SharedQueueFileIO.MaxMarkerBytes);
