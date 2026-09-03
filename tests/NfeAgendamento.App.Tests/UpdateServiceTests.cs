@@ -26,6 +26,13 @@ public sealed class UpdateServiceTests
                         size = 1234,
                         digest = $"sha256:{publishedDigest}",
                         browser_download_url = "https://github.com/joaoldsxyzbr/Nfe-Agendamento/releases/download/v1.2.0/Nfe-Agendamento-win-x64.zip"
+                    },
+                    new
+                    {
+                        name = "Nfe-Agendamento-win-x64.zip.sig",
+                        size = 512,
+                        digest = (string?)null,
+                        browser_download_url = "https://github.com/joaoldsxyzbr/Nfe-Agendamento/releases/download/v1.2.0/Nfe-Agendamento-win-x64.zip.sig"
                     }
                 }
             })
@@ -40,6 +47,36 @@ public sealed class UpdateServiceTests
         Assert.Equal(1234, result.Package!.Size);
         Assert.Equal(publishedDigest, result.Package.Sha256);
         Assert.Equal("github.com", result.Package.DownloadUrl.Host);
+    }
+
+    [Fact]
+    public async Task CheckAsync_rejects_release_without_detached_signature()
+    {
+        var publishedDigest = new string('a', 64);
+        using var client = new HttpClient(new Handler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(new
+            {
+                tag_name = "v1.2.0",
+                assets = new[]
+                {
+                    new
+                    {
+                        name = "Nfe-Agendamento-win-x64.zip",
+                        size = 1234,
+                        digest = $"sha256:{publishedDigest}",
+                        browser_download_url = "https://github.com/joaoldsxyzbr/Nfe-Agendamento/releases/download/v1.2.0/Nfe-Agendamento-win-x64.zip"
+                    }
+                }
+            })
+        }));
+        using var service = new UpdateService(client, new Version(1, 0, 0));
+
+        var result = await service.CheckAsync();
+
+        Assert.True(result.IsUpdateAvailable);
+        Assert.False(result.CanInstall);
+        Assert.Null(result.Package);
     }
 
     [Fact]
