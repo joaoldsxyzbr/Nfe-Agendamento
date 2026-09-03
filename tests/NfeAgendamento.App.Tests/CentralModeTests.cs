@@ -33,7 +33,7 @@ public sealed class CentralModeTests
     }
 
     [Fact]
-    public void Central_role_is_persisted()
+    public void Central_role_is_persisted_for_bootstrap_compatibility()
     {
         var root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
         var path = Path.Combine(root, "central.json");
@@ -51,10 +51,8 @@ public sealed class CentralModeTests
     }
 
     [Fact]
-    public void Central_window_exposes_expected_primary_actions()
+    public void Queue_status_window_has_no_manual_leader_controls()
     {
-        Assert.Equal(
-            ["Iniciar Central", "Parar Central", "Abrir sistema"],
-            CentralForm.PrimaryActionLabels);
+        Assert.Equal(["Abrir sistema"], CentralForm.PrimaryActionLabels);
     }
 }
