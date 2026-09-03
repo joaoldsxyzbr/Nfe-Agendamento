@@ -102,6 +102,8 @@ public sealed class SharedQueueCentralService : BackgroundService
                 return;
         }
 
+        SharedQueueCentralLease? acquired = null;
+        var transferred = false;
         try
         {
             if (!Directory.Exists(_paths.Root))
@@ -113,6 +115,15 @@ public sealed class SharedQueueCentralService : BackgroundService
             _paths.InitializeAsCentral();
             cancellationToken.ThrowIfCancellationRequested();
 
+            acquired = SharedQueueCentralLease.TryAcquire(_paths);
+            if (acquired is null)
+            {
+                ReleaseLease(
+                    automaticMode ? CentralRuntimeStatus.Standby : CentralRuntimeStatus.Conflict,
+                    automaticMode ? "A fila já está sendo processada por outro PC." : "Já existe outra Central ativa na pasta compartilhada.");
+                return;
+            }
+
             if (automaticMode)
             {
                 await _groupBootstrap!.EnsureBootstrapAsync(cancellationToken);
@@ -123,18 +134,10 @@ public sealed class SharedQueueCentralService : BackgroundService
                 }
             }
 
-            var acquired = SharedQueueCentralLease.TryAcquire(_paths);
-            if (acquired is null)
-            {
-                ReleaseLease(
-                    automaticMode ? CentralRuntimeStatus.Standby : CentralRuntimeStatus.Conflict,
-                    automaticMode ? "A fila já está sendo processada por outro PC." : "Já existe outra Central ativa na pasta compartilhada.");
-                return;
-            }
-
             lock (_sync)
             {
                 _lease = acquired;
+                transferred = true;
                 _status = CentralRuntimeStatus.Active;
                 _lastError = null;
             }
@@ -148,6 +151,11 @@ public sealed class SharedQueueCentralService : BackgroundService
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CryptographicException or InvalidDataException or InvalidOperationException)
         {
             ReleaseLease(CentralRuntimeStatus.ShareUnavailable, ex.Message);
+        }
+        finally
+        {
+            if (!transferred)
+                acquired?.Dispose();
         }
     }
 
