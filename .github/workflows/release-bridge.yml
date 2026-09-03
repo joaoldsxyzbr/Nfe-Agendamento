@@ -34,6 +34,10 @@ jobs:
         env:
           INPUT_VERSION: ${{ inputs.version }}
         run: |
+          if ($env:GITHUB_REF -ne 'refs/heads/main') {
+            throw "A release deve ser executada a partir da branch main. Ref atual: $env:GITHUB_REF"
+          }
+
           $raw = $env:INPUT_VERSION.Trim()
           if ($raw -notmatch '^v?[0-9]+\.[0-9]+\.[0-9]+$') {
             throw 'Versão inválida. Use o formato v1.2.3.'
