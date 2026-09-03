@@ -47,6 +47,10 @@
         </div>
 
         <p id="status" class="status" aria-live="polite"></p>
+        <div id="portalFallbackPanel" class="portal-fallback-panel" hidden>
+          <button id="portalFallback" class="secondary" type="button">Consultar pela Fazenda</button>
+          <span id="portalFallbackHint" class="muted">Abre o Portal Nacional no PC Central. O hCaptcha continua manual.</span>
+        </div>
         <div id="actions" class="actions" hidden>
           <button id="viewDanfe" class="action-button featured-action" type="button">Visualizar DANFE</button>
           <button id="printDanfe" class="action-button" type="button">Imprimir / Salvar PDF</button>
@@ -154,10 +158,12 @@
       const accessKey = document.getElementById('accessKey');
       const status = document.getElementById('status');
       const actions = document.getElementById('actions');
+      const portalFallbackPanel = document.getElementById('portalFallbackPanel');
       accessKey.value = '';
       status.textContent = '';
       status.className = 'status';
       actions.hidden = true;
+      portalFallbackPanel.hidden = true;
       accessKey.focus();
     }
     document.getElementById('newLookup').addEventListener('click', resetLookup);
