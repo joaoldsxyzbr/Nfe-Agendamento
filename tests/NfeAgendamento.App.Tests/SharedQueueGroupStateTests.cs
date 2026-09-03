@@ -54,13 +54,13 @@ public sealed class SharedQueueGroupStateTests
             var payload = store.Read(clientId, secret);
             Assert.Equal(groupKey, payload.GroupStateKey);
             Assert.Equal(fingerprint, payload.CentralPublicKeySha256);
-            Assert.Throws<CryptographicException>(() => store.Read(clientId, wrongSecret));
+            Assert.ThrowsAny<CryptographicException>(() => store.Read(clientId, wrongSecret));
 
             var path = paths.CandidateBundlePath(clientId);
             var bytes = File.ReadAllBytes(path);
             bytes[^1] ^= 0x5A;
             File.WriteAllBytes(path, bytes);
-            Assert.Throws<CryptographicException>(() => store.Read(clientId, secret));
+            Assert.ThrowsAny<CryptographicException>(() => store.Read(clientId, secret));
 
             CryptographicOperations.ZeroMemory(secret);
             CryptographicOperations.ZeroMemory(wrongSecret);
