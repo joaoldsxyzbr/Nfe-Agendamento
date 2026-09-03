@@ -146,17 +146,16 @@ public sealed class PortalNfeFallbackForm : Form
 
         try
         {
-            var script = $"""
-                (() => {{
-                  const input = document.querySelector('#ctl00_ContentPlaceHolder1_txtChaveAcessoResumo, input[id$="txtChaveAcessoResumo"]');
-                  if (!input) return false;
-                  if (!input.value) input.value = '{_accessKey}';
-                  input.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                  input.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                  input.focus();
-                  return true;
-                }})();
-                """;
+            var script =
+                "(() => {" +
+                "const input = document.querySelector('#ctl00_ContentPlaceHolder1_txtChaveAcessoResumo, input[id$=\"txtChaveAcessoResumo\"]');" +
+                "if (!input) return false;" +
+                $"if (!input.value) input.value = '{_accessKey}';" +
+                "input.dispatchEvent(new Event('input', { bubbles: true }));" +
+                "input.dispatchEvent(new Event('change', { bubbles: true }));" +
+                "input.focus();" +
+                "return true;" +
+                "})();";
             await _webView.CoreWebView2.ExecuteScriptAsync(script);
         }
         catch (InvalidOperationException)
