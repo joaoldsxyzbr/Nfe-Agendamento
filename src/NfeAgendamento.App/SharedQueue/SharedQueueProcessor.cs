@@ -109,11 +109,14 @@ public sealed class SharedQueueProcessor
 
             if (!_authorizedClients.TryAuthenticateAndAdvance(envelope, out var authenticationError))
             {
+                var message = authenticationError.Contains("repetida", StringComparison.OrdinalIgnoreCase)
+                    ? "A Central foi interrompida durante esta consulta. Por segurança, a tentativa não foi repetida automaticamente na SEFAZ. Faça uma nova consulta."
+                    : authenticationError;
                 var denied = new NfeLookupResult(
                     NfeLookupStatus.Failed,
                     null,
                     null,
-                    authenticationError,
+                    message,
                     false);
                 await PublishResponseAsync(
                     SharedQueueCrypto.CreateResponse(requestId, denied, aesKey),
