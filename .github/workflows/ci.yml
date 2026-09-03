@@ -25,6 +25,8 @@ jobs:
         run: node tests/js/lookup-feedback-regression.test.js
       - name: Testar contingência pelo Portal NF-e
         run: node tests/js/portal-fallback-regression.test.js
+      - name: Testar botão de consulta durante bootstrap
+        run: node tests/js/pairing-lookup-regression.test.js
       - name: Testar consulta em lote
         run: node tests/js/batch-lookup-regression.test.js
       - name: Testar prontidão dos workflows de release
