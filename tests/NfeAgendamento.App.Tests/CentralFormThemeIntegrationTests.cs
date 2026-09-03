@@ -16,9 +16,11 @@ public sealed class CentralFormThemeIntegrationTests
         Assert.Contains("ForeColor = CentralTheme.BrandBlue", source, StringComparison.Ordinal);
         Assert.Contains("BackColor = CentralTheme.BrandYellow", source, StringComparison.Ordinal);
         Assert.Contains("FlatStyle = FlatStyle.Flat", source, StringComparison.Ordinal);
-        Assert.Contains("Text = \"Central NFe Agendamento\"", source, StringComparison.Ordinal);
-        Assert.Contains("Text = \"Iniciar Central\"", source, StringComparison.Ordinal);
-        Assert.Contains("Text = \"Parar Central\"", source, StringComparison.Ordinal);
+        Assert.Contains("Text = \"Fila NFe Agendamento\"", source, StringComparison.Ordinal);
+        Assert.Contains("Líder automático", source, StringComparison.Ordinal);
+        Assert.Contains("Candidato em espera", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Text = \"Iniciar Central\"", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Text = \"Parar Central\"", source, StringComparison.Ordinal);
         Assert.Contains("Text = \"Abrir sistema\"", source, StringComparison.Ordinal);
         Assert.Contains("Papel deste PC", source, StringComparison.Ordinal);
         Assert.Contains("Pasta compartilhada", source, StringComparison.Ordinal);
