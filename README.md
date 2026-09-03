@@ -7,7 +7,7 @@ Aplicativo Windows interno para consultar, visualizar e baixar NF-e. O certifica
 - última release publicada: **v0.1.21**;
 - `main`: candidata **v0.1.22**.
 
-A v0.1.22 adiciona uma contingência manual pelo **Portal Nacional da NF-e** quando a consulta automática recebe `cStat=656`, sem copiar o A1 para os PCs clientes e sem automatizar captcha. A revisão geral desta candidata também endureceu retries fiscais, timeout da fila, vínculo do pareamento e o fluxo de release.
+A v0.1.22 adiciona uma contingência manual pelo **Portal Nacional da NF-e** quando a consulta automática recebe `cStat=656`, sem copiar o A1 para os PCs clientes e sem automatizar captcha. A revisão desta candidata também remove retries fiscais ambíguos, endurece recuperação de consultas interrompidas, timeout da fila, vínculo do pareamento e o fluxo de release.
 
 ## Arquitetura atual
 
@@ -107,6 +107,8 @@ Regras importantes:
 - após a importação, o temporário é removido e o XML entra no mesmo cache criptografado do fluxo normal;
 - somente uma janela de contingência pode ficar aberta por vez.
 
+A validação do XML do Portal possui testes automatizados para XML processado válido, chave divergente, raiz inválida e tentativa de DTD/entidade externa.
+
 ### Nos PCs clientes
 
 A contingência não abre com certificado nos PCs clientes. Se um cliente receber o bloqueio 656, a interface orienta que a consulta alternativa seja concluída no **PC Central**.
@@ -141,7 +143,8 @@ Proteções principais:
 - chave NF-e e XML não ficam em texto puro na fila;
 - arquivos da fila são temporários e não são backup de XML;
 - publicação e recuperação usam escrita/movimentação atômica;
-- pedidos inválidos/adulterados não chegam à camada fiscal.
+- pedidos inválidos/adulterados não chegam à camada fiscal;
+- se a Central cair depois de aceitar uma solicitação e antes de publicar a resposta, a recuperação **não executa uma segunda chamada fiscal**; o cliente recebe uma falha segura e deve fazer uma nova consulta.
 
 Os clientes aguardam até **3 minutos** pela resposta da Central. Esse prazo cobre espera normal da fila mais uma chamada fiscal sem fazer o cliente abandonar cedo demais o segredo usado para abrir a resposta cifrada.
 
@@ -199,9 +202,12 @@ O Central mantém:
 - limite de operações admitidas;
 - cooldown persistente de 656;
 - HTTP `429 Too Many Requests` **não é repetido automaticamente**;
-- timeout do transporte fiscal **não é repetido automaticamente**, porque o resultado da tentativa é ambíguo;
-- retry com backoff permanece limitado a falhas HTTP/rede transitórias que não sejam 429 nem timeout do transporte;
+- timeout do transporte fiscal **não é repetido automaticamente**;
+- falha HTTP `5xx`, falha de conexão ou outra `HttpRequestException` após iniciar a tentativa fiscal **não é repetida automaticamente**, pois o resultado pode ser ambíguo;
+- recuperação de solicitação interrompida não dispara uma segunda consulta fiscal;
 - auditoria local sem XML, chave completa ou certificado.
+
+A política atual é deliberadamente conservadora: depois que uma tentativa fiscal começa, uma falha de transporte não gera retry automático. O usuário pode tentar novamente de forma explícita depois de avaliar a situação.
 
 A contingência do Portal é uma rota manual separada e **não remove nem reduz essas proteções**.
 
@@ -260,14 +266,18 @@ dotnet build Nfe-Agendamento.sln -c Release
 
 O CI também executa o publish Windows x64 autocontido e gera um ZIP como artifact.
 
-A integração real Portal + hCaptcha + A1 não é automatizada no CI. Ela exige um teste físico no PC Central.
+O CI cobre a política de não repetir falhas fiscais ambíguas, a recuperação da fila sem uma segunda chamada fiscal, as regras estáticas da contingência e a validação segura do XML. A integração externa **WebView2 + Portal real + hCaptcha + seleção do A1 + download oficial** continua exigindo teste físico no PC Central.
 
 ## Checklist da v0.1.22
 
 ### Automatizado
 
 - [x] restore;
-- [x] testes .NET, incluindo regressões de retry fiscal, timeout da fila e vínculo do pareamento;
+- [x] testes .NET de cache, fila fiscal, cooldown, deduplicação e certificado;
+- [x] falha de rede/HTTP ambígua não é repetida automaticamente;
+- [x] recuperação de consulta interrompida não executa segunda chamada fiscal;
+- [x] validação do XML do Portal rejeita chave divergente, raiz inválida e DTD/entidade externa;
+- [x] vínculo da resposta de pareamento ao `requestId`;
 - [x] regressões JS de produto, feedback fiscal, contingência, lote e prontidão de release;
 - [x] build Release;
 - [x] publish Windows x64 autocontido;
@@ -275,16 +285,14 @@ A integração real Portal + hCaptcha + A1 não é automatizada no CI. Ela exige
 
 ### Teste físico no PC Central
 
-- [ ] consulta normal continua retornando XML/DANFE;
-- [ ] cache atende nova consulta da mesma chave sem nova chamada fiscal;
-- [ ] ao receber 656, aparece **Consultar pela Fazenda** somente no Central;
-- [ ] a janela abre o Portal Nacional;
-- [ ] a chave é preenchida automaticamente;
-- [ ] o hCaptcha continua manual;
-- [ ] o A1 configurado é selecionado no download;
-- [ ] o XML oficial é baixado e aceito somente para a mesma chave;
-- [ ] depois do download, nova consulta retorna pelo cache;
-- [ ] cliente sem A1 não abre a contingência localmente.
+O que permanece físico é somente a integração com serviços/recursos externos que o CI não consegue reproduzir com fidelidade:
+
+- [ ] a janela WebView2 abre o Portal Nacional real;
+- [ ] a chave é preenchida automaticamente na página atual do Portal;
+- [ ] o hCaptcha continua manual e funcional;
+- [ ] o A1 configurado é oferecido/selecionado no fluxo real do Portal;
+- [ ] o download oficial chega ao aplicativo e entra no cache;
+- [ ] depois do download real, nova consulta da mesma chave retorna pelo cache.
 
 Não provoque um `656` real apenas para testar. Se não houver bloqueio ativo, o fluxo do Portal pode ser validado posteriormente com uma chave conhecida por ação operacional controlada.
 
