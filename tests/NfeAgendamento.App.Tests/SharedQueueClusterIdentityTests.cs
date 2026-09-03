@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using NfeAgendamento.App.Certificates;
 using NfeAgendamento.App.SharedQueue;
+using Xunit;
 
 namespace NfeAgendamento.App.Tests;
 
