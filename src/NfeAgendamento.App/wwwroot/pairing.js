@@ -14,17 +14,18 @@
 
     const centralPanel = byId('centralConfigPanel');
     const clientPanel = byId('clientPairingPanel');
-    if (centralPanel) centralPanel.hidden = !bootstrap.configuredAsCentral;
-    if (clientPanel) clientPanel.hidden = Boolean(bootstrap.configuredAsCentral);
+    const generateButton = byId('generatePairingCode');
+    if (centralPanel) centralPanel.hidden = false;
+    if (clientPanel) clientPanel.hidden = Boolean(bootstrap.clientPaired);
+    if (generateButton) generateButton.disabled = !bootstrap.centralActive;
 
-    if (bootstrap.configuredAsCentral) {
-      const centralStatus = byId('centralPairingStatus');
-      if (centralStatus) {
-        centralStatus.textContent = bootstrap.centralActive
-          ? 'Central ativa. Gere um código somente quando for conectar um novo PC.'
-          : 'Ative a Central antes de gerar um código de pareamento.';
-      }
-      return;
+    const centralStatus = byId('centralPairingStatus');
+    if (centralStatus) {
+      centralStatus.textContent = bootstrap.centralActive
+        ? 'Este PC está processando a fila. Gere um código somente quando for autorizar um novo computador.'
+        : bootstrap.centralOnline
+          ? `A fila está sendo processada${bootstrap.centralId ? ` por ${bootstrap.centralId}` : ' por outro PC'}. O código de pareamento deve ser gerado no líder atual.`
+          : 'Aguardando um PC autorizado assumir a fila para permitir novos pareamentos.';
     }
 
     const form = byId('clientPairingForm');
@@ -34,15 +35,17 @@
 
     if (bootstrap.clientPaired) {
       if (status) {
-        status.textContent = bootstrap.centralOnline
-          ? `PC pareado com a Central${bootstrap.centralId ? ` ${bootstrap.centralId}` : ''}.`
-          : 'PC pareado. A Central está offline ou indisponível neste momento.';
+        status.textContent = bootstrap.centralActive
+          ? 'Este PC está autorizado e atualmente processa a fila.'
+          : bootstrap.centralOnline
+            ? `PC autorizado. Fila processada${bootstrap.centralId ? ` por ${bootstrap.centralId}` : ' por outro PC'}.`
+            : 'PC autorizado. Aguardando um líder da fila ficar disponível.';
         status.className = 'status';
       }
       if (lookup) lookup.disabled = false;
     } else {
       if (status) {
-        status.textContent = 'Este PC ainda precisa ser pareado uma vez com a Central.';
+        status.textContent = 'Este PC ainda precisa ser autorizado uma vez por um PC que esteja processando a fila.';
         status.className = 'status error';
       }
       if (lookup) lookup.disabled = true;
@@ -83,7 +86,12 @@
       if (resultBox) resultBox.hidden = true;
       if (status) status.textContent = 'Não foi possível gerar o código agora.';
     } finally {
-      if (button) button.disabled = false;
+      try {
+        const bootstrap = await readBootstrap();
+        renderRole(bootstrap);
+      } catch {
+        if (button) button.disabled = false;
+      }
     }
   }
 
@@ -95,7 +103,7 @@
 
     if (!code) {
       if (status) {
-        status.textContent = 'Informe o código exibido no PC Central.';
+        status.textContent = 'Informe o código exibido pelo PC que está processando a fila.';
         status.className = 'status error';
       }
       input?.focus();
@@ -104,7 +112,7 @@
 
     if (button) button.disabled = true;
     if (status) {
-      status.textContent = 'Conectando este PC à Central...';
+      status.textContent = 'Autorizando este PC na fila...';
       status.className = 'status';
     }
 
@@ -121,7 +129,7 @@
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
         if (status) {
-          status.textContent = payload.message || 'Não foi possível parear este PC.';
+          status.textContent = payload.message || 'Não foi possível autorizar este PC.';
           status.className = 'status error';
         }
         return;
@@ -131,12 +139,12 @@
       const bootstrap = await readBootstrap();
       renderRole(bootstrap);
       if (status) {
-        status.textContent = payload.message || 'PC pareado com a Central com sucesso.';
+        status.textContent = payload.message || 'PC autorizado na fila com sucesso.';
         status.className = 'status';
       }
     } catch {
       if (status) {
-        status.textContent = 'Não foi possível concluir o pareamento agora.';
+        status.textContent = 'Não foi possível concluir a autorização agora.';
         status.className = 'status error';
       }
     } finally {
@@ -155,7 +163,7 @@
       renderRole(await readBootstrap());
     } catch {
       const status = byId('clientPairingStatus') || byId('centralPairingStatus');
-      if (status) status.textContent = 'Não foi possível carregar o estado de pareamento.';
+      if (status) status.textContent = 'Não foi possível carregar o estado de autorização da fila.';
     }
   }
 
