@@ -68,6 +68,7 @@ public sealed class SharedQueueGroupBootstrapService
         var publicKey = _legacyCentralKeyStore.GetOrCreatePublicKey();
         var fingerprint = SHA256.HashData(publicKey);
         List<AuthorizedClientSnapshot>? legacyClients = null;
+        byte[]? localClientSecret = null;
         try
         {
             _groupIdentity.Initialize(groupKey, privateKey);
@@ -86,11 +87,26 @@ public sealed class SharedQueueGroupBootstrapService
                     new CandidateBundlePayload(groupKey, fingerprint),
                     cancellationToken);
             }
+
+            if (!_clientPairingStore.IsPaired)
+            {
+                var localClientId = Guid.NewGuid();
+                localClientSecret = RandomNumberGenerator.GetBytes(32);
+                sharedAuthorized.Authorize(localClientId, Environment.MachineName, localClientSecret);
+                _clientPairingStore.SavePaired(
+                    localClientId,
+                    Environment.MachineName,
+                    localClientSecret,
+                    publicKey,
+                    Environment.MachineName);
+            }
         }
         finally
         {
             if (legacyClients is not null)
                 ZeroClients(legacyClients);
+            if (localClientSecret is not null)
+                CryptographicOperations.ZeroMemory(localClientSecret);
             CryptographicOperations.ZeroMemory(groupKey);
             CryptographicOperations.ZeroMemory(privateKey);
             CryptographicOperations.ZeroMemory(publicKey);
