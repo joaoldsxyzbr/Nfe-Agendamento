@@ -48,13 +48,22 @@ public sealed class SharedQueueGroupBootstrapService
         if (!_paths.ValidateForClient())
             throw new InvalidOperationException($"A pasta compartilhada '{SharedQueuePaths.DefaultRoot}' não está disponível.");
 
+        if (IsCandidateReady)
+        {
+            EnsureLegacyCentralClientIdentity();
+            return;
+        }
+
         if (TryImportCandidateBundle())
             return;
 
         lock (_sync)
         {
             if (IsCandidateReady)
+            {
+                EnsureLegacyCentralClientIdentity();
                 return;
+            }
         }
 
         if (_groupIdentity.Exists)
@@ -68,7 +77,6 @@ public sealed class SharedQueueGroupBootstrapService
         var publicKey = _legacyCentralKeyStore.GetOrCreatePublicKey();
         var fingerprint = SHA256.HashData(publicKey);
         List<AuthorizedClientSnapshot>? legacyClients = null;
-        byte[]? localClientSecret = null;
         try
         {
             _groupIdentity.Initialize(groupKey, privateKey);
@@ -88,25 +96,12 @@ public sealed class SharedQueueGroupBootstrapService
                     cancellationToken);
             }
 
-            if (!_clientPairingStore.IsPaired)
-            {
-                var localClientId = Guid.NewGuid();
-                localClientSecret = RandomNumberGenerator.GetBytes(32);
-                sharedAuthorized.Authorize(localClientId, Environment.MachineName, localClientSecret);
-                _clientPairingStore.SavePaired(
-                    localClientId,
-                    Environment.MachineName,
-                    localClientSecret,
-                    publicKey,
-                    Environment.MachineName);
-            }
+            EnsureLegacyCentralClientIdentity();
         }
         finally
         {
             if (legacyClients is not null)
                 ZeroClients(legacyClients);
-            if (localClientSecret is not null)
-                CryptographicOperations.ZeroMemory(localClientSecret);
             CryptographicOperations.ZeroMemory(groupKey);
             CryptographicOperations.ZeroMemory(privateKey);
             CryptographicOperations.ZeroMemory(publicKey);
@@ -162,6 +157,35 @@ public sealed class SharedQueueGroupBootstrapService
             if (expectedFingerprint is not null) CryptographicOperations.ZeroMemory(expectedFingerprint);
             if (actualPublicKey is not null) CryptographicOperations.ZeroMemory(actualPublicKey);
             if (actualFingerprint is not null) CryptographicOperations.ZeroMemory(actualFingerprint);
+        }
+    }
+
+    private void EnsureLegacyCentralClientIdentity()
+    {
+        if (!_legacyCentralState.IsConfiguredAsCentral || _clientPairingStore.IsPaired || !IsCandidateReady)
+            return;
+
+        var groupKey = _candidateState.Load()
+            ?? throw new InvalidOperationException("Estado seguro do grupo indisponível para concluir a migração.");
+        var publicKey = _groupIdentity.GetPublicKey(groupKey);
+        var clientSecret = RandomNumberGenerator.GetBytes(32);
+        try
+        {
+            var clientId = Guid.NewGuid();
+            var sharedAuthorized = new SharedAuthorizedClientStore(_paths, _candidateState);
+            sharedAuthorized.Authorize(clientId, Environment.MachineName, clientSecret);
+            _clientPairingStore.SavePaired(
+                clientId,
+                Environment.MachineName,
+                clientSecret,
+                publicKey,
+                Environment.MachineName);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(groupKey);
+            CryptographicOperations.ZeroMemory(publicKey);
+            CryptographicOperations.ZeroMemory(clientSecret);
         }
     }
 
