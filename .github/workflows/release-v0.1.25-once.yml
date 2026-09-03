@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   release:
-    if: github.event.head_commit.message == 'release: publicar v0.1.25'
+    if: github.event.head_commit.message == 'publish-v0.1.25'
     runs-on: windows-latest
     env:
       TARGET_SHA: 621382b4a09fa0efb153bd89235526a12a958415
