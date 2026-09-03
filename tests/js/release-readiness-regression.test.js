@@ -10,11 +10,13 @@ const ciPath = '.github/workflows/ci.yml';
 const bridgePath = '.github/workflows/release-bridge.yml';
 const legacyTagPath = '.github/workflows/release-on-tag.yml';
 const projectPath = 'src/NfeAgendamento.App/NfeAgendamento.App.csproj';
+const testProjectPath = 'tests/NfeAgendamento.App.Tests/NfeAgendamento.App.Tests.csproj';
 const readmePath = 'README.md';
 const tabsPath = 'src/NfeAgendamento.App/wwwroot/tabs.js';
 const ci = read(ciPath);
 const bridge = read(bridgePath);
 const project = read(projectPath);
+const testProject = read(testProjectPath);
 const readme = read(readmePath);
 
 assert.ok(bridge.includes('workflow_dispatch:'), 'Release Bridge deve continuar manual.');
@@ -34,9 +36,18 @@ assert.ok(bridge.includes('--target "${{ github.sha }}"'), 'Tag/release deve apo
 assert.ok(!bridge.includes('--target main'), 'Release não pode tagar main mutável depois dos testes.');
 assert.ok(bridge.includes('-p:Version=${{ steps.version.outputs.version }}'), 'Release deve aplicar ao binário a versão validada informada no workflow.');
 
+assert.ok(project.includes('<TargetFramework>net10.0-windows</TargetFramework>'), 'Aplicação deve usar .NET 10 LTS.');
+assert.ok(testProject.includes('<TargetFramework>net10.0-windows</TargetFramework>'), 'Testes devem usar .NET 10 LTS.');
+assert.ok(ci.includes('dotnet-version: 10.0.x'), 'CI deve usar SDK .NET 10.');
+assert.ok(bridge.includes('dotnet-version: 10.0.x'), 'Release deve usar SDK .NET 10.');
+const auditCommand = 'dotnet list Nfe-Agendamento.sln package --vulnerable --include-transitive --format json';
+assert.ok(ci.includes(auditCommand), 'CI deve auditar dependências NuGet vulneráveis, incluindo transitivas.');
+assert.ok(bridge.includes(auditCommand), 'Release deve auditar dependências NuGet vulneráveis, incluindo transitivas.');
+
 const projectVersionMatch = project.match(/<Version>(\d+\.\d+\.\d+)<\/Version>/);
 assert.ok(projectVersionMatch, 'Projeto deve declarar uma versão semântica base no formato X.Y.Z.');
 const projectVersion = projectVersionMatch[1];
+assert.strictEqual(projectVersion, '0.1.25', 'Versão candidata esperada para este hardening é 0.1.25.');
 assert.ok(readme.includes(`candidata **v${projectVersion}**`), 'README deve indicar a mesma versão candidata declarada no projeto.');
 assert.doesNotThrow(() => new vm.Script(read(tabsPath), { filename: tabsPath }), 'tabs.js deve permanecer sintaticamente válido.');
 
@@ -72,4 +83,4 @@ const certificateFiles = walk(root)
   .filter((file) => /\.(pfx|p12)$/i.test(file));
 assert.deepStrictEqual(certificateFiles, [], 'Repositório não pode conter certificado A1 empacotado.');
 
-console.log(`OK: release usa SHA imutável, versão candidata v${projectVersion}, regressões e nenhuma credencial fiscal real.`);
+console.log(`OK: release usa SHA imutável, .NET 10, versão candidata v${projectVersion}, auditoria de dependências e nenhuma credencial fiscal real.`);
