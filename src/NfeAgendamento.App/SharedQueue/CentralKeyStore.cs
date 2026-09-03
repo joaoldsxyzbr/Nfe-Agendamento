@@ -8,6 +8,8 @@ public sealed class CentralKeyStore
     private static readonly byte[] Entropy = Encoding.UTF8.GetBytes("NfeAgendamento.SharedQueue.CentralKey.v1");
     private readonly object _sync = new();
     private readonly string _path;
+    private readonly CandidateStateStore? _candidateState;
+    private readonly SharedGroupIdentityStore? _groupIdentity;
 
     public CentralKeyStore()
         : this(Path.Combine(AppPaths.StateRoot, "shared-queue", "central-private-key.bin"))
@@ -19,6 +21,13 @@ public sealed class CentralKeyStore
         if (string.IsNullOrWhiteSpace(path))
             throw new ArgumentException("Caminho local da chave da Central inválido.", nameof(path));
         _path = Path.GetFullPath(path);
+    }
+
+    public CentralKeyStore(CandidateStateStore candidateState, SharedGroupIdentityStore groupIdentity)
+        : this(Path.Combine(AppPaths.StateRoot, "shared-queue", "central-private-key.bin"))
+    {
+        _candidateState = candidateState ?? throw new ArgumentNullException(nameof(candidateState));
+        _groupIdentity = groupIdentity ?? throw new ArgumentNullException(nameof(groupIdentity));
     }
 
     public byte[] GetOrCreatePublicKey()
@@ -37,6 +46,19 @@ public sealed class CentralKeyStore
     {
         lock (_sync)
         {
+            var groupKey = _candidateState?.Load();
+            if (groupKey is not null && _groupIdentity?.Exists == true)
+            {
+                try
+                {
+                    return _groupIdentity.OpenPrivateKey(groupKey);
+                }
+                finally
+                {
+                    CryptographicOperations.ZeroMemory(groupKey);
+                }
+            }
+
             var privateBytes = LoadOrCreatePrivateBytes();
             try
             {
