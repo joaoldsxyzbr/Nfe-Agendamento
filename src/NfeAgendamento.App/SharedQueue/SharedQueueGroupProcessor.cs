@@ -292,7 +292,7 @@ public sealed class AutomaticSharedQueueProcessingHostedService : BackgroundServ
         {
             try
             {
-                if (!_central.IsActive)
+                if (!_central.CanProcessWork())
                 {
                     await Task.Delay(TimeSpan.FromSeconds(1), stoppingToken);
                     continue;
@@ -304,8 +304,14 @@ public sealed class AutomaticSharedQueueProcessingHostedService : BackgroundServ
                     nextMaintenance = DateTimeOffset.UtcNow.AddSeconds(30);
                 }
 
+                if (!_central.CanProcessWork())
+                    continue;
                 var paired = await _pairing.ProcessOneAsync(stoppingToken);
+
+                if (!_central.CanProcessWork())
+                    continue;
                 var processed = await _processor.ProcessOneAsync(stoppingToken);
+
                 if (!paired && !processed)
                     await Task.Delay(TimeSpan.FromMilliseconds(250), stoppingToken);
             }
