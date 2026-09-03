@@ -29,7 +29,9 @@ public sealed class UpdateService : IDisposable
     private const string LatestReleaseUrl =
         "https://api.github.com/repos/joaoldsxyzbr/Nfe-Agendamento/releases/latest";
     private const string WindowsPackageName = "Nfe-Agendamento-win-x64.zip";
+    private const string WindowsSignatureName = WindowsPackageName + ".sig";
     private const long MaxPackageBytes = 200L * 1024 * 1024;
+    private const long MaxSignatureBytes = 16L * 1024;
     private readonly HttpClient _httpClient;
     private readonly Version _currentVersion;
 
@@ -160,16 +162,35 @@ public sealed class UpdateService : IDisposable
     {
         var asset = assets?.FirstOrDefault(candidate =>
             string.Equals(candidate.Name, WindowsPackageName, StringComparison.OrdinalIgnoreCase));
+        var signature = assets?.FirstOrDefault(candidate =>
+            string.Equals(candidate.Name, WindowsSignatureName, StringComparison.OrdinalIgnoreCase));
+
         if (asset is null
+            || signature is null
             || asset.Size <= 0
             || asset.Size > MaxPackageBytes
-            || !Uri.TryCreate(asset.DownloadUrl, UriKind.Absolute, out var downloadUrl)
-            || !string.Equals(downloadUrl.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(downloadUrl.Host, "github.com", StringComparison.OrdinalIgnoreCase))
+            || signature.Size <= 0
+            || signature.Size > MaxSignatureBytes
+            || !TryGetTrustedGitHubUri(asset.DownloadUrl, out var downloadUrl)
+            || !TryGetTrustedGitHubUri(signature.DownloadUrl, out _))
             return null;
 
         var digest = NormalizeDigest(asset.Digest);
         return digest is null ? null : new UpdatePackage(downloadUrl, asset.Size, digest);
+    }
+
+    private static bool TryGetTrustedGitHubUri(string? value, out Uri uri)
+    {
+        if (Uri.TryCreate(value, UriKind.Absolute, out var parsed)
+            && string.Equals(parsed.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(parsed.Host, "github.com", StringComparison.OrdinalIgnoreCase))
+        {
+            uri = parsed;
+            return true;
+        }
+
+        uri = null!;
+        return false;
     }
 
     private async Task DownloadPackageAsync(
