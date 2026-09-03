@@ -172,7 +172,7 @@ public sealed class NfeLookupServiceTests
     }
 
     [Fact]
-    public async Task Lookup_returns_failed_after_final_network_error()
+    public async Task Lookup_does_not_retry_ambiguous_network_error()
     {
         using var temp = new TemporaryDirectory();
         var transport = new AlwaysFailingNetworkTransport();
@@ -185,8 +185,8 @@ public sealed class NfeLookupServiceTests
         var result = await service.LookupAsync(ValidKey);
 
         Assert.Equal(NfeLookupStatus.Failed, result.Status);
-        Assert.Equal(3, transport.CallCount);
-        Assert.Contains("comunicar", result.Message!, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(1, transport.CallCount);
+        Assert.Contains("não será repetida", result.Message!, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
