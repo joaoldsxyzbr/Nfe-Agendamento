@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using NfeAgendamento.App.SharedQueue;
+using Xunit;
 
 namespace NfeAgendamento.App.Tests;
 
