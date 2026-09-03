@@ -1,0 +1,20 @@
+name: Dispatch Release v0.1.24
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-v0.1.24-dispatch.yml'
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Disparar Release Bridge
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run release-bridge.yml --repo joaoldsxyzbr/Nfe-Agendamento --ref main -f version=v0.1.24
