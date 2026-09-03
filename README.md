@@ -7,7 +7,7 @@ Aplicativo Windows interno para consultar, visualizar e baixar NF-e. Cada PC usa
 - última release publicada: **v0.1.21**;
 - `main`: candidata **v0.1.22**.
 
-A candidata v0.1.22 reúne o fallback manual pelo Portal Nacional para `cStat=656`, proteção contra retries fiscais ambíguos, recuperação conservadora da fila e a nova **liderança automática**, que remove a dependência de um PC Central fixo.
+A candidata v0.1.22 reúne o fallback manual pelo Portal Nacional para `cStat=656`, proteção contra retries fiscais ambíguos, recuperação conservadora da fila, **liderança automática** e cache fiscal compartilhado entre líderes.
 
 ## Arquitetura atual
 
@@ -17,15 +17,13 @@ Cada PC executa sua própria cópia e abre:
 http://127.0.0.1:17345
 ```
 
-Todos usam a pasta:
+Todos usam:
 
 ```text
 P:\01-Nfe agendamento
 ```
 
 Todos os PCs confiáveis podem ser candidatos a líder, desde que tenham acesso à pasta, estejam autorizados no grupo e possuam o A1 aplicável instalado/configurado localmente.
-
-Fluxo:
 
 ```text
 PCs autorizados
@@ -36,14 +34,14 @@ eleição por central.lock
    ↓
 pedidos cifrados pela pasta compartilhada
    ↓
-cache 24h → fila fiscal serial → SEFAZ
+cache fiscal compartilhado 24h → fila fiscal serial → SEFAZ
    ↓
 XML validado/cache cifrado
    ↓
 resposta cifrada ao solicitante
 ```
 
-O fato de todos os PCs terem A1 não cria consultas fiscais paralelas: apenas o líder com lock válido processa a fila.
+Mesmo com A1 em todos os PCs, apenas o líder com lock exclusivo e saudável inicia trabalho fiscal.
 
 ## Liderança automática
 
@@ -53,11 +51,11 @@ O lock exclusivo fica em:
 P:\01-Nfe agendamento\status\central.lock
 ```
 
-Somente um processo pode mantê-lo aberto com exclusividade. O líder publica heartbeat assinado e processa consultas; os demais ficam em standby.
+Somente um processo pode mantê-lo aberto com exclusividade. O líder publica heartbeat assinado e processa a fila; os demais ficam em standby.
 
-Se o líder sair, outro candidato tenta assumir automaticamente. Antes de iniciar novo trabalho o runtime revalida o handle do lock compartilhado; se a validação falhar, o PC deixa de iniciar trabalho fiscal até readquirir a liderança.
+Se o líder sair, outro candidato tenta assumir automaticamente. Antes de iniciar novo trabalho, o runtime revalida o handle do lock. Se a validação falhar, o PC deixa de iniciar trabalho fiscal até readquirir a liderança.
 
-A configuração legada `ConfiguredAsCentral` existe somente para a migração inicial da arquitetura antiga e não decide mais o dispatch normal.
+A configuração legada `ConfiguredAsCentral` existe somente para a migração inicial e não decide mais o dispatch normal.
 
 ## Migração da Central antiga
 
@@ -66,20 +64,19 @@ Na primeira execução desta arquitetura:
 1. atualize o aplicativo;
 2. abra primeiro o PC que era a Central antiga;
 3. mantenha `P:\01-Nfe agendamento` acessível;
-4. ele migra a identidade RSA já pareada, a autorização e o replay para o estado do grupo;
+4. ele migra a identidade RSA já pareada, autorização e replay para o estado do grupo;
 5. os clientes já pareados importam automaticamente seus pacotes de candidatura;
-6. o antigo Central também ganha uma identidade de cliente;
+6. o antigo Central também ganha identidade de cliente;
 7. depois disso qualquer PC autorizado pode assumir a fila.
 
 A migração é idempotente e preserva a chave pública conhecida pelos clientes, evitando reapareamento geral.
 
-## Identidade e segurança do grupo
-
-A pasta compartilhada passa a conter, entre outros itens:
+## Estrutura e segurança do grupo
 
 ```text
 P:\01-Nfe agendamento\
 ├── .nfe-agendamento
+├── cache\
 ├── candidatos\
 ├── fila\
 ├── pareamento\
@@ -100,14 +97,11 @@ Proteções principais:
 - pacote de candidatura individual protegido pelo segredo do cliente;
 - clientes autorizados e `LastSequence` compartilhados de forma cifrada;
 - replay continua bloqueado após troca de líder;
-- cooldown de `cStat=656` também é compartilhado/cifrado;
-- caminhos ficam confinados à árvore dedicada;
-- reparse points operacionais são rejeitados;
-- chave NF-e e XML não ficam em texto puro na fila;
-- heartbeat é assinado;
-- HMAC autentica a identidade do cliente;
-- RSA OAEP-SHA256 protege a chave AES do pedido;
-- AES-GCM protege pedido, resposta e estados compartilhados.
+- cooldown de `cStat=656` é compartilhado e cifrado;
+- cache XML de 24h é compartilhado e cifrado com a chave do grupo;
+- arquivos do cache usam nome derivado de SHA-256 da chave, sem XML ou chave NF-e em texto puro;
+- caminhos ficam confinados à árvore dedicada e reparse points operacionais são rejeitados;
+- heartbeat assinado, HMAC nos pedidos, RSA OAEP-SHA256 para a chave AES e AES-GCM nos dados compartilhados.
 
 O certificado A1, sua chave privada e eventual senha **não são copiados para a pasta compartilhada**.
 
@@ -119,17 +113,17 @@ Quando este PC é líder com lock saudável, executa o fluxo fiscal local. Caso 
 
 Ordem fiscal:
 
-1. validar chave de 44 dígitos;
-2. consultar cache XML cifrado;
+1. validar a chave de 44 dígitos;
+2. consultar o cache XML compartilhado e cifrado;
 3. deduplicar a mesma chave;
 4. entrar na fila fiscal serializada;
-5. respeitar cooldown compartilhado;
+5. respeitar o cooldown compartilhado;
 6. consultar `NFeDistribuicaoDFe/consChNFe`;
-7. validar XML;
-8. gravar cache;
-9. devolver resultado ao solicitante.
+7. validar o XML;
+8. gravar o cache compartilhado;
+9. devolver o resultado ao solicitante.
 
-O cache de XML localizado possui retenção de **24 horas**.
+O cache possui retenção de **24 horas** e é legível por qualquer líder autorizado. Assim, uma troca de líder não perde o conhecimento de XMLs já obtidos e evita nova consulta desnecessária à SEFAZ.
 
 ## Robustez fiscal e failover
 
@@ -138,9 +132,10 @@ A política é deliberadamente conservadora:
 - HTTP `429` não é repetido automaticamente;
 - timeout fiscal não é repetido automaticamente;
 - `5xx`, falha de conexão e `HttpRequestException` ambígua não são repetidos automaticamente;
-- pedidos recuperados depois de interrupção não provocam uma segunda chamada fiscal;
-- se o antigo líder pode já ter alcançado a SEFAZ, o sucessor devolve falha segura e exige uma nova ação explícita;
-- `cStat=656` persiste em estado compartilhado, portanto mudar o líder não fura o cooldown.
+- pedidos recuperados depois de interrupção não provocam segunda chamada fiscal;
+- se o antigo líder pode já ter alcançado a SEFAZ, o sucessor devolve falha segura e exige nova ação explícita;
+- `cStat=656` persiste em estado compartilhado, portanto mudar o líder não fura o cooldown;
+- o cache fiscal também sobrevive ao failover, reduzindo consultas repetidas entre máquinas.
 
 ## Certificado A1
 
@@ -152,10 +147,12 @@ Antes de contar com uma máquina como candidato, valide nela o certificado, a UF
 
 Quando a consulta automática recebe `cStat=656`, o aplicativo mantém o cooldown e não insiste automaticamente.
 
-**Consultar pela Fazenda** abre uma janela WebView2 local no PC do usuário:
+**Consultar pela Fazenda** é oferecido somente no **líder atual com lock saudável**. Isso impede que um PC em standby importe XML para um estado isolado ou opere fora da autoridade da fila.
 
 ```text
-Portal Nacional
+líder atual
+  ↓
+Portal Nacional via WebView2
   ↓
 chave preenchida
   ↓
@@ -167,7 +164,7 @@ download oficial do XML
   ↓
 validação segura
   ↓
-cache cifrado de 24h
+cache compartilhado cifrado de 24h
 ```
 
 Regras:
@@ -179,7 +176,7 @@ Regras:
 - DTD/entidades externas proibidos;
 - `infNFe/@Id` deve corresponder à chave consultada;
 - XML de outra chave é rejeitado;
-- somente uma janela de contingência fica aberta por vez.
+- somente uma janela de contingência fica aberta por vez no líder.
 
 A integração real WebView2 + Portal + hCaptcha + seleção do A1 continua exigindo teste físico.
 
@@ -200,8 +197,8 @@ O lote reutiliza o mesmo `POST /api/nfe/lookup` e não cria paralelismo fiscal a
 - até 50 chaves únicas;
 - duplicatas removidas;
 - uma consulta por vez por instalação;
-- líder continua serializando o fluxo fiscal;
-- mesmo cache/deduplicação/cooldown da consulta individual;
+- líder serializa o fluxo fiscal;
+- cache compartilhado, deduplicação e cooldown são os mesmos da consulta individual;
 - `cStat=656` interrompe o restante do lote;
 - cancelar impede o início dos próximos itens.
 
@@ -226,7 +223,7 @@ Os dados locais ficam em:
 %LOCALAPPDATA%\NfeAgendamento
 ```
 
-Podem incluir cache XML cifrado, auditoria, seleção de certificado, pareamento, chave de candidato protegida por DPAPI, solicitações pendentes, perfil WebView2 e dados legados necessários à migração.
+Podem incluir auditoria, seleção de certificado, pareamento, chave de candidato protegida por DPAPI, solicitações pendentes, perfil WebView2 e dados legados necessários à migração. O cache fiscal operacional da arquitetura automática fica na pasta compartilhada, cifrado com a chave do grupo.
 
 ## Segurança de rede
 
@@ -269,6 +266,8 @@ Automatizado esperado antes de considerar a `main` pronta:
 - takeover preservando a mesma chave pública;
 - replay persistente entre líderes;
 - cooldown fiscal compartilhado;
+- cache XML compartilhado legível após troca de líder;
+- Portal restrito ao líder ativo no front-end e backend;
 - recuperação sem segunda chamada fiscal;
 - regressões JS de produto, feedback fiscal, Portal, lote e release;
 - build Release;
@@ -280,12 +279,13 @@ Teste físico ainda necessário antes de promover a versão:
 - [ ] pelo menos dois PCs reais disputam a liderança e somente um vence;
 - [ ] ao fechar o líder, outro assume automaticamente;
 - [ ] consulta funciona pelo standby antes e depois do failover;
+- [ ] consultar uma NF-e, trocar o líder e confirmar que a mesma NF-e volta do cache sem nova ida à SEFAZ;
 - [ ] A1 local funciona nos candidatos;
-- [ ] Portal Nacional abre no WebView2 real;
+- [ ] Portal Nacional aparece somente no líder e abre no WebView2 real;
 - [ ] chave é preenchida no Portal atual;
 - [ ] hCaptcha permanece manual;
 - [ ] A1 é oferecido/selecionado no fluxo real;
-- [ ] XML oficial chega ao cache;
+- [ ] XML oficial chega ao cache compartilhado;
 - [ ] nova consulta retorna do cache.
 
 Não provoque `cStat=656` real apenas para testar.
