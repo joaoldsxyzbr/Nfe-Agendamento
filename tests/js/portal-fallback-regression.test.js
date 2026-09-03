@@ -32,7 +32,7 @@ function makeResponse(status, payload) {
   };
 }
 
-async function createHarness(configuredAsCentral) {
+async function createHarness({ centralActive, configuredAsCentral = false }) {
   const elements = {
     portalFallbackPanel: makeElement({ hidden: true }),
     portalFallback: makeElement({ textContent: 'Consultar pela Fazenda' }),
@@ -58,6 +58,7 @@ async function createHarness(configuredAsCentral) {
       requests.push({ url, options });
       if (url === '/api/bootstrap') {
         return makeResponse(200, {
+          centralActive,
           configuredAsCentral,
           csrfToken: 'csrf-test'
         });
@@ -83,41 +84,41 @@ async function createHarness(configuredAsCentral) {
 }
 
 (async () => {
-  const central = await createHarness(true);
-  const centralMessage = central.context.NfeLookupFeedback.buildLookupErrorMessage({
+  const leader = await createHarness({ centralActive: true, configuredAsCentral: false });
+  const leaderMessage = leader.context.NfeLookupFeedback.buildLookupErrorMessage({
     statusCode: 429,
     error: { status: 'consumo_indevido', cStat: '656' }
   });
 
-  assert.strictEqual(centralMessage, 'Bloqueado pela SEFAZ.');
-  assert.strictEqual(central.elements.portalFallbackPanel.hidden, false, 'Central deve oferecer o fallback após 656.');
+  assert.strictEqual(leaderMessage, 'Bloqueado pela SEFAZ.');
+  assert.strictEqual(leader.elements.portalFallbackPanel.hidden, false, 'Líder ativo deve oferecer o fallback após 656.');
 
-  const click = central.elements.portalFallback.listener('click');
+  const click = leader.elements.portalFallback.listener('click');
   assert.ok(click, 'Botão da contingência deve registrar ação de clique.');
   await click();
 
   assert.ok(
-    central.requests.some(request => request.url === '/api/nfe/portal-fallback'),
-    'Botão deve abrir o endpoint local da contingência.'
+    leader.requests.some(request => request.url === '/api/nfe/portal-fallback'),
+    'Líder deve abrir o endpoint local da contingência.'
   );
   assert.ok(
-    !central.requests.some(request => request.url === '/api/nfe/lookup'),
+    !leader.requests.some(request => request.url === '/api/nfe/lookup'),
     'A contingência não deve repetir consChNFe pelo endpoint de lookup.'
   );
-  assert.ok(central.elements.status.textContent.includes('Portal da NF-e aberto'), central.elements.status.textContent);
+  assert.ok(leader.elements.status.textContent.includes('Portal da NF-e aberto'), leader.elements.status.textContent);
 
-  const client = await createHarness(false);
-  const clientMessage = client.context.NfeLookupFeedback.buildLookupErrorMessage({
+  const legacyCentralInStandby = await createHarness({ centralActive: false, configuredAsCentral: true });
+  const standbyMessage = legacyCentralInStandby.context.NfeLookupFeedback.buildLookupErrorMessage({
     statusCode: 429,
     error: { status: 'consumo_indevido', cStat: '656' }
   });
 
-  assert.strictEqual(client.elements.portalFallbackPanel.hidden, true, 'Cliente não deve exibir o botão que usa o A1.');
-  assert.ok(clientMessage.includes('PC Central'), clientMessage);
+  assert.strictEqual(legacyCentralInStandby.elements.portalFallbackPanel.hidden, true, 'Standby não deve exibir o fallback mesmo se era a Central antiga.');
+  assert.ok(standbyMessage.includes('líder da fila'), standbyMessage);
 
   assert.doesNotThrow(() => new vm.Script(source, { filename: scriptPath }), 'portal-fallback.js deve ser sintaticamente válido.');
 
-  console.log('OK: contingência 656 aparece somente no Central, não repete lookup e orienta clientes.');
+  console.log('OK: contingência 656 depende do líder ativo, não do papel legado de Central.');
 })().catch(error => {
   console.error(error);
   process.exitCode = 1;
