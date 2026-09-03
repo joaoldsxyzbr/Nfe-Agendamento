@@ -4,10 +4,10 @@ Aplicativo Windows interno para consultar, visualizar e baixar NF-e. Cada PC usa
 
 ## Versão
 
-- última release publicada: **v0.1.21**;
-- `main`: candidata **v0.1.22**.
+- última release publicada: **v0.1.23**;
+- `main`: candidata **v0.1.24**.
 
-A candidata v0.1.22 reúne o fallback manual pelo Portal Nacional para `cStat=656`, proteção contra retries fiscais ambíguos, recuperação conservadora da fila, **liderança automática** e cache fiscal compartilhado entre líderes.
+A candidata v0.1.24 reúne o fallback manual pelo Portal Nacional para `cStat=656`, proteção contra retries fiscais ambíguos, recuperação conservadora da fila, **liderança automática**, cache fiscal compartilhado entre líderes e a correção que impede o botão **Consultar NF-e** de ficar bloqueado por um estado transitório do bootstrap/pareamento.
 
 ## Arquitetura atual
 
@@ -110,6 +110,8 @@ O certificado A1, sua chave privada e eventual senha **não são copiados para a
 A consulta individual usa `POST /api/nfe/lookup`.
 
 Quando este PC é líder com lock saudável, executa o fluxo fiscal local. Caso contrário, envia o pedido pela fila para o líder atual.
+
+O botão **Consultar NF-e** permanece acionável mesmo durante estados transitórios de bootstrap. Se o PC realmente ainda não estiver autorizado ou a fila estiver indisponível, o backend devolve a condição correspondente e a interface exibe a mensagem ao usuário em vez de manter um botão sem ação.
 
 Ordem fiscal:
 
@@ -250,6 +252,7 @@ dotnet test Nfe-Agendamento.sln -c Release
 node tests/js/product-mapping-regression.test.js
 node tests/js/lookup-feedback-regression.test.js
 node tests/js/portal-fallback-regression.test.js
+node tests/js/pairing-lookup-regression.test.js
 node tests/js/batch-lookup-regression.test.js
 node tests/js/release-readiness-regression.test.js
 dotnet build Nfe-Agendamento.sln -c Release
@@ -257,7 +260,7 @@ dotnet build Nfe-Agendamento.sln -c Release
 
 O CI também publica Windows x64 autocontido, compacta o ZIP e disponibiliza artifact.
 
-## Checklist da candidata v0.1.22
+## Checklist da candidata v0.1.24
 
 Automatizado esperado antes de considerar a `main` pronta:
 
@@ -268,13 +271,14 @@ Automatizado esperado antes de considerar a `main` pronta:
 - cooldown fiscal compartilhado;
 - cache XML compartilhado legível após troca de líder;
 - Portal restrito ao líder ativo no front-end e backend;
+- botão Consultar NF-e não fica bloqueado por estado transitório do bootstrap;
 - recuperação sem segunda chamada fiscal;
-- regressões JS de produto, feedback fiscal, Portal, lote e release;
+- regressões JS de produto, feedback fiscal, Portal, botão de consulta, lote e release;
 - build Release;
 - publish Windows x64 autocontido;
 - ZIP/artifact.
 
-Teste físico ainda necessário antes de promover a versão:
+Teste físico ainda recomendado:
 
 - [ ] pelo menos dois PCs reais disputam a liderança e somente um vence;
 - [ ] ao fechar o líder, outro assume automaticamente;
@@ -292,13 +296,13 @@ Não provoque `cStat=656` real apenas para testar.
 
 ## Release
 
-A última release publicada continua **v0.1.21**. Não publique v0.1.22 até concluir a validação desejada.
+A última release publicada é **v0.1.23**. A candidata atual é **v0.1.24**.
 
-Fluxo oficial quando for aprovado:
+Fluxo oficial:
 
 1. Actions → **Release Bridge**;
 2. referência `main`;
-3. informar `v0.1.22`;
+3. informar `v0.1.24`;
 4. o workflow testa/builda/publica e prende a tag ao SHA aprovado.
 
 ## Documentação técnica
