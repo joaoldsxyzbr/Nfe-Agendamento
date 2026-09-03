@@ -1,5 +1,5 @@
 (function () {
-  let configuredAsCentral = false;
+  let centralActive = false;
   let roleKnown = false;
   let opening = false;
 
@@ -22,7 +22,7 @@
       const response = await fetch('/api/bootstrap', { cache: 'no-store' });
       if (!response.ok) return;
       const bootstrap = await response.json();
-      configuredAsCentral = Boolean(bootstrap.configuredAsCentral);
+      centralActive = Boolean(bootstrap.centralActive);
       roleKnown = true;
     } catch {
     }
@@ -38,10 +38,10 @@
       const consumoIndevido = args?.statusCode === 429 && args?.error?.status === 'consumo_indevido';
       if (!consumoIndevido) return message;
 
-      if (roleKnown && configuredAsCentral) {
+      if (roleKnown && centralActive) {
         showFallback();
       } else if (roleKnown) {
-        message += ' A consulta alternativa pelo Portal da NF-e deve ser feita no PC Central.';
+        message += ' A consulta alternativa pelo Portal da NF-e deve ser feita no líder da fila.';
       }
 
       return message;
@@ -68,14 +68,14 @@
 
     try {
       const bootstrapResponse = await fetch('/api/bootstrap', { cache: 'no-store' });
-      if (!bootstrapResponse.ok) throw new Error('Não foi possível confirmar o papel deste PC.');
+      if (!bootstrapResponse.ok) throw new Error('Não foi possível confirmar o estado deste PC.');
       const bootstrap = await bootstrapResponse.json();
-      configuredAsCentral = Boolean(bootstrap.configuredAsCentral);
+      centralActive = Boolean(bootstrap.centralActive);
       roleKnown = true;
 
-      if (!configuredAsCentral) {
+      if (!centralActive) {
         hideFallback();
-        throw new Error('A consulta alternativa pelo Portal da NF-e só pode ser aberta no PC Central.');
+        throw new Error('A consulta alternativa pelo Portal da NF-e só pode ser aberta no líder da fila.');
       }
 
       const response = await fetch('/api/nfe/portal-fallback', {
@@ -92,7 +92,7 @@
       if (response.status !== 202) throw new Error(payload.message || 'Não foi possível abrir o Portal da NF-e.');
 
       if (status) {
-        status.textContent = 'Portal da NF-e aberto neste PC Central. Resolva o hCaptcha e conclua o download do XML; depois consulte a mesma chave novamente.';
+        status.textContent = 'Portal da NF-e aberto neste PC líder. Resolva o hCaptcha e conclua o download do XML; depois consulte a mesma chave novamente.';
         status.className = 'status';
       }
     } catch (error) {
