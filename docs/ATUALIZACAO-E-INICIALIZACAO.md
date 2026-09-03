@@ -78,6 +78,24 @@ Antes de depender de um PC como possível líder, confirme nele:
 3. UF autora configurada;
 4. consulta conhecida funcionando.
 
+## Cache fiscal compartilhado
+
+O cache operacional de XML fica em:
+
+```text
+P:\01-Nfe agendamento\cache
+```
+
+Os XMLs são cifrados com AES-GCM usando a chave do grupo e têm retenção de 24 horas. A chave NF-e e o XML não aparecem em texto puro no compartilhamento.
+
+Isso permite que um PC assuma a liderança e reutilize o XML obtido pelo líder anterior, evitando uma nova consulta desnecessária à SEFAZ após failover.
+
+## Portal Nacional
+
+A contingência **Consultar pela Fazenda** só pode ser iniciada pelo líder atual com `central.lock` saudável. O front-end não oferece a ação no standby e o backend revalida o lock antes de abrir o WebView2.
+
+O XML oficial baixado e validado entra no mesmo cache compartilhado de 24 horas. O hCaptcha continua manual.
+
 ## Iniciar com o Windows
 
 A opção **Iniciar com o Windows** registra o executável no perfil atual em:
@@ -129,22 +147,23 @@ Quando precisar atualizar manualmente:
 7. confira **Status da fila**;
 8. valide uma consulta no líder e outra em standby;
 9. feche o líder e valide o failover;
-10. valide DANFE/download XML e, quando necessário, Portal Nacional/WebView2.
+10. confirme que uma NF-e já consultada continua vindo do cache depois da troca de líder;
+11. valide DANFE/download XML e, quando necessário, Portal Nacional/WebView2.
 
 ## O que fica persistente
 
 Dependendo da instalação, `%LOCALAPPDATA%\NfeAgendamento` pode conter:
 
 - seleção local do certificado e UF;
-- cache XML cifrado;
 - auditoria fiscal;
 - pareamento/segredo do cliente via DPAPI;
 - chave de estado do candidato via DPAPI;
 - material legado usado somente na migração;
 - chaves pendentes de solicitações;
-- perfil local do WebView2.
+- perfil local do WebView2;
+- cache local legado de versões anteriores, que não é o cache operacional da arquitetura automática.
 
-Na pasta compartilhada ficam apenas os estados necessários à coordenação, protegidos criptograficamente, incluindo identidade do grupo, autorização/replay e cooldown fiscal.
+Na pasta compartilhada ficam os estados necessários à coordenação protegidos criptograficamente, incluindo identidade do grupo, autorização/replay, cooldown fiscal e cache XML compartilhado.
 
 ## Recuperação de falha
 
@@ -169,7 +188,8 @@ O mínimo recomendado é:
 - consulta funcionando no líder;
 - consulta funcionando em standby via fila;
 - takeover automático após encerrar o líder;
+- XML em cache reutilizado pelo novo líder sem nova consulta fiscal;
 - replay e cooldown preservados;
 - nenhuma repetição automática de consulta fiscal ambígua;
 - DANFE/XML funcionando;
-- Portal real validado fisicamente quando fizer parte da aceitação da versão.
+- Portal disponível somente no líder e validado fisicamente quando fizer parte da aceitação da versão.
