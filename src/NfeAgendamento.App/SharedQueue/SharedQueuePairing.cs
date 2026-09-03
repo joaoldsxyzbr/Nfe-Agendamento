@@ -594,6 +594,8 @@ public sealed class SharedQueuePairingClient
                     var bytes = await SharedQueueFileIO.ReadAllBytesAsync(responsePath, SharedQueueFileIO.MaxPairingBytes, cancellationToken);
                     var envelope = JsonSerializer.Deserialize<QueuePairingResponseEnvelope>(bytes)
                         ?? throw new InvalidDataException("Resposta de pareamento vazia.");
+                    if (envelope.RequestId != requestId)
+                        throw new InvalidDataException("Resposta de pareamento pertence a outra solicitação.");
                     var payload = SharedQueuePairingCrypto.OpenResponse(envelope, pairingKey);
                     if (payload.ClientId != clientId || payload.ClientSecret is not { Length: 32 } || payload.CentralPublicKey is null || payload.CentralPublicKey.Length == 0)
                         throw new InvalidDataException("Resposta de pareamento não corresponde a este PC.");
