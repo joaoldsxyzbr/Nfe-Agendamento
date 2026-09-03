@@ -26,6 +26,7 @@ assert.ok(ci.includes('node tests/js/batch-lookup-regression.test.js'), 'CI deve
 assert.ok(bridge.includes('node tests/js/batch-lookup-regression.test.js'), 'Release deve validar a consulta em lote.');
 assert.ok(bridge.includes('node tests/js/release-readiness-regression.test.js'), 'Release deve validar a própria prontidão.');
 assert.ok(!fs.existsSync(path.join(root, legacyTagPath)), 'Workflow legado por tag deve ser removido para existir um único caminho de release.');
+assert.ok(bridge.includes('GITHUB_REF') && bridge.includes('refs/heads/main'), 'Release manual deve recusar execução a partir de branch ou tag diferente de main.');
 assert.ok(bridge.includes('ref: ${{ github.sha }}'), 'Release deve fazer checkout do SHA imutável que disparou o workflow.');
 assert.ok(bridge.includes('--target "${{ github.sha }}"'), 'Tag/release deve apontar para o mesmo SHA que foi testado e empacotado.');
 assert.ok(!bridge.includes('--target main'), 'Release não pode tagar main mutável depois dos testes.');
