@@ -5,12 +5,10 @@ namespace NfeAgendamento.App;
 public sealed class TrayApplicationContext : ApplicationContext
 {
     public static IReadOnlyList<string> MenuLabels { get; } =
-        ["Abrir Central", "Abrir sistema", "Configurar certificado", "Verificar atualização", "Iniciar com o Windows", "Sair"];
+        ["Status da fila", "Abrir sistema", "Configurar certificado", "Verificar atualização", "Iniciar com o Windows", "Sair"];
 
     private readonly NotifyIcon _trayIcon;
     private readonly CentralForm _centralForm;
-    private readonly CentralStateService _centralState;
-    private readonly ToolStripMenuItem _configureCertificate;
     private bool _allowClose;
 
     public TrayApplicationContext(
@@ -18,20 +16,23 @@ public sealed class TrayApplicationContext : ApplicationContext
         SharedQueue.SharedQueueCentralService centralRuntime,
         SharedQueue.SharedQueueClient queueClient)
     {
-        _centralState = centralState ?? throw new ArgumentNullException(nameof(centralState));
+        ArgumentNullException.ThrowIfNull(centralState);
         ArgumentNullException.ThrowIfNull(centralRuntime);
         ArgumentNullException.ThrowIfNull(queueClient);
 
-        _centralForm = new CentralForm(_centralState, centralRuntime, queueClient);
+        _centralForm = new CentralForm(centralState, centralRuntime, queueClient);
         _centralForm.FormClosing += CentralFormClosing;
 
         var menu = new ContextMenuStrip();
-        var openCentral = new ToolStripMenuItem("Abrir Central");
+        var openCentral = new ToolStripMenuItem("Status da fila");
         openCentral.Click += (_, _) => OpenCentral();
         var open = new ToolStripMenuItem("Abrir sistema");
         open.Click += (_, _) => OpenSystem();
-        _configureCertificate = new ToolStripMenuItem("Configurar certificado");
-        _configureCertificate.Click += (_, _) => OpenSystem();
+        var configureCertificate = new ToolStripMenuItem("Configurar certificado")
+        {
+            ToolTipText = "Configurar o certificado A1 deste PC"
+        };
+        configureCertificate.Click += (_, _) => OpenSystem();
         var checkUpdates = new ToolStripMenuItem("Verificar atualização");
         checkUpdates.Click += async (_, _) => await CheckForUpdatesAsync();
         var startup = new ToolStripMenuItem("Iniciar com o Windows")
@@ -60,7 +61,7 @@ public sealed class TrayApplicationContext : ApplicationContext
         exit.Click += (_, _) => ExitApplication();
         menu.Items.Add(openCentral);
         menu.Items.Add(open);
-        menu.Items.Add(_configureCertificate);
+        menu.Items.Add(configureCertificate);
         menu.Items.Add(checkUpdates);
         menu.Items.Add(startup);
         menu.Items.Add(new ToolStripSeparator());
@@ -75,31 +76,16 @@ public sealed class TrayApplicationContext : ApplicationContext
         };
         _trayIcon.DoubleClick += (_, _) => OpenCentral();
 
-        _centralState.Changed += CentralStateChanged;
-        RefreshRoleMenu();
-
         _centralForm.Show();
         _centralForm.Activate();
     }
 
     protected override void ExitThreadCore()
     {
-        _centralState.Changed -= CentralStateChanged;
         _trayIcon.Visible = false;
         _trayIcon.Dispose();
         _centralForm.Dispose();
         base.ExitThreadCore();
-    }
-
-    private void CentralStateChanged(object? sender, EventArgs e)
-    {
-        if (_trayIcon.ContextMenuStrip?.InvokeRequired == true)
-        {
-            _trayIcon.ContextMenuStrip.BeginInvoke(new Action(RefreshRoleMenu));
-            return;
-        }
-
-        RefreshRoleMenu();
     }
 
     private void CentralFormClosing(object? sender, FormClosingEventArgs e)
@@ -131,14 +117,6 @@ public sealed class TrayApplicationContext : ApplicationContext
         catch
         {
         }
-    }
-
-    private void RefreshRoleMenu()
-    {
-        _configureCertificate.Enabled = _centralState.IsConfiguredAsCentral;
-        _configureCertificate.ToolTipText = _centralState.IsConfiguredAsCentral
-            ? "Configurar o certificado A1 deste PC Central"
-            : "O certificado é configurado somente no PC Central";
     }
 
     private void ExitApplication()
