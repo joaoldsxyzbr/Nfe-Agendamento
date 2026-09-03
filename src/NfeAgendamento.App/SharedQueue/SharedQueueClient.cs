@@ -15,6 +15,8 @@ public sealed record SharedQueueClientStatus(
 public sealed class SharedQueueClient
 {
     private static readonly TimeSpan HeartbeatMaxAge = TimeSpan.FromSeconds(10);
+    public static TimeSpan DefaultLookupTimeout { get; } = TimeSpan.FromMinutes(3);
+
     private readonly SharedQueuePaths _paths;
     private readonly PendingRequestSecretStore _pendingSecrets;
     private readonly ClientPairingStore _pairingStore;
@@ -25,14 +27,14 @@ public sealed class SharedQueueClient
         SharedQueuePaths paths,
         PendingRequestSecretStore pendingSecrets,
         ClientPairingStore pairingStore)
-        : this(paths, pendingSecrets, pairingStore, TimeSpan.FromMilliseconds(250), TimeSpan.FromSeconds(90))
+        : this(paths, pendingSecrets, pairingStore, TimeSpan.FromMilliseconds(250), DefaultLookupTimeout)
     {
     }
 
     public SharedQueueClient(
         SharedQueuePaths paths,
         PendingRequestSecretStore pendingSecrets)
-        : this(paths, pendingSecrets, new ClientPairingStore(), TimeSpan.FromMilliseconds(250), TimeSpan.FromSeconds(90))
+        : this(paths, pendingSecrets, new ClientPairingStore(), TimeSpan.FromMilliseconds(250), DefaultLookupTimeout)
     {
     }
 
