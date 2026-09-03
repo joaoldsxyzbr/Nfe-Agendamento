@@ -1,24 +1,22 @@
 # Inicialização e atualização do NFe Agendamento
 
-Este guia descreve a inicialização de cada cópia local do aplicativo, o pareamento seguro dos PCs clientes e o mecanismo de atualização pela release oficial do GitHub.
+## Arquitetura atual
 
-## Arquitetura atual da `main`
-
-Cada PC executa sua própria cópia do `NfeAgendamento.App.exe` e a interface web fica restrita a:
+Cada PC executa sua própria cópia do `NfeAgendamento.App.exe`. A interface fica somente em:
 
 ```text
 http://127.0.0.1:17345
 ```
 
-A comunicação entre computadores usa exclusivamente:
+A comunicação entre máquinas usa exclusivamente:
 
 ```text
 P:\01-Nfe agendamento
 ```
 
-Não existe mais servidor HTTP exposto na LAN, mDNS nem configuração automática de Firewall do Windows.
+Não existe servidor HTTP exposto na LAN, mDNS nem configuração automática de firewall.
 
-Os PCs clientes precisam ser **pareados uma vez** com a Central antes da primeira consulta. O certificado A1 continua somente no PC Central.
+Todos os PCs confiáveis que poderão assumir a fila devem possuir acesso à pasta compartilhada e o certificado A1 aplicável instalado/configurado localmente.
 
 ## Inicialização normal
 
@@ -28,216 +26,150 @@ O executável oficial é:
 NfeAgendamento.App.exe
 ```
 
-O argumento legado `--lan` pode existir em atalhos antigos, mas é ignorado e nunca expõe a porta `17345` para outros computadores.
+O argumento legado `--lan` pode existir em atalhos antigos, mas é ignorado e nunca expõe a porta 17345 para outros computadores.
 
-O papel do PC fica salvo em:
+Depois que o PC está autorizado no grupo, ele participa automaticamente da eleição da fila ao iniciar:
 
-```text
-%LOCALAPPDATA%\NfeAgendamento\state\central.json
-```
+- se conseguir `status\central.lock`, vira líder;
+- se outro PC já possuir o lock, fica em standby;
+- se a pasta estiver indisponível, não inicia trabalho fiscal.
 
-Há duas configurações independentes:
+Não existem mais comandos operacionais **Iniciar Central** ou **Parar Central**.
 
-- **Iniciar com o Windows** decide se a cópia local do programa será aberta automaticamente;
-- **Iniciar Central / Parar Central** decide se aquele PC tentará atuar como Central da fila compartilhada.
+## Migração da Central fixa para liderança automática
 
-Uma instalação nova começa como **Cliente**. O papel de Central somente é ativado manualmente pelo usuário.
+A configuração antiga `ConfiguredAsCentral` é mantida apenas para o bootstrap de compatibilidade.
 
-## Reassunção automática da Central
+Na primeira atualização para a arquitetura automática:
 
-Quando o usuário clica em **Iniciar Central**, `ConfiguredAsCentral = true` é persistido localmente.
+1. atualize os arquivos do aplicativo;
+2. abra primeiro a instalação que era a Central antiga;
+3. confirme acesso a `P:\01-Nfe agendamento`;
+4. mantenha o aplicativo aberto até a identidade do grupo ser criada;
+5. abra os PCs já pareados;
+6. eles importam automaticamente o pacote de candidatura vinculado à chave pública já conhecida;
+7. confirme no **Status da fila** que existe exatamente um líder e os demais estão em standby;
+8. teste desligando o líder e confirmando a tomada automática por outro PC.
 
-Nas próximas inicializações, esse PC tenta automaticamente:
+A migração preserva a identidade RSA da fila e o estado de clientes/replay. Não é necessário reaparear todos os PCs.
 
-1. validar `P:\01-Nfe agendamento`;
-2. adquirir o lock exclusivo em `status\central.lock`;
-3. publicar heartbeat assinado;
-4. iniciar o processador da fila.
+O antigo PC Central também ganha uma identidade de cliente durante a migração, portanto continua conseguindo consultar quando estiver em standby.
 
-Se a pasta estiver indisponível, o aplicativo não procura outro caminho nem abre uma rota de rede alternativa. Ele permanece aguardando a pasta e tenta novamente.
+## Autorizar um PC novo
 
-Se outro PC já possuir o lock, o painel mostra conflito e não inicia um segundo processador fiscal.
+O código temporário é gerado somente no líder atual.
 
-Um PC configurado como Central só executa consulta fiscal direta quando o runtime da Central está realmente ativo com o lock adquirido.
+1. abra **Configurar** no PC líder;
+2. clique em **Gerar código de autorização**;
+3. no PC novo, abra o sistema local;
+4. informe o código e clique em **Autorizar este PC**;
+5. o novo PC recebe seu vínculo local e o pacote que o torna futuro candidato a líder.
 
-Ao usar **Parar Central**, `ConfiguredAsCentral = false` é salvo, o heartbeat daquela instância é removido, o lock é liberado e a reassunção automática deixa de ocorrer.
+O estado local fica protegido por DPAPI e não precisa ser recriado a cada inicialização.
 
-## Pareamento inicial dos clientes
+## Certificado A1
 
-O pareamento autoriza explicitamente cada PC que poderá enviar pedidos pela pasta compartilhada.
+O certificado é configurado localmente em cada PC confiável. Ele não é copiado pela fila e não faz parte do pacote de candidatura.
 
-### No PC Central
+Antes de depender de um PC como possível líder, confirme nele:
 
-1. confirme que a Central está **ativa**;
-2. abra o sistema local;
-3. na área **Conectar PCs**, clique em **Gerar código de pareamento**;
-4. use o código temporário dentro de aproximadamente 10 minutos.
-
-### Em cada PC cliente
-
-1. execute a cópia local do aplicativo;
-2. abra `http://127.0.0.1:17345`;
-3. informe o código exibido na Central;
-4. clique em **Parear com a Central**;
-5. aguarde a confirmação de sucesso;
-6. faça uma consulta de teste.
-
-O pareamento é persistido localmente usando DPAPI. Não precisa ser repetido a cada consulta nem a cada reinicialização.
-
-Se o estado local do pareamento for perdido/corrompido, ou se a identidade/chave da Central mudar, gere outro código e faça o pareamento novamente. O cliente não passa a confiar silenciosamente em uma chave pública diferente apenas porque ela apareceu na pasta compartilhada.
+1. A1 instalado no usuário correto;
+2. certificado selecionado no NFe Agendamento;
+3. UF autora configurada;
+4. consulta conhecida funcionando.
 
 ## Iniciar com o Windows
 
-A opção **Iniciar com o Windows** registra o executável no perfil do usuário atual em:
+A opção **Iniciar com o Windows** registra o executável no perfil atual em:
 
 ```text
 HKCU\Software\Microsoft\Windows\CurrentVersion\Run
 ```
 
-O comando salvo contém somente o caminho do executável entre aspas, por exemplo:
+Quando o Windows inicia, o PC autorizado entra automaticamente na eleição. Se outro líder estiver ativo, permanece em standby.
 
-```text
-"C:\NFe Agendamento\NfeAgendamento.App.exe"
-```
+Se o executável for movido de pasta, desmarque e marque novamente a opção para atualizar o caminho.
 
-Nenhuma flag de LAN é necessária.
-
-### Validação manual
-
-1. marque **Iniciar com o Windows**;
-2. encerre o aplicativo pelo item **Sair** da bandeja;
-3. reinicie o Windows ou encerre a sessão;
-4. entre novamente com o mesmo usuário;
-5. confirme que o NFe Agendamento abriu;
-6. se esse PC era Central, confirme que tentou reassumir automaticamente;
-7. se era Cliente, confirme que permaneceu Cliente e manteve o pareamento.
-
-Se o executável for movido de pasta, desmarque e marque novamente **Iniciar com o Windows** para atualizar o caminho registrado.
-
-## Verificar atualização
+## Atualizador integrado
 
 A ação **Verificar atualização** fica no menu da bandeja.
 
-Ela consulta a release oficial do repositório e compara a versão publicada com a versão gravada no executável instalado.
-
-Quando a versão local já for a mais recente, o aplicativo apenas informa que não há atualização.
-
-Quando existir uma versão nova, a instalação automática somente é oferecida se houver um pacote oficial instalável e verificável.
-
-## Requisitos de um pacote instalável
-
-O atualizador exige:
+O atualizador aceita somente pacote oficial verificável:
 
 - release oficial do projeto;
-- versão semanticamente maior que a instalada;
+- versão maior que a instalada;
 - asset `Nfe-Agendamento-win-x64.zip`;
-- URL HTTPS;
-- tamanho dentro do limite aceito pelo aplicativo;
-- digest SHA-256 oficial válido.
+- HTTPS;
+- tamanho dentro do limite;
+- digest SHA-256 válido.
 
-Se qualquer requisito falhar, o aplicativo não instala o pacote automaticamente.
+Após confirmação:
 
-## Fluxo da atualização
+1. baixa o ZIP para área temporária;
+2. valida tamanho e SHA-256;
+3. rejeita caminhos absolutos, `..` e entradas que escapem do diretório temporário;
+4. prepara a versão nova sem sobrescrever o processo em execução;
+5. aguarda o aplicativo encerrar;
+6. substitui os arquivos da pasta do app;
+7. inicia o executável novamente;
+8. remove temporários quando possível.
 
-Depois da confirmação do usuário:
-
-1. o ZIP oficial é baixado para uma pasta temporária;
-2. o tamanho recebido é conferido;
-3. o SHA-256 calculado localmente é comparado com o digest publicado;
-4. cada entrada do ZIP é validada antes da extração;
-5. caminhos absolutos, `..` e entradas que escapem do diretório temporário são rejeitados;
-6. a nova versão é preparada sem sobrescrever a instância em execução;
-7. um processo auxiliar aguarda o encerramento do NFe Agendamento;
-8. os arquivos novos substituem o conteúdo da pasta do aplicativo;
-9. o executável é iniciado novamente;
-10. os arquivos temporários são removidos quando possível.
-
-Os dados persistentes ficam fora da pasta do executável e não são substituídos pelo updater.
-
-Isso inclui, conforme o papel do PC:
-
-- configuração `ConfiguredAsCentral`;
-- seleção do certificado;
-- cache XML criptografado;
-- cooldown fiscal;
-- auditoria;
-- chave RSA privada da Central protegida por DPAPI;
-- chaves AES pendentes de clientes protegidas por DPAPI;
-- identidade, segredo e chave pública fixada da Central no cliente, protegidos por DPAPI;
-- lista de clientes autorizados no PC Central, protegida por DPAPI.
-
-## Migração da v0.1.18 para a arquitetura por pasta
-
-A última release oficial publicada antes da fila compartilhada é:
-
-```text
-v0.1.18
-```
-
-A `v0.1.18` ainda pertence à arquitetura LAN anterior, mas **já contém o mecanismo de atualização integrado**.
-
-Ao migrar para a primeira release da arquitetura por pasta compartilhada:
-
-1. atualize primeiro o PC que possui o A1;
-2. confirme acesso a `P:\01-Nfe agendamento`;
-3. clique em **Iniciar Central** e aguarde **Central ativa**;
-4. configure/valide o certificado A1;
-5. atualize os PCs clientes;
-6. gere um código de pareamento na Central;
-7. pareie cada PC cliente uma vez;
-8. confirme que os clientes mostram a Central online;
-9. faça uma consulta conhecida em um cliente sem A1;
-10. valide DANFE e download XML.
-
-O A1 não deve ser instalado nos clientes por causa do NFe Agendamento.
-
-Instalações mais antigas que não possuam o updater integrado precisam ser atualizadas manualmente uma vez.
+Os dados persistentes em `%LOCALAPPDATA%\NfeAgendamento` não são substituídos.
 
 ## Atualização manual segura
 
-Quando uma atualização manual for necessária:
+Quando precisar atualizar manualmente:
 
-1. encerre completamente o aplicativo por **Sair**;
-2. baixe somente o ZIP da release oficial ou o artifact de teste fornecido para validação;
-3. preserve uma cópia da pasta atual do executável até validar a nova versão;
-4. extraia a nova versão na pasta permanente do aplicativo;
-5. execute `NfeAgendamento.App.exe`;
-6. confirme que `http://127.0.0.1:17345` abre localmente;
-7. confirme acesso a `P:\01-Nfe agendamento`;
-8. no PC com A1, confirme **Central ativa**, heartbeat e processador;
-9. gere um código e pareie os PCs clientes, se ainda não estiverem pareados com esta Central;
-10. em um cliente, confirme que a Central aparece online;
-11. faça uma consulta conhecida e valide XML/DANFE.
+1. confirme que ninguém está usando a cópia compartilhada do executável;
+2. encerre o app por **Sair** nos PCs envolvidos;
+3. preserve uma cópia da versão atual até validar a nova;
+4. substitua pelos arquivos oficiais/testados;
+5. abra primeiro o antigo Central caso esta seja a primeira versão com liderança automática;
+6. depois abra os demais PCs;
+7. confira **Status da fila**;
+8. valide uma consulta no líder e outra em standby;
+9. feche o líder e valide o failover;
+10. valide DANFE/download XML e, quando necessário, Portal Nacional/WebView2.
 
-Os dados em `%LOCALAPPDATA%\NfeAgendamento` não precisam ser copiados para a pasta do programa.
+## O que fica persistente
 
-## Falha na verificação ou instalação
+Dependendo da instalação, `%LOCALAPPDATA%\NfeAgendamento` pode conter:
 
-Se houver erro de rede, ZIP inválido, digest ausente/incorreto, falta de permissão ou falha na preparação, a versão atual continua instalada.
+- seleção local do certificado e UF;
+- cache XML cifrado;
+- auditoria fiscal;
+- pareamento/segredo do cliente via DPAPI;
+- chave de estado do candidato via DPAPI;
+- material legado usado somente na migração;
+- chaves pendentes de solicitações;
+- perfil local do WebView2.
 
-Não desative a validação de SHA-256 para contornar uma falha de atualização.
+Na pasta compartilhada ficam apenas os estados necessários à coordenação, protegidos criptograficamente, incluindo identidade do grupo, autorização/replay e cooldown fiscal.
 
-Se a nova versão não iniciar após uma atualização manual:
+## Recuperação de falha
 
-1. encerre qualquer processo restante do NFe Agendamento;
-2. restaure a pasta do executável anterior;
-3. não apague `%LOCALAPPDATA%\NfeAgendamento` durante a recuperação;
-4. confira o CI e a release correspondente antes de tentar novamente.
+Se uma atualização falhar antes de instalar, a versão atual permanece. Não desative SHA-256 ou outras validações para contornar o problema.
 
-Se o aplicativo iniciar mas a operação multi-PC falhar, use o guia [CENTRAL-LAN.md](CENTRAL-LAN.md), cujo nome foi mantido apenas por compatibilidade de links e hoje documenta a fila compartilhada.
+Se uma versão nova não iniciar:
 
-## Validação automatizada
+1. encerre processos restantes;
+2. restaure a pasta anterior do executável;
+3. não apague `%LOCALAPPDATA%\NfeAgendamento`;
+4. confira o CI/commit da versão antes de tentar novamente.
 
-O CI cobre:
+Se o app abrir mas não houver líder, consulte [CENTRAL-LAN.md](CENTRAL-LAN.md).
 
-- testes .NET completos, incluindo pareamento, autenticação, replay, limites e arquivos inválidos;
-- regressões de mapeamento Fernando Klein;
-- feedback de erros fiscais;
-- prontidão dos workflows de release;
-- build Release;
-- publish Windows autocontido;
-- geração do ZIP de teste.
+## Validação após atualização
 
-Os testes da fila usam diretórios temporários e não dependem do `P:` real, de certificado real nem da SEFAZ real.
+O mínimo recomendado é:
 
-A troca física dos arquivos, o mapeamento real da unidade `P:` e a consulta com o certificado corporativo continuam fazendo parte da aceitação manual da release.
+- pasta compartilhada acessível em pelo menos dois PCs;
+- A1 local configurado nos candidatos;
+- exatamente um líder;
+- consulta funcionando no líder;
+- consulta funcionando em standby via fila;
+- takeover automático após encerrar o líder;
+- replay e cooldown preservados;
+- nenhuma repetição automática de consulta fiscal ambígua;
+- DANFE/XML funcionando;
+- Portal real validado fisicamente quando fizer parte da aceitação da versão.
