@@ -22,6 +22,8 @@ assert.ok(bridge.includes('node tests/js/product-mapping-regression.test.js'), '
 assert.ok(bridge.includes('node tests/js/lookup-feedback-regression.test.js'), 'Release deve validar o feedback fiscal.');
 assert.ok(ci.includes('node tests/js/portal-fallback-regression.test.js'), 'CI deve validar a contingência pelo Portal NF-e.');
 assert.ok(bridge.includes('node tests/js/portal-fallback-regression.test.js'), 'Release deve validar a contingência pelo Portal NF-e.');
+assert.ok(ci.includes('node tests/js/pairing-lookup-regression.test.js'), 'CI deve validar que Consultar NF-e não fique bloqueado pelo bootstrap.');
+assert.ok(bridge.includes('node tests/js/pairing-lookup-regression.test.js'), 'Release deve validar que Consultar NF-e não fique bloqueado pelo bootstrap.');
 assert.ok(ci.includes('node tests/js/batch-lookup-regression.test.js'), 'CI deve validar a consulta em lote.');
 assert.ok(bridge.includes('node tests/js/batch-lookup-regression.test.js'), 'Release deve validar a consulta em lote.');
 assert.ok(bridge.includes('node tests/js/release-readiness-regression.test.js'), 'Release deve validar a própria prontidão.');
