@@ -59,7 +59,7 @@ jobs:
         shell: pwsh
         run: Compress-Archive -Path artifacts/nfe-agendamento/* -DestinationPath artifacts/Nfe-Agendamento-win-x64.zip
       - name: Disponibilizar pacote
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Nfe-Agendamento-win-x64
           path: artifacts/Nfe-Agendamento-win-x64.zip
