@@ -27,6 +27,12 @@ public sealed class CentralKeyStore
         return rsa.ExportSubjectPublicKeyInfo();
     }
 
+    public byte[] ExportPrivateKeyPkcs8()
+    {
+        using var rsa = OpenPrivateKey();
+        return rsa.ExportPkcs8PrivateKey();
+    }
+
     public RSA OpenPrivateKey()
     {
         lock (_sync)
