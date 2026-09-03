@@ -117,22 +117,46 @@ O atualizador aceita somente pacote oficial verificável:
 - release oficial do projeto;
 - versão maior que a instalada;
 - asset `Nfe-Agendamento-win-x64.zip`;
-- HTTPS;
-- tamanho dentro do limite;
-- digest SHA-256 válido.
+- assinatura destacada `Nfe-Agendamento-win-x64.zip.sig`;
+- HTTPS com host oficial esperado;
+- tamanho dentro dos limites;
+- digest SHA-256 válido;
+- assinatura RSA-PSS/SHA-256 válida contra a chave pública embutida no aplicativo.
 
 Após confirmação:
 
 1. baixa o ZIP para área temporária;
 2. valida tamanho e SHA-256;
-3. rejeita caminhos absolutos, `..` e entradas que escapem do diretório temporário;
-4. prepara a versão nova sem sobrescrever o processo em execução;
-5. aguarda o aplicativo encerrar;
-6. substitui os arquivos da pasta do app;
-7. inicia o executável novamente;
-8. remove temporários quando possível.
+3. baixa a assinatura destacada;
+4. valida a assinatura RSA-PSS/SHA-256;
+5. somente depois da validação criptográfica extrai o pacote;
+6. rejeita caminhos que escapem do diretório temporário;
+7. prepara a versão nova sem sobrescrever o processo em execução;
+8. aguarda o aplicativo encerrar;
+9. move a instalação atual para backup e ativa a nova;
+10. inicia o executável novamente;
+11. verifica `http://127.0.0.1:17345/api/bootstrap` por até 20 segundos;
+12. em falha, encerra a versão nova, restaura o backup e reinicia a versão anterior.
 
 Os dados persistentes em `%LOCALAPPDATA%\NfeAgendamento` não são substituídos.
+
+### Chave de assinatura das releases
+
+A chave privada **não pertence ao repositório nem ao aplicativo**. O Release Bridge espera exclusivamente o GitHub Secret:
+
+```text
+NFE_UPDATE_SIGNING_KEY_PKCS8_B64
+```
+
+O valor é a chave privada RSA em PKCS#8 DER codificada em Base64. Antes de assinar, o workflow deriva a chave pública e confere seu fingerprint com a chave pública incorporada ao aplicativo. Secret ausente, inválido ou de outra chave faz a release falhar antes da publicação.
+
+Fingerprint SHA-256 da chave pública atualmente confiável:
+
+```text
+98cba72b2874a069a8eb8553dbd5c0851e52051ceae013b7c1b00917ede9e2d4
+```
+
+Nunca coloque o valor do Secret em arquivo versionado, issue, log ou pasta compartilhada.
 
 ## Atualização manual segura
 
@@ -141,7 +165,7 @@ Quando precisar atualizar manualmente:
 1. confirme que ninguém está usando a cópia compartilhada do executável;
 2. encerre o app por **Sair** nos PCs envolvidos;
 3. preserve uma cópia da versão atual até validar a nova;
-4. substitua pelos arquivos oficiais/testados;
+4. use somente arquivos da release oficial testada;
 5. abra primeiro o antigo Central caso esta seja a primeira versão com liderança automática;
 6. depois abra os demais PCs;
 7. confira **Status da fila**;
@@ -167,9 +191,9 @@ Na pasta compartilhada ficam os estados necessários à coordenação protegidos
 
 ## Recuperação de falha
 
-Se uma atualização falhar antes de instalar, a versão atual permanece. Não desative SHA-256 ou outras validações para contornar o problema.
+Se uma atualização falhar antes de instalar, a versão atual permanece. Não desative SHA-256, assinatura RSA ou outras validações para contornar o problema.
 
-Se uma versão nova não iniciar:
+Se uma versão nova não iniciar, o atualizador tenta automaticamente restaurar o backup. Se ainda houver intervenção manual:
 
 1. encerre processos restantes;
 2. restaure a pasta anterior do executável;
@@ -192,4 +216,7 @@ O mínimo recomendado é:
 - replay e cooldown preservados;
 - nenhuma repetição automática de consulta fiscal ambígua;
 - DANFE/XML funcionando;
-- Portal disponível somente no líder e validado fisicamente quando fizer parte da aceitação da versão.
+- Portal disponível somente no líder e validado fisicamente quando fizer parte da aceitação da versão;
+- atualização oficial contendo ZIP + `.sig` e passando pelo health check/rollback.
+
+O roteiro completo está em [Validação física multi-PC](TESTE-MULTI-PC.md).
