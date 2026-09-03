@@ -10,7 +10,9 @@ public sealed class SharedQueuePaths
     private static readonly HashSet<string> AllowedStatusFiles = new(StringComparer.OrdinalIgnoreCase)
     {
         "central.lock",
-        "heartbeat.json"
+        "heartbeat.json",
+        "group-identity.bin",
+        "authorized-clients.bin"
     };
 
     private readonly string _rootWithSeparator;
@@ -33,7 +35,10 @@ public sealed class SharedQueuePaths
     public string ResponsesDirectory => ChildDirectory("respostas");
     public string StatusDirectory => ChildDirectory("status");
     public string PairingDirectory => ChildDirectory("pareamento");
+    public string CandidatesDirectory => ChildDirectory("candidatos");
     public string MarkerPath => EnsureInsideRoot(Path.Combine(Root, ".nfe-agendamento"));
+    public string GroupIdentityPath => StatusPath("group-identity.bin");
+    public string AuthorizedClientsPath => StatusPath("authorized-clients.bin");
 
     public string RequestPath(Guid requestId) =>
         EnsureInsideRoot(Path.Combine(QueueDirectory, $"{ValidateId(requestId):N}.req"));
@@ -65,8 +70,20 @@ public sealed class SharedQueuePaths
     public string PairingResponseTemporaryPath(Guid requestId) =>
         EnsureInsideRoot(Path.Combine(PairingDirectory, $"{ValidateId(requestId):N}.pair.res.tmp"));
 
+    public string CandidateBundlePath(Guid clientId) =>
+        EnsureInsideRoot(Path.Combine(CandidatesDirectory, $"{ValidateId(clientId):N}.candidate"));
+
+    public string CandidateBundleTemporaryPath(Guid clientId, Guid writeId) =>
+        EnsureInsideRoot(Path.Combine(CandidatesDirectory, $"{ValidateId(clientId):N}.{ValidateId(writeId):N}.candidate.tmp"));
+
     public string HeartbeatTemporaryPath(Guid writeId) =>
         EnsureInsideRoot(Path.Combine(StatusDirectory, $"heartbeat.{ValidateId(writeId):N}.tmp"));
+
+    public string GroupIdentityTemporaryPath(Guid writeId) =>
+        EnsureInsideRoot(Path.Combine(StatusDirectory, $"group-identity.{ValidateId(writeId):N}.tmp"));
+
+    public string AuthorizedClientsTemporaryPath(Guid writeId) =>
+        EnsureInsideRoot(Path.Combine(StatusDirectory, $"authorized-clients.{ValidateId(writeId):N}.tmp"));
 
     public string StatusPath(string fileName)
     {
@@ -91,6 +108,7 @@ public sealed class SharedQueuePaths
         EnsureDirectory(ResponsesDirectory);
         EnsureDirectory(StatusDirectory);
         EnsureDirectory(PairingDirectory);
+        EnsureDirectory(CandidatesDirectory);
 
         if (File.Exists(MarkerPath))
             SharedQueueFileIO.EnsureNotReparsePoint(MarkerPath);
@@ -140,6 +158,8 @@ public sealed class SharedQueuePaths
             SharedQueueFileIO.EnsureNotReparsePoint(ResponsesDirectory);
             SharedQueueFileIO.EnsureNotReparsePoint(StatusDirectory);
             SharedQueueFileIO.EnsureNotReparsePoint(PairingDirectory);
+            if (Directory.Exists(CandidatesDirectory))
+                SharedQueueFileIO.EnsureNotReparsePoint(CandidatesDirectory);
             SharedQueueFileIO.EnsureNotReparsePoint(MarkerPath);
 
             var markerBytes = SharedQueueFileIO.ReadAllBytes(MarkerPath, SharedQueueFileIO.MaxMarkerBytes);
