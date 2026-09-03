@@ -33,6 +33,7 @@ Se o líder encerrar ou perder o lock, outro candidato tenta assumir automaticam
 ```text
 P:\01-Nfe agendamento\
 ├── .nfe-agendamento
+├── cache\
 ├── candidatos\
 ├── fila\
 ├── pareamento\
@@ -57,18 +58,20 @@ Na primeira atualização para a liderança automática:
 3. mantenha `P:\01-Nfe agendamento` acessível;
 4. o aplicativo migra uma única vez a identidade RSA da fila e os clientes já autorizados;
 5. abra os demais PCs já pareados; eles importam automaticamente seus pacotes de candidatura;
-6. confirme que um PC aparece como **Líder automático** e os demais como **Candidato em espera**;
+6. confirme que um PC aparece como líder e os demais como standby;
 7. depois disso o antigo PC Central pode ser desligado sem tornar a fila dependente dele.
 
 A configuração antiga `ConfiguredAsCentral` permanece somente para identificar a instalação autorizada a inicializar a migração quando ainda não existe identidade de grupo. Ela não decide mais quem consulta a SEFAZ depois que o grupo existe.
 
-## Identidade e autorização do grupo
+## Identidade, autorização e cache do grupo
 
 A identidade RSA já pareada é preservada, portanto a chave pública da fila não muda durante a migração.
 
 A chave privada da fila fica cifrada na pasta compartilhada por uma chave de estado do grupo. Cada candidato guarda essa chave localmente protegida por DPAPI. Clientes existentes recebem um pacote individual cifrado/autenticado com o segredo do próprio pareamento.
 
 A lista de clientes autorizados e o `LastSequence` ficam em estado compartilhado cifrado. Assim, após troca de líder, o sucessor mantém a autorização e continua bloqueando replay.
+
+O diretório `cache\` guarda os XMLs localizados por até 24 horas. O conteúdo é cifrado com AES-GCM usando a chave do grupo e os nomes dos arquivos são derivados por SHA-256 da chave NF-e. Portanto outro líder autorizado consegue reutilizar o mesmo XML depois de um failover sem fazer nova consulta desnecessária à SEFAZ.
 
 Nenhum PFX, chave privada do A1 ou senha de certificado é copiado para a pasta compartilhada.
 
@@ -86,8 +89,9 @@ O código temporário só pode ser gerado no PC que estiver como líder naquele 
 
 Quando o usuário consulta uma NF-e:
 
-- se este PC é o líder e o lock continua saudável, ele executa o fluxo fiscal localmente;
-- caso contrário, envia o pedido cifrado pela pasta para o líder atual.
+- se este PC é o líder e o lock continua saudável, ele executa o fluxo fiscal;
+- caso contrário, envia o pedido cifrado pela pasta para o líder atual;
+- o líder consulta primeiro o cache compartilhado de 24h antes de considerar uma chamada à SEFAZ.
 
 Mesmo com A1 instalado em todos os PCs, as consultas fiscais **não** rodam em paralelo entre máquinas. A fila mantém um único líder e a serialização fiscal existente.
 
@@ -97,11 +101,13 @@ O cooldown de `cStat=656` fica em estado compartilhado cifrado. Trocar de líder
 
 Se um líder cair depois de uma solicitação ter sido autenticada e existir possibilidade de a chamada já ter alcançado a SEFAZ, o sucessor **não repete automaticamente a consulta**. A recuperação devolve falha segura e exige nova ação explícita do usuário.
 
+O cache também é compartilhado: uma NF-e já obtida por um líder pode ser entregue pelo sucessor sem nova ida à SEFAZ enquanto estiver dentro das 24 horas.
+
 ## Certificado A1 e Portal Nacional
 
 O A1 é uma configuração local de cada PC confiável e não depende de papel fixo de Central.
 
-O fallback manual pelo Portal Nacional também pode ser aberto localmente em qualquer PC com A1 configurado. O hCaptcha permanece manual e o XML baixado é validado antes de entrar no cache.
+O fallback manual pelo Portal Nacional só pode ser iniciado no **líder atual com lock saudável**. O front-end esconde o botão nos PCs em standby e o backend rejeita a operação se o lock não estiver válido. O hCaptcha permanece manual e o XML baixado é validado antes de entrar no cache compartilhado.
 
 ## Estados exibidos
 
@@ -130,7 +136,7 @@ O lote usa a mesma fila da consulta individual:
 - até 50 chaves únicas;
 - uma consulta por vez por instalação;
 - líder serializa o acesso fiscal;
-- cache, deduplicação e cooldown continuam ativos;
+- cache compartilhado, deduplicação e cooldown continuam ativos;
 - `cStat=656` interrompe o restante do lote;
 - cancelar impede o início dos próximos itens.
 
@@ -162,12 +168,13 @@ Após uma release que altere esta arquitetura:
 4. consultar uma NF-e conhecida pelo líder e pelo standby;
 5. fechar o líder e confirmar que o standby assume automaticamente;
 6. consultar novamente após o failover;
-7. reabrir o antigo líder e confirmar que ele fica em standby se outro já possui o lock;
-8. validar DANFE e download XML;
-9. executar lote pequeno;
-10. confirmar que replay e cooldown permanecem compartilhados;
-11. validar Portal/WebView2 em ambiente real quando necessário;
-12. confirmar que arquivos fora da árvore dedicada permaneceram intocados.
+7. consultar uma NF-e, trocar o líder e confirmar retorno pelo mesmo cache sem nova consulta fiscal;
+8. reabrir o antigo líder e confirmar que ele fica em standby se outro já possui o lock;
+9. validar DANFE e download XML;
+10. executar lote pequeno;
+11. confirmar que replay e cooldown permanecem compartilhados;
+12. validar que o Portal aparece somente no líder e funciona com WebView2/A1 real;
+13. confirmar que arquivos fora da árvore dedicada permaneceram intocados.
 
 Não provoque um `cStat=656` real apenas para testar.
 
