@@ -47,8 +47,9 @@ assert.ok(bridge.includes(auditCommand), 'Release deve auditar dependências NuG
 const projectVersionMatch = project.match(/<Version>(\d+\.\d+\.\d+)<\/Version>/);
 assert.ok(projectVersionMatch, 'Projeto deve declarar uma versão semântica base no formato X.Y.Z.');
 const projectVersion = projectVersionMatch[1];
-assert.strictEqual(projectVersion, '0.1.25', 'Versão candidata esperada para este hardening é 0.1.25.');
-assert.ok(readme.includes(`candidata **v${projectVersion}**`), 'README deve indicar a mesma versão candidata declarada no projeto.');
+assert.strictEqual(projectVersion, '0.1.25', 'Versão esperada para este hardening é 0.1.25.');
+const mainVersionPattern = new RegExp('`main`:[^\\n]*\\*\\*v' + projectVersion.replace(/\./g, '\\.') + '\\*\\*');
+assert.ok(mainVersionPattern.test(readme), 'README deve indicar na linha da main a mesma versão declarada no projeto.');
 assert.doesNotThrow(() => new vm.Script(read(tabsPath), { filename: tabsPath }), 'tabs.js deve permanecer sintaticamente válido.');
 
 const workflowText = `${ci}\n${bridge}`;
@@ -83,4 +84,4 @@ const certificateFiles = walk(root)
   .filter((file) => /\.(pfx|p12)$/i.test(file));
 assert.deepStrictEqual(certificateFiles, [], 'Repositório não pode conter certificado A1 empacotado.');
 
-console.log(`OK: release usa SHA imutável, .NET 10, versão candidata v${projectVersion}, auditoria de dependências e nenhuma credencial fiscal real.`);
+console.log(`OK: release usa SHA imutável, .NET 10, versão v${projectVersion}, auditoria de dependências e nenhuma credencial fiscal real.`);
