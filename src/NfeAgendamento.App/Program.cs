@@ -37,18 +37,23 @@ internal static class Program
         builder.Services.AddSingleton<FiscalRequestCoordinator>();
         builder.Services.AddSingleton<FiscalAuditLog>();
         builder.Services.AddSingleton<SharedQueuePaths>();
+        builder.Services.AddSingleton<CandidateStateStore>();
+        builder.Services.AddSingleton<SharedGroupIdentityStore>();
+        builder.Services.AddSingleton<CandidateBundleStore>();
         builder.Services.AddSingleton<CentralKeyStore>();
         builder.Services.AddSingleton<PendingRequestSecretStore>();
         builder.Services.AddSingleton<ClientPairingStore>();
         builder.Services.AddSingleton<AuthorizedClientStore>();
+        builder.Services.AddSingleton<SharedAuthorizedClientStore>();
+        builder.Services.AddSingleton<SharedQueueGroupBootstrapService>();
         builder.Services.AddSingleton<PairingCodeService>();
         builder.Services.AddSingleton<SharedQueuePairingClient>();
-        builder.Services.AddSingleton<SharedQueuePairingProcessor>();
+        builder.Services.AddSingleton<SharedQueueGroupPairingProcessor>();
         builder.Services.AddSingleton<SharedQueueClient>();
         builder.Services.AddSingleton<SharedQueueCentralService>();
         builder.Services.AddHostedService(sp => sp.GetRequiredService<SharedQueueCentralService>());
-        builder.Services.AddSingleton<SharedQueueProcessor>();
-        builder.Services.AddHostedService<SharedQueueProcessingHostedService>();
+        builder.Services.AddSingleton<SharedQueueGroupProcessor>();
+        builder.Services.AddHostedService<AutomaticSharedQueueProcessingHostedService>();
         builder.Services.AddScoped<NfeLookupService>();
         builder.Services.AddScoped<LookupDispatchService>();
         builder.Services.AddScoped<INfeDistributionTransport>(sp =>
@@ -69,6 +74,7 @@ internal static class Program
             CsrfTokenService csrf,
             CentralStateService state,
             SharedQueueCentralService central,
+            SharedQueueGroupBootstrapService group,
             SharedQueueClient queueClient) =>
         {
             var clientStatus = queueClient.GetStatus();
@@ -77,23 +83,24 @@ internal static class Program
                 csrfToken = csrf.CurrentToken,
                 configuredAsCentral = state.IsConfiguredAsCentral,
                 centralActive = central.IsActive,
-                clientPaired = state.IsConfiguredAsCentral || clientStatus.IsPaired,
-                centralOnline = state.IsConfiguredAsCentral ? central.IsActive : clientStatus.CentralOnline,
-                shareAvailable = state.IsConfiguredAsCentral ? central.ShareAvailable : clientStatus.ShareAvailable,
-                centralId = state.IsConfiguredAsCentral ? Environment.MachineName : clientStatus.CentralId,
+                leaderStatus = central.Status.ToString().ToLowerInvariant(),
+                candidateReady = group.IsCandidateReady,
+                clientPaired = group.IsCandidateReady || clientStatus.IsPaired || state.IsConfiguredAsCentral,
+                centralOnline = central.IsActive || clientStatus.CentralOnline,
+                shareAvailable = central.ShareAvailable || clientStatus.ShareAvailable,
+                centralId = central.IsActive ? Environment.MachineName : clientStatus.CentralId,
                 sharedFolder = SharedQueuePaths.DefaultRoot
             });
         });
 
         app.MapPost("/api/pairing/code", (
-            CentralStateService state,
             SharedQueueCentralService central,
             PairingCodeService pairingCodes) =>
         {
-            if (!state.IsConfiguredAsCentral || !central.IsActive)
+            if (!central.IsActive)
             {
                 return Results.Json(
-                    new { status = "central_inactive", message = "Ative este PC como Central antes de gerar o código de pareamento." },
+                    new { status = "leader_inactive", message = "Este PC não está processando a fila neste momento." },
                     statusCode: StatusCodes.Status409Conflict);
             }
 
@@ -103,40 +110,28 @@ internal static class Program
 
         app.MapPost("/api/pairing/client", async (
             PairClientRequest? request,
-            CentralStateService state,
             SharedQueuePairingClient pairingClient,
+            SharedQueueGroupBootstrapService group,
             CancellationToken cancellationToken) =>
         {
-            if (state.IsConfiguredAsCentral)
-            {
-                return Results.Json(
-                    new { status = "central_mode", message = "O PC Central não precisa ser pareado como cliente." },
-                    statusCode: StatusCodes.Status409Conflict);
-            }
             if (request is null || string.IsNullOrWhiteSpace(request.Code))
-                return Results.BadRequest(new { status = "invalid_pairing_code", message = "Informe o código exibido no PC Central." });
+                return Results.BadRequest(new { status = "invalid_pairing_code", message = "Informe o código exibido pelo PC que está processando a fila." });
 
             var result = await pairingClient.PairAsync(request.Code, cancellationToken);
+            if (result.Success)
+                group.TryImportCandidateBundle();
             return result.Success
                 ? Results.Ok(new { status = "paired", message = result.Message })
                 : Results.Json(new { status = "pairing_failed", message = result.Message }, statusCode: StatusCodes.Status409Conflict);
         });
 
-        app.MapGet("/api/certificates", (CentralStateService state, CertificateService certificates) =>
-        {
-            if (!state.IsConfiguredAsCentral)
-                return Results.Json(new { status = "client_mode", message = "O certificado é administrado somente no PC Central." }, statusCode: StatusCodes.Status403Forbidden);
-            return Results.Ok(certificates.ListValidCertificates());
-        });
+        app.MapGet("/api/certificates", (CertificateService certificates) =>
+            Results.Ok(certificates.ListValidCertificates()));
 
         app.MapGet("/api/certificate/current", async (
-            CentralStateService state,
             CertificateService certificates,
             CancellationToken cancellationToken) =>
         {
-            if (!state.IsConfiguredAsCentral)
-                return Results.Json(new { status = "client_mode", message = "O certificado é administrado somente no PC Central." }, statusCode: StatusCodes.Status403Forbidden);
-
             var current = await certificates.GetCurrentAsync(cancellationToken);
             return current is null
                 ? Results.NoContent()
@@ -145,12 +140,9 @@ internal static class Program
 
         app.MapPost("/api/certificate/select", async (
             CertificateSelectRequest? request,
-            CentralStateService state,
             CertificateService certificates,
             CancellationToken cancellationToken) =>
         {
-            if (!state.IsConfiguredAsCentral)
-                return Results.Json(new { status = "client_mode", message = "O certificado é administrado somente no PC Central." }, statusCode: StatusCodes.Status403Forbidden);
             if (request is null || string.IsNullOrWhiteSpace(request.Thumbprint) || string.IsNullOrWhiteSpace(request.UfAutor))
                 return Results.BadRequest(new { status = "invalid_certificate", message = "Selecione o certificado e informe a UF autora." });
             try
@@ -194,18 +186,10 @@ internal static class Program
 
         app.MapPost("/api/nfe/portal-fallback", (
             LookupRequest? request,
-            CentralStateService state,
             PortalNfeFallbackLauncher launcher) =>
         {
             if (request is null || !AccessKeyValidator.IsValid(request.AccessKey))
                 return Results.BadRequest(new { status = "invalid_key", message = "Informe uma chave NF-e válida com 44 dígitos." });
-
-            if (!state.IsConfiguredAsCentral)
-            {
-                return Results.Json(
-                    new { status = "client_mode", message = "A consulta alternativa pelo Portal da NF-e só pode ser aberta no PC Central." },
-                    statusCode: StatusCodes.Status403Forbidden);
-            }
 
             var result = launcher.TryLaunch(request.AccessKey);
             return result.Status switch
@@ -254,7 +238,7 @@ internal static class Program
     private static IResult BusyResult(NfeLookupResult result)
     {
         var response = Results.Json(
-            new { status = "fila_ocupada", message = result.Message ?? "A Central está processando muitas consultas. Tente novamente em alguns segundos." },
+            new { status = "fila_ocupada", message = result.Message ?? "A fila está processando muitas consultas. Tente novamente em alguns segundos." },
             statusCode: StatusCodes.Status429TooManyRequests);
         return new RetryAfterResult(response);
     }
