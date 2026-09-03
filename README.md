@@ -4,10 +4,10 @@ Aplicativo Windows interno para consultar, visualizar e baixar NF-e. Cada PC usa
 
 ## Versão
 
-- última release publicada: **v0.1.23**;
+- última release publicada: **v0.1.24**;
 - `main`: candidata **v0.1.24**.
 
-A candidata v0.1.24 reúne o fallback manual pelo Portal Nacional para `cStat=656`, proteção contra retries fiscais ambíguos, recuperação conservadora da fila, **liderança automática**, cache fiscal compartilhado entre líderes e a correção que impede o botão **Consultar NF-e** de ficar bloqueado por um estado transitório do bootstrap/pareamento.
+A versão v0.1.24 reúne o fallback manual pelo Portal Nacional para `cStat=656`, proteção contra retries fiscais ambíguos, recuperação conservadora da fila, **liderança automática**, cache fiscal compartilhado entre líderes e a correção que impede o botão **Consultar NF-e** de ficar bloqueado por um estado transitório do bootstrap/pareamento.
 
 ## Arquitetura atual
 
@@ -260,9 +260,9 @@ dotnet build Nfe-Agendamento.sln -c Release
 
 O CI também publica Windows x64 autocontido, compacta o ZIP e disponibiliza artifact.
 
-## Checklist da candidata v0.1.24
+## Checklist da v0.1.24
 
-Automatizado esperado antes de considerar a `main` pronta:
+Automatizado validado para a release:
 
 - testes .NET completos;
 - eleição de exatamente um líder;
@@ -276,7 +276,7 @@ Automatizado esperado antes de considerar a `main` pronta:
 - regressões JS de produto, feedback fiscal, Portal, botão de consulta, lote e release;
 - build Release;
 - publish Windows x64 autocontido;
-- ZIP/artifact.
+- ZIP da release.
 
 Teste físico ainda recomendado:
 
@@ -296,14 +296,9 @@ Não provoque `cStat=656` real apenas para testar.
 
 ## Release
 
-A última release publicada é **v0.1.23**. A candidata atual é **v0.1.24**.
+A última release publicada é **v0.1.24** e a `main` permanece alinhada à versão **v0.1.24**.
 
-Fluxo oficial:
-
-1. Actions → **Release Bridge**;
-2. referência `main`;
-3. informar `v0.1.24`;
-4. o workflow testa/builda/publica e prende a tag ao SHA aprovado.
+A publicação oficial usa o workflow **Release Bridge**, que testa, compila, publica o pacote Windows e prende a tag ao SHA efetivamente validado.
 
 ## Documentação técnica
 
