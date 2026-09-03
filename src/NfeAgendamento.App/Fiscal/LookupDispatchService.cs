@@ -24,7 +24,7 @@ public sealed class LookupDispatchService
             throw new ArgumentException("Chave NF-e inválida.", nameof(accessKey));
 
         var runtime = _services.GetRequiredService<SharedQueueCentralService>();
-        if (runtime.IsActive)
+        if (runtime.CanProcessWork())
         {
             return _services
                 .GetRequiredService<NfeLookupService>()
