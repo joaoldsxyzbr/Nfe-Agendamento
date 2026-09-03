@@ -1,4 +1,6 @@
+using System.Security.Cryptography;
 using System.Text;
+using NfeAgendamento.App.SharedQueue;
 using NfeAgendamento.App.Storage;
 using Xunit;
 
@@ -27,6 +29,41 @@ public sealed class EncryptedXmlCacheTests
         var raw = Encoding.UTF8.GetString(await File.ReadAllBytesAsync(file));
         Assert.DoesNotContain("<nfeProc", raw, StringComparison.Ordinal);
         Assert.DoesNotContain(AccessKey, raw, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Shared_cache_written_by_one_candidate_is_readable_by_another_without_plaintext()
+    {
+        var share = TempDirectory();
+        Directory.CreateDirectory(share);
+        var paths = new SharedQueuePaths(share);
+        paths.InitializeAsCentral();
+        var groupKey = RandomNumberGenerator.GetBytes(32);
+        try
+        {
+            var firstState = new CandidateStateStore(Path.Combine(share, "first-state.bin"));
+            var secondState = new CandidateStateStore(Path.Combine(share, "second-state.bin"));
+            firstState.Save(groupKey);
+            secondState.Save(groupKey);
+            var clock = new TestTimeProvider(DateTimeOffset.Parse("2026-08-31T12:00:00Z"));
+
+            var first = new EncryptedXmlCache(paths, firstState, clock, TimeSpan.FromHours(24));
+            var second = new EncryptedXmlCache(paths, secondState, clock, TimeSpan.FromHours(24));
+
+            await first.PutAsync(AccessKey, Xml);
+            var entry = await second.TryGetAsync(AccessKey);
+
+            Assert.NotNull(entry);
+            Assert.Equal(Xml, entry!.Xml);
+            var file = Assert.Single(Directory.GetFiles(paths.CacheDirectory, "*.bin"));
+            var raw = Encoding.UTF8.GetString(await File.ReadAllBytesAsync(file));
+            Assert.DoesNotContain("<nfeProc", raw, StringComparison.Ordinal);
+            Assert.DoesNotContain(AccessKey, raw, StringComparison.Ordinal);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(groupKey);
+        }
     }
 
     [Fact]
