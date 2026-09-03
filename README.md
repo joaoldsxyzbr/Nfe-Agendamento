@@ -5,9 +5,9 @@ Aplicativo Windows interno para consultar, visualizar e baixar NF-e. Cada PC usa
 ## Versão
 
 - última release publicada: **v0.1.24**;
-- `main`: candidata **v0.1.24**.
+- `main`: candidata **v0.1.25**.
 
-A versão v0.1.24 reúne o fallback manual pelo Portal Nacional para `cStat=656`, proteção contra retries fiscais ambíguos, recuperação conservadora da fila, **liderança automática**, cache fiscal compartilhado entre líderes e a correção que impede o botão **Consultar NF-e** de ficar bloqueado por um estado transitório do bootstrap/pareamento.
+A candidata v0.1.25 acrescenta **fencing fiscal imediatamente antes do envio à SEFAZ**, atualização com **backup, health check local e rollback automático**, migração para **.NET 10 LTS** e novos gates de segurança no CI/release. A assinatura independente de pacotes continua condicionada ao provisionamento de uma chave privada em GitHub Secret; nenhuma chave privada é versionada no repositório.
 
 ## Arquitetura atual
 
@@ -34,7 +34,7 @@ eleição por central.lock
    ↓
 pedidos cifrados pela pasta compartilhada
    ↓
-cache fiscal compartilhado 24h → fila fiscal serial → SEFAZ
+cache fiscal compartilhado 24h → fila fiscal serial → revalidação final da liderança → SEFAZ
    ↓
 XML validado/cache cifrado
    ↓
@@ -43,7 +43,7 @@ resposta cifrada ao solicitante
 
 Mesmo com A1 em todos os PCs, apenas o líder com lock exclusivo e saudável inicia trabalho fiscal.
 
-## Liderança automática
+## Liderança automática e fencing fiscal
 
 O lock exclusivo fica em:
 
@@ -53,7 +53,7 @@ P:\01-Nfe agendamento\status\central.lock
 
 Somente um processo pode mantê-lo aberto com exclusividade. O líder publica heartbeat assinado e processa a fila; os demais ficam em standby.
 
-Se o líder sair, outro candidato tenta assumir automaticamente. Antes de iniciar novo trabalho, o runtime revalida o handle do lock. Se a validação falhar, o PC deixa de iniciar trabalho fiscal até readquirir a liderança.
+Se o líder sair, outro candidato tenta assumir automaticamente. Além das verificações durante o processamento, a v0.1.25 revalida a autoridade do líder **no último boundary antes de iniciar a chamada fiscal**. Se a liderança for perdida, a operação falha de forma segura e não é repetida automaticamente.
 
 A configuração legada `ConfiguredAsCentral` existe somente para a migração inicial e não decide mais o dispatch normal.
 
@@ -111,7 +111,7 @@ A consulta individual usa `POST /api/nfe/lookup`.
 
 Quando este PC é líder com lock saudável, executa o fluxo fiscal local. Caso contrário, envia o pedido pela fila para o líder atual.
 
-O botão **Consultar NF-e** permanece acionável mesmo durante estados transitórios de bootstrap. Se o PC realmente ainda não estiver autorizado ou a fila estiver indisponível, o backend devolve a condição correspondente e a interface exibe a mensagem ao usuário em vez de manter um botão sem ação.
+O botão **Consultar NF-e** permanece acionável mesmo durante estados transitórios de bootstrap. Se o PC realmente ainda não estiver autorizado ou a fila estiver indisponível, o backend devolve a condição correspondente e a interface exibe a mensagem ao usuário.
 
 Ordem fiscal:
 
@@ -120,12 +120,13 @@ Ordem fiscal:
 3. deduplicar a mesma chave;
 4. entrar na fila fiscal serializada;
 5. respeitar o cooldown compartilhado;
-6. consultar `NFeDistribuicaoDFe/consChNFe`;
-7. validar o XML;
-8. gravar o cache compartilhado;
-9. devolver o resultado ao solicitante.
+6. revalidar a liderança imediatamente antes da chamada externa;
+7. consultar `NFeDistribuicaoDFe/consChNFe`;
+8. validar o XML;
+9. gravar o cache compartilhado;
+10. devolver o resultado ao solicitante.
 
-O cache possui retenção de **24 horas** e é legível por qualquer líder autorizado. Assim, uma troca de líder não perde o conhecimento de XMLs já obtidos e evita nova consulta desnecessária à SEFAZ.
+O cache possui retenção de **24 horas** e é legível por qualquer líder autorizado. Uma troca de líder não perde o conhecimento de XMLs já obtidos e evita nova consulta desnecessária à SEFAZ.
 
 ## Robustez fiscal e failover
 
@@ -134,44 +135,24 @@ A política é deliberadamente conservadora:
 - HTTP `429` não é repetido automaticamente;
 - timeout fiscal não é repetido automaticamente;
 - `5xx`, falha de conexão e `HttpRequestException` ambígua não são repetidos automaticamente;
+- perda de liderança antes do envio aborta a operação sem iniciar nova consulta fiscal;
 - pedidos recuperados depois de interrupção não provocam segunda chamada fiscal;
 - se o antigo líder pode já ter alcançado a SEFAZ, o sucessor devolve falha segura e exige nova ação explícita;
 - `cStat=656` persiste em estado compartilhado, portanto mudar o líder não fura o cooldown;
-- o cache fiscal também sobrevive ao failover, reduzindo consultas repetidas entre máquinas.
+- o cache fiscal também sobrevive ao failover.
 
 ## Certificado A1
 
-O A1 é configurado **localmente em cada PC confiável**. A tela de certificado não depende mais de papel fixo de Central.
-
-Antes de contar com uma máquina como candidato, valide nela o certificado, a UF autora e uma consulta conhecida.
+O A1 é configurado **localmente em cada PC confiável**. Antes de contar com uma máquina como candidato, valide nela o certificado, a UF autora e uma consulta conhecida.
 
 ## Contingência pelo Portal Nacional
 
 Quando a consulta automática recebe `cStat=656`, o aplicativo mantém o cooldown e não insiste automaticamente.
 
-**Consultar pela Fazenda** é oferecido somente no **líder atual com lock saudável**. Isso impede que um PC em standby importe XML para um estado isolado ou opere fora da autoridade da fila.
+**Consultar pela Fazenda** é oferecido somente no **líder atual com lock saudável**. O hCaptcha permanece manual e não é automatizado nem contornado.
 
-```text
-líder atual
-  ↓
-Portal Nacional via WebView2
-  ↓
-chave preenchida
-  ↓
-hCaptcha manual
-  ↓
-A1 local configurado
-  ↓
-download oficial do XML
-  ↓
-validação segura
-  ↓
-cache compartilhado cifrado de 24h
-```
+Proteções do Portal:
 
-Regras:
-
-- hCaptcha não é automatizado nem contornado;
 - navegação fiscal limitada ao domínio oficial esperado;
 - certificado comparado por thumbprint;
 - XML limitado a 10 MiB;
@@ -225,7 +206,7 @@ Os dados locais ficam em:
 %LOCALAPPDATA%\NfeAgendamento
 ```
 
-Podem incluir auditoria, seleção de certificado, pareamento, chave de candidato protegida por DPAPI, solicitações pendentes, perfil WebView2 e dados legados necessários à migração. O cache fiscal operacional da arquitetura automática fica na pasta compartilhada, cifrado com a chave do grupo.
+Podem incluir auditoria, seleção de certificado, pareamento, chave de candidato protegida por DPAPI, solicitações pendentes, perfil WebView2 e dados legados necessários à migração. O cache fiscal operacional fica na pasta compartilhada, cifrado com a chave do grupo.
 
 ## Segurança de rede
 
@@ -238,16 +219,21 @@ Podem incluir auditoria, seleção de certificado, pareamento, chave de candidat
 
 ## Atualização
 
-Na bandeja use **Verificar atualização**. O atualizador exige pacote oficial, HTTPS e digest SHA-256 válido antes de instalar.
+Na bandeja use **Verificar atualização**. O atualizador exige pacote oficial por HTTPS, tamanho esperado e digest SHA-256 válido.
 
-Para a primeira atualização com liderança automática, abra primeiro o antigo PC Central uma vez para concluir o bootstrap do grupo. Depois abra os demais PCs.
+Na v0.1.25 a aplicação preparada é validada antes da troca. Depois que o processo atual encerra, o instalador move a instalação existente para backup, ativa a nova versão e verifica `http://127.0.0.1:17345/api/bootstrap` por até **20 segundos**. Se a nova versão não ficar saudável, ela é encerrada, o backup é restaurado e a versão anterior é reiniciada.
+
+A assinatura criptográfica independente prevista no hardening não é anunciada como concluída: ela depende de uma chave privada externa armazenada em GitHub Secret e essa chave nunca deve entrar no repositório.
 
 Veja [Inicialização e atualização](docs/ATUALIZACAO-E-INICIALIZACAO.md).
 
 ## Desenvolvimento e validação
 
+Requer SDK **.NET 10**.
+
 ```bash
 dotnet restore Nfe-Agendamento.sln
+dotnet list Nfe-Agendamento.sln package --vulnerable --include-transitive --format json
 dotnet test Nfe-Agendamento.sln -c Release
 node tests/js/product-mapping-regression.test.js
 node tests/js/lookup-feedback-regression.test.js
@@ -260,48 +246,51 @@ dotnet build Nfe-Agendamento.sln -c Release
 
 O CI também publica Windows x64 autocontido, compacta o ZIP e disponibiliza artifact.
 
-## Checklist da v0.1.24
+## Checklist da v0.1.25
 
-Automatizado validado para a release:
+Automatizado exigido para a release:
 
 - testes .NET completos;
-- eleição de exatamente um líder;
-- takeover preservando a mesma chave pública;
-- replay persistente entre líderes;
-- cooldown fiscal compartilhado;
+- fencing de liderança antes do envio fiscal;
+- ausência de retry fiscal automático após perda de liderança ou falha ambígua;
+- eleição de exatamente um líder e takeover seguro;
+- replay e cooldown persistentes entre líderes;
 - cache XML compartilhado legível após troca de líder;
-- Portal restrito ao líder ativo no front-end e backend;
-- botão Consultar NF-e não fica bloqueado por estado transitório do bootstrap;
-- recuperação sem segunda chamada fiscal;
+- atualizador com staging, backup, health check de 20 s e rollback;
+- Portal restrito ao líder ativo;
 - regressões JS de produto, feedback fiscal, Portal, botão de consulta, lote e release;
+- auditoria de dependências NuGet;
 - build Release;
 - publish Windows x64 autocontido;
 - ZIP da release.
 
-Teste físico ainda recomendado:
+Teste físico ainda necessário para aceitação operacional:
 
 - [ ] pelo menos dois PCs reais disputam a liderança e somente um vence;
 - [ ] ao fechar o líder, outro assume automaticamente;
 - [ ] consulta funciona pelo standby antes e depois do failover;
-- [ ] consultar uma NF-e, trocar o líder e confirmar que a mesma NF-e volta do cache sem nova ida à SEFAZ;
+- [ ] consultar uma NF-e, trocar o líder e confirmar retorno do cache sem nova ida à SEFAZ;
+- [ ] perder acesso ao compartilhamento no líder e confirmar que nenhuma nova chamada fiscal começa;
+- [ ] restaurar o compartilhamento e validar recuperação;
 - [ ] A1 local funciona nos candidatos;
 - [ ] Portal Nacional aparece somente no líder e abre no WebView2 real;
-- [ ] chave é preenchida no Portal atual;
-- [ ] hCaptcha permanece manual;
-- [ ] A1 é oferecido/selecionado no fluxo real;
+- [ ] hCaptcha permanece manual e o A1 funciona no fluxo real;
 - [ ] XML oficial chega ao cache compartilhado;
-- [ ] nova consulta retorna do cache.
+- [ ] atualização real conclui o health check;
+- [ ] cenário de health check inválido restaura a versão anterior.
 
 Não provoque `cStat=656` real apenas para testar.
 
 ## Release
 
-A última release publicada é **v0.1.24** e a `main` permanece alinhada à versão **v0.1.24**.
+A última release publicada ainda é **v0.1.24**; a `main` está sendo validada como candidata **v0.1.25**.
 
-A publicação oficial usa o workflow **Release Bridge**, que testa, compila, publica o pacote Windows e prende a tag ao SHA efetivamente validado.
+A publicação oficial usa o workflow **Release Bridge**, que restaura dependências, audita vulnerabilidades, testa, compila, publica o pacote Windows e prende a tag ao SHA efetivamente validado.
 
 ## Documentação técnica
 
+- [Hardening pós-auditoria — design](docs/superpowers/specs/2026-09-03-audit-hardening-design.md)
+- [Hardening v0.1.25 — plano](docs/superpowers/plans/2026-09-03-audit-hardening-v0.1.25.md)
 - [Liderança automática — design](docs/superpowers/specs/2026-09-03-automatic-shared-queue-leader-design.md)
 - [Liderança automática — plano](docs/superpowers/plans/2026-09-03-automatic-shared-queue-leader.md)
 - [Guia operacional da fila](docs/CENTRAL-LAN.md)
