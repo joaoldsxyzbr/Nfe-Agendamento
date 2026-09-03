@@ -39,6 +39,20 @@ public sealed class FiscalRetrySafetyTests
     }
 
     [Fact]
+    public async Task Leadership_loss_is_fail_closed_and_not_retried()
+    {
+        using var temp = new TemporaryDirectory();
+        var transport = new LeadershipLostTransport();
+        var service = CreateService(temp.Path, transport);
+
+        var result = await service.LookupAsync(ValidKey);
+
+        Assert.Equal(NfeLookupStatus.Failed, result.Status);
+        Assert.Equal(1, transport.CallCount);
+        Assert.Contains("liderança", result.Message ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Shared_queue_default_timeout_covers_queue_wait_plus_one_fiscal_timeout()
     {
         Assert.True(
@@ -72,6 +86,24 @@ public sealed class FiscalRetrySafetyTests
         {
             CallCount++;
             throw new TaskCanceledException("timeout de teste");
+        }
+    }
+
+    private sealed class LeadershipLostTransport : INfeDistributionTransport
+    {
+        public int CallCount { get; private set; }
+
+        public Task<NfeDistributionResponse> QueryByAccessKeyAsync(string accessKey, CancellationToken cancellationToken = default)
+        {
+            CallCount++;
+            var exceptionType = typeof(NfeLookupService).Assembly.GetType(
+                "NfeAgendamento.App.Fiscal.FiscalLeadershipLostException");
+            if (exceptionType is null)
+                throw new InvalidOperationException("FiscalLeadershipLostException ainda não existe.");
+
+            var exception = Activator.CreateInstance(exceptionType, "A liderança fiscal foi perdida antes do envio.") as Exception
+                ?? throw new InvalidOperationException("Não foi possível criar a exceção de perda de liderança.");
+            throw exception;
         }
     }
 
