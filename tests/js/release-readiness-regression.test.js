@@ -20,6 +20,8 @@ const readme = read(readmePath);
 assert.ok(bridge.includes('workflow_dispatch:'), 'Release Bridge deve continuar manual.');
 assert.ok(bridge.includes('node tests/js/product-mapping-regression.test.js'), 'Release deve validar o mapeamento Fernando Klein.');
 assert.ok(bridge.includes('node tests/js/lookup-feedback-regression.test.js'), 'Release deve validar o feedback fiscal.');
+assert.ok(ci.includes('node tests/js/portal-fallback-regression.test.js'), 'CI deve validar a contingência pelo Portal NF-e.');
+assert.ok(bridge.includes('node tests/js/portal-fallback-regression.test.js'), 'Release deve validar a contingência pelo Portal NF-e.');
 assert.ok(ci.includes('node tests/js/batch-lookup-regression.test.js'), 'CI deve validar a consulta em lote.');
 assert.ok(bridge.includes('node tests/js/batch-lookup-regression.test.js'), 'Release deve validar a consulta em lote.');
 assert.ok(bridge.includes('node tests/js/release-readiness-regression.test.js'), 'Release deve validar a própria prontidão.');
