@@ -9,6 +9,9 @@ const read = (relativePath) => fs.readFileSync(path.join(root, relativePath), 'u
 const ciPath = '.github/workflows/ci.yml';
 const bridgePath = '.github/workflows/release-bridge.yml';
 const legacyTagPath = '.github/workflows/release-on-tag.yml';
+const dependabotPath = '.github/dependabot.yml';
+const codeqlPath = '.github/workflows/codeql.yml';
+const gitignorePath = '.gitignore';
 const projectPath = 'src/NfeAgendamento.App/NfeAgendamento.App.csproj';
 const testProjectPath = 'tests/NfeAgendamento.App.Tests/NfeAgendamento.App.Tests.csproj';
 const readmePath = 'README.md';
@@ -18,6 +21,7 @@ const bridge = read(bridgePath);
 const project = read(projectPath);
 const testProject = read(testProjectPath);
 const readme = read(readmePath);
+const gitignore = read(gitignorePath);
 
 assert.ok(bridge.includes('workflow_dispatch:'), 'Release Bridge deve continuar manual.');
 assert.ok(bridge.includes('node tests/js/product-mapping-regression.test.js'), 'Release deve validar o mapeamento Fernando Klein.');
@@ -43,6 +47,24 @@ assert.ok(bridge.includes('dotnet-version: 10.0.x'), 'Release deve usar SDK .NET
 const auditCommand = 'dotnet list Nfe-Agendamento.sln package --vulnerable --include-transitive --format json';
 assert.ok(ci.includes(auditCommand), 'CI deve auditar dependências NuGet vulneráveis, incluindo transitivas.');
 assert.ok(bridge.includes(auditCommand), 'Release deve auditar dependências NuGet vulneráveis, incluindo transitivas.');
+
+const requiredIgnores = ['*.pfx', '*.p12', '*.pem', '*.key', '*.snk', '.env', '.env.*', 'secrets.json'];
+for (const entry of requiredIgnores) {
+  assert.ok(gitignore.split(/\r?\n/).includes(entry), `.gitignore deve bloquear ${entry}.`);
+}
+
+assert.ok(fs.existsSync(path.join(root, dependabotPath)), 'Dependabot deve estar configurado.');
+const dependabot = read(dependabotPath);
+assert.ok(dependabot.includes('package-ecosystem: "nuget"'), 'Dependabot deve monitorar NuGet.');
+assert.ok(dependabot.includes('package-ecosystem: "github-actions"'), 'Dependabot deve monitorar GitHub Actions.');
+assert.ok((dependabot.match(/open-pull-requests-limit:\s*3/g) || []).length >= 2, 'Dependabot deve limitar a 3 PRs por ecossistema.');
+
+assert.ok(fs.existsSync(path.join(root, codeqlPath)), 'CodeQL deve estar configurado.');
+const codeql = read(codeqlPath);
+assert.ok(codeql.includes('github/codeql-action/init@v3'), 'CodeQL deve inicializar a análise oficial.');
+assert.ok(codeql.includes('languages: csharp'), 'CodeQL deve analisar C#.');
+assert.ok(codeql.includes('github/codeql-action/analyze@v3'), 'CodeQL deve executar a análise oficial.');
+assert.ok(codeql.includes('cron:'), 'CodeQL deve executar análise agendada.');
 
 const projectVersionMatch = project.match(/<Version>(\d+\.\d+\.\d+)<\/Version>/);
 assert.ok(projectVersionMatch, 'Projeto deve declarar uma versão semântica base no formato X.Y.Z.');
@@ -84,4 +106,4 @@ const certificateFiles = walk(root)
   .filter((file) => /\.(pfx|p12)$/i.test(file));
 assert.deepStrictEqual(certificateFiles, [], 'Repositório não pode conter certificado A1 empacotado.');
 
-console.log(`OK: release usa SHA imutável, .NET 10, versão v${projectVersion}, auditoria de dependências e nenhuma credencial fiscal real.`);
+console.log(`OK: release usa SHA imutável, .NET 10, v${projectVersion}, auditoria de dependências, hardening do repositório e nenhuma credencial fiscal real.`);
