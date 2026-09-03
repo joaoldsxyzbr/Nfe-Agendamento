@@ -10,6 +10,7 @@ public sealed class SharedQueueProcessor
 {
     private static readonly TimeSpan ProcessingRecoveryAge = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan RequestMaxAge = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan RecoveryRequestMaxAge = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan TemporaryRetention = TimeSpan.FromMinutes(15);
     private static readonly TimeSpan ResponseRetention = TimeSpan.FromMinutes(30);
 
@@ -101,7 +102,8 @@ public sealed class SharedQueueProcessor
                 throw new InvalidDataException("O identificador do envelope não corresponde ao arquivo.");
 
             var now = DateTimeOffset.UtcNow;
-            if (envelope.CreatedUtc > now.AddMinutes(1) || now - envelope.CreatedUtc > RequestMaxAge)
+            var maxRequestAge = recoveredCandidate ? RecoveryRequestMaxAge : RequestMaxAge;
+            if (envelope.CreatedUtc > now.AddMinutes(1) || now - envelope.CreatedUtc > maxRequestAge)
                 throw new InvalidDataException("Solicitação expirada.");
 
             using var privateKey = _keyStore.OpenPrivateKey();
