@@ -85,6 +85,11 @@ public sealed class UpdateServiceTests
         Assert.Contains("Wait-Process -Id 4321", script, StringComparison.Ordinal);
         Assert.Contains(temp.Path, script, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("NfeAgendamento.App.exe", script, StringComparison.Ordinal);
+        Assert.Contains("AddSeconds(20)", script, StringComparison.Ordinal);
+        Assert.Contains("http://127.0.0.1:17345/api/bootstrap", script, StringComparison.Ordinal);
+        Assert.Contains("Move-Item -LiteralPath $install -Destination $backup", script, StringComparison.Ordinal);
+        Assert.Contains("Move-Item -LiteralPath $backup -Destination $install", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("Copy-Item -LiteralPath $_.FullName", script, StringComparison.Ordinal);
     }
 
     [Fact]
