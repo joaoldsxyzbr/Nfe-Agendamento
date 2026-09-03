@@ -39,6 +39,10 @@ assert.ok(bridge.includes('ref: ${{ github.sha }}'), 'Release deve fazer checkou
 assert.ok(bridge.includes('--target "${{ github.sha }}"'), 'Tag/release deve apontar para o mesmo SHA que foi testado e empacotado.');
 assert.ok(!bridge.includes('--target main'), 'Release não pode tagar main mutável depois dos testes.');
 assert.ok(bridge.includes('-p:Version=${{ steps.version.outputs.version }}'), 'Release deve aplicar ao binário a versão validada informada no workflow.');
+assert.ok(bridge.includes('NFE_UPDATE_SIGNING_KEY_PKCS8_B64'), 'Release deve exigir a chave privada de assinatura via GitHub Secret.');
+assert.ok(bridge.includes('ImportPkcs8PrivateKey'), 'Release deve importar a chave privada PKCS#8 sem versioná-la.');
+assert.ok(bridge.includes('RSASignaturePadding]::Pss'), 'Release deve assinar o pacote com RSA-PSS.');
+assert.ok(bridge.includes('Nfe-Agendamento-win-x64.zip.sig'), 'Release deve publicar a assinatura destacada do pacote.');
 
 assert.ok(project.includes('<TargetFramework>net10.0-windows</TargetFramework>'), 'Aplicação deve usar .NET 10 LTS.');
 assert.ok(testProject.includes('<TargetFramework>net10.0-windows</TargetFramework>'), 'Testes devem usar .NET 10 LTS.');
@@ -106,4 +110,4 @@ const certificateFiles = walk(root)
   .filter((file) => /\.(pfx|p12)$/i.test(file));
 assert.deepStrictEqual(certificateFiles, [], 'Repositório não pode conter certificado A1 empacotado.');
 
-console.log(`OK: release usa SHA imutável, .NET 10, v${projectVersion}, auditoria de dependências, hardening do repositório e nenhuma credencial fiscal real.`);
+console.log(`OK: release usa SHA imutável, assinatura RSA-PSS, .NET 10, v${projectVersion}, auditoria de dependências, hardening do repositório e nenhuma credencial fiscal real.`);
