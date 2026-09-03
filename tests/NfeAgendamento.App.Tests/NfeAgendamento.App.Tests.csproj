@@ -38,4 +38,12 @@
     <Content Include="..\..\src\NfeAgendamento.App\wwwroot\ui-adjustments.css" Link="Fixtures\ui-adjustments.css" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\src\NfeAgendamento.App\wwwroot\danfe-compact.css" Link="Fixtures\danfe-compact.css" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+
+  <Target Name="RemoveUnusedWebView2WpfReference"
+          BeforeTargets="ResolveAssemblyReferences"
+          Condition="'$(UseWPF)' != 'true'">
+    <ItemGroup>
+      <Reference Remove="@(Reference)" Condition="'%(Reference.Filename)' == 'Microsoft.Web.WebView2.Wpf'" />
+    </ItemGroup>
+  </Target>
 </Project>
