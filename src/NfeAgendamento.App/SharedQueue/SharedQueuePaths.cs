@@ -11,6 +11,7 @@ public sealed class SharedQueuePaths
     {
         "central.lock",
         "heartbeat.json",
+        "cluster-identity.json",
         "group-identity.bin",
         "authorized-clients.bin"
     };
@@ -37,6 +38,7 @@ public sealed class SharedQueuePaths
     public string PairingDirectory => ChildDirectory("pareamento");
     public string CandidatesDirectory => ChildDirectory("candidatos");
     public string MarkerPath => EnsureInsideRoot(Path.Combine(Root, ".nfe-agendamento"));
+    public string ClusterIdentityPath => StatusPath("cluster-identity.json");
     public string GroupIdentityPath => StatusPath("group-identity.bin");
     public string AuthorizedClientsPath => StatusPath("authorized-clients.bin");
 
@@ -78,6 +80,9 @@ public sealed class SharedQueuePaths
 
     public string HeartbeatTemporaryPath(Guid writeId) =>
         EnsureInsideRoot(Path.Combine(StatusDirectory, $"heartbeat.{ValidateId(writeId):N}.tmp"));
+
+    public string ClusterIdentityTemporaryPath(Guid writeId) =>
+        EnsureInsideRoot(Path.Combine(StatusDirectory, $"cluster-identity.{ValidateId(writeId):N}.tmp"));
 
     public string GroupIdentityTemporaryPath(Guid writeId) =>
         EnsureInsideRoot(Path.Combine(StatusDirectory, $"group-identity.{ValidateId(writeId):N}.tmp"));
