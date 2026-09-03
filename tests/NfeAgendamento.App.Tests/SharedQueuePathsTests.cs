@@ -62,6 +62,7 @@ public sealed class SharedQueuePathsTests
             Assert.True(Directory.Exists(paths.StatusDirectory));
             Assert.True(Directory.Exists(paths.PairingDirectory));
             Assert.True(Directory.Exists(paths.CandidatesDirectory));
+            Assert.True(Directory.Exists(paths.CacheDirectory));
 
             var names = Directory.EnumerateFileSystemEntries(root)
                 .Select(Path.GetFileName)
@@ -69,7 +70,7 @@ public sealed class SharedQueuePathsTests
                 .ToArray();
 
             Assert.Equal(
-                new[] { ".nfe-agendamento", "candidatos", "fila", "pareamento", "processando", "respostas", "status" }.OrderBy(x => x, StringComparer.OrdinalIgnoreCase),
+                new[] { ".nfe-agendamento", "cache", "candidatos", "fila", "pareamento", "processando", "respostas", "status" }.OrderBy(x => x, StringComparer.OrdinalIgnoreCase),
                 names);
         }
         finally
