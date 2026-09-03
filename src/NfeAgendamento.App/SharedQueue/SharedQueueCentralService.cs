@@ -115,6 +115,9 @@ public sealed class SharedQueueCentralService : BackgroundService
             _paths.InitializeAsCentral();
             cancellationToken.ThrowIfCancellationRequested();
 
+            if (automaticMode)
+                _groupBootstrap!.TryImportCandidateBundle();
+
             acquired = SharedQueueCentralLease.TryAcquire(_paths);
             if (acquired is null)
             {
