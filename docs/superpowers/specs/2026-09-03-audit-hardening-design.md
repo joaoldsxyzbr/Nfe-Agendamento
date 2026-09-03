@@ -107,7 +107,7 @@ Nfe-Agendamento-update.json
 Nfe-Agendamento-update.sig
 ```
 
-`Nfe-Agendamento-update.json` conterá no mínimo:
+`Nfe-Agendamento-update.json` conterá:
 
 ```json
 {
@@ -120,25 +120,26 @@ Nfe-Agendamento-update.sig
 }
 ```
 
-A assinatura será RSA-PSS/SHA-256 sobre os bytes exatos do manifesto. A chave pública ficará embutida no aplicativo. A chave privada de assinatura não será versionada no repositório.
+A assinatura será RSA-PSS/SHA-256 sobre os bytes exatos do manifesto. A chave pública será armazenada em código como SubjectPublicKeyInfo Base64 em `Updates/UpdateTrust.cs`. A chave privada de assinatura não será versionada no repositório.
 
-O workflow de release consumirá uma chave privada PKCS#8 em segredo protegido do ambiente de release. A ausência da chave aborta a publicação antes de criar uma release utilizável.
+O workflow de release usará o GitHub Environment `release-signing` e o segredo `NFE_UPDATE_SIGNING_KEY_PKCS8_B64`, contendo a chave privada RSA PKCS#8 em Base64. O Environment deve exigir aprovação manual do proprietário antes de liberar o segredo ao job. Se o segredo estiver ausente ou inválido, o workflow falha antes da criação da release.
 
 O atualizador aceitará instalação somente quando:
 
-- a versão do manifesto for maior que a versão local;
-- o nome do asset for exatamente o esperado;
+- `schema == 1`;
+- a versão do manifesto for estritamente maior que a versão local;
+- o nome do asset for exatamente `Nfe-Agendamento-win-x64.zip`;
 - tamanho e SHA-256 corresponderem ao ZIP baixado;
-- `targetCommit` possuir formato SHA-1 Git válido;
+- `targetCommit` possuir exatamente 40 caracteres hexadecimais;
 - a assinatura RSA-PSS for válida contra a chave pública embutida;
 - o executável extraído existir;
-- a versão do executável extraído corresponder ao manifesto.
+- a versão do executável extraído corresponder exatamente ao manifesto.
 
 A verificação atual do digest publicado pelo GitHub será mantida como defesa adicional, não como raiz única de confiança.
 
 ### Limitação operacional explícita
 
-A configuração inicial da chave privada de assinatura no GitHub é um segredo externo ao código e não pode ser armazenada no repositório. O código e o workflow serão preparados para exigi-la; a chave pública correspondente será fixa no aplicativo.
+A configuração inicial da chave privada no GitHub é um segredo externo ao código e nunca será armazenada na `main`. O sistema não publicará uma nova release assinada até o Environment `release-signing` e seu segredo estarem configurados.
 
 ### Instalação transacional
 
@@ -150,27 +151,28 @@ download
  -> extrair em staging
  -> validar conteúdo
  -> encerrar app
- -> mover instalação atual para backup versionado
+ -> renomear instalação atual para backup
  -> mover staging para instalação
  -> iniciar nova versão
- -> aguardar health check local
+ -> health check
  -> sucesso: remover backup
  -> falha: restaurar backup e reiniciar versão anterior
 ```
 
-O health check será local e simples: o instalador aguardará o processo novo abrir e a porta local responder a `/api/bootstrap` dentro de uma janela limitada.
+O health check fará `GET http://127.0.0.1:17345/api/bootstrap` a cada 500 ms por no máximo 20 segundos. Sucesso exige resposta HTTP 2xx. Falha de processo, timeout de 20 segundos ou resposta permanentemente não-2xx aciona rollback.
 
-A troca deverá preferir rename/move dentro do mesmo volume em vez de copiar arquivo por arquivo quando a topologia de diretório permitir.
+A troca preferirá rename/move dentro do mesmo volume. Se a instalação estiver em topologia que impeça rename atômico do diretório, o instalador abortará sem tocar na instalação atual em vez de cair para cópia parcial arquivo a arquivo.
 
 ### Proteções adicionais
 
 - nenhum downgrade;
 - nenhum pacote com versão igual;
 - nenhum arquivo escapando do staging;
-- limite de tamanho mantido;
-- backup limitado à versão imediatamente anterior;
+- limite máximo de pacote permanece 200 MiB;
+- apenas um backup, o imediatamente anterior, será mantido durante a atualização;
 - temporários antigos podem ser limpos de forma best-effort;
-- falha de rollback será exibida explicitamente, sem apagar o backup.
+- falha de rollback será exibida explicitamente e o backup não será apagado;
+- após rollback bem-sucedido, a versão anterior será reiniciada uma única vez.
 
 ### Testes
 
@@ -182,6 +184,7 @@ Cobertura mínima:
 - SHA divergente rejeitado;
 - versão divergente rejeitada;
 - downgrade rejeitado;
+- versão igual rejeitada;
 - zip traversal continua rejeitado;
 - script de instalação contém caminho de rollback;
 - health check falho aciona restauração;
@@ -197,11 +200,11 @@ Migrar aplicação e testes de `net8.0-windows` para `net10.0-windows`, mantendo
 
 ### Regras
 
-- atualizar `TargetFramework` dos projetos compatíveis;
+- atualizar `TargetFramework` dos projetos compatíveis para `net10.0-windows`;
 - CI e release passam a usar SDK `10.0.x`;
 - manter `UseWindowsForms=true`;
 - manter `PublishSingleFile=true` e `IncludeNativeLibrariesForSelfExtract=true`;
-- atualizar pacotes somente quando necessário para compatibilidade/segurança;
+- atualizar pacotes somente quando necessário para compatibilidade ou correção de vulnerabilidade conhecida;
 - nenhuma mudança funcional será misturada à migração além das adaptações obrigatórias.
 
 ### Testes
@@ -234,32 +237,32 @@ secrets.json
 *.snk
 ```
 
-Exceções só serão criadas se algum arquivo público de teste realmente precisar de uma dessas extensões, o que não é esperado hoje.
+Não haverá exceções iniciais para essas extensões.
 
 ### Dependabot
 
-Adicionar `.github/dependabot.yml` para:
+Adicionar `.github/dependabot.yml` com dois ecosystems:
 
-- NuGet;
-- GitHub Actions;
-- frequência semanal;
-- limite pequeno de PRs abertos para evitar ruído.
+- `nuget` na raiz, semanalmente às segundas-feiras, limite de 3 PRs abertos;
+- `github-actions` na raiz, semanalmente às segundas-feiras, limite de 3 PRs abertos.
 
 Dependabot é defesa de manutenção e não muda o fluxo direto na `main` do desenvolvimento normal.
 
 ### Auditoria de dependências
 
-CI executará:
+No SDK .NET 10, o CI executará a forma atual do comando de listagem de pacotes vulneráveis com dependências transitivas e saída JSON. Um passo PowerShell analisará o JSON e lançará erro quando qualquer framework reportar `vulnerabilities` não vazio. Assim, a detecção de vulnerabilidade realmente falha o job em vez de depender apenas do exit code do comando de listagem.
 
-```text
-dotnet list Nfe-Agendamento.sln package --vulnerable --include-transitive
-```
-
-O job falhará se houver vulnerabilidade reportada com dependência resolvida no grafo. A saída ficará disponível no Actions para diagnóstico.
+O mesmo gate será executado no `Release Bridge` antes do publish.
 
 ### CodeQL
 
-Adicionar workflow oficial para C# em push/PR da `main` e execução agendada semanal.
+Adicionar `.github/workflows/codeql.yml` usando as actions oficiais do GitHub para C#.
+
+Gatilhos:
+
+- push para `main`;
+- pull request contra `main`;
+- cron semanal às quartas-feiras, 06:00 UTC.
 
 O CodeQL será complementar ao CI atual; não substitui testes.
 
@@ -273,9 +276,9 @@ O `Release Bridge` continuará sendo o único caminho oficial para publicar paco
 4. executar auditoria de dependências;
 5. build/publish;
 6. calcular hash e tamanho do ZIP;
-7. criar manifesto com o SHA exato validado;
-8. assinar manifesto;
-9. verificar a própria assinatura antes de publicar;
+7. criar manifesto com `targetCommit = github.sha`;
+8. assinar manifesto usando `NFE_UPDATE_SIGNING_KEY_PKCS8_B64`;
+9. verificar localmente a assinatura com a chave pública correspondente antes de publicar;
 10. criar release com ZIP + manifesto + assinatura.
 
 Nenhuma release será criada se uma etapa anterior falhar.
@@ -303,7 +306,7 @@ Após as alterações, a documentação terá um checklist obrigatório de aceit
 9. validar A1 em cada candidato;
 10. validar Portal/WebView2 e download oficial em um líder;
 11. executar atualização assinada em uma instalação de teste;
-12. validar rollback com pacote/processo deliberadamente incapaz de passar no health check de teste.
+12. validar rollback com pacote/processo de teste deliberadamente incapaz de responder ao health check.
 
 Não será provocado `cStat=656` real apenas para teste.
 
@@ -314,7 +317,7 @@ Não será provocado `cStat=656` real apenas para teste.
 A implementação será feita em blocos independentes e verificáveis:
 
 1. fencing fiscal;
-2. testes e atualização transacional;
+2. atualização transacional e seus testes;
 3. assinatura de release/update;
 4. migração .NET 10;
 5. `.gitignore`, Dependabot, auditoria e CodeQL;
@@ -330,12 +333,12 @@ O hardening só estará tecnicamente concluído quando:
 - nenhuma chamada à SEFAZ puder começar sem validação final da liderança;
 - perda de liderança for fail-closed e sem retry automático;
 - updater rejeitar pacote sem assinatura válida;
-- atualização possuir rollback automático quando a nova versão não passar no health check;
-- solução usar .NET 10 LTS;
-- CI testar, compilar, publicar e auditar dependências;
-- CodeQL e Dependabot estiverem configurados;
+- atualização possuir rollback automático quando a nova versão não passar no health check de 20 segundos;
+- solução usar `net10.0-windows` e SDK `10.0.x` no CI/release;
+- CI testar, compilar, publicar e falhar diante de dependência vulnerável detectada;
+- CodeQL e Dependabot estiverem configurados nos parâmetros definidos neste documento;
 - `.gitignore` bloquear material sensível comum;
-- release oficial publicar ZIP, manifesto e assinatura derivados do mesmo SHA testado;
+- release oficial publicar ZIP, manifesto e assinatura derivados do mesmo `github.sha` testado;
 - README e guias refletirem exatamente a arquitetura implementada;
 - checklist físico multi-PC estiver documentado para validação em ambiente real.
 
