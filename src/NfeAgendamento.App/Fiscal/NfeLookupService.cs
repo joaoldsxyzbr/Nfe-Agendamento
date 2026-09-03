@@ -129,6 +129,15 @@ public sealed class NfeLookupService
                     response = await _transport.QueryByAccessKeyAsync(accessKey, cancellationToken);
                     break;
                 }
+                catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.TooManyRequests)
+                {
+                    return new NfeLookupResult(
+                        NfeLookupStatus.Failed,
+                        null,
+                        null,
+                        "A SEFAZ recusou a consulta por excesso de requisições. Aguarde antes de tentar novamente.",
+                        false);
+                }
                 catch (HttpRequestException ex) when (IsTransientHttpError(ex) && attempt < 2)
                 {
                     await _delay(attempt == 0 ? TimeSpan.FromSeconds(2) : TimeSpan.FromSeconds(5), cancellationToken);
@@ -137,13 +146,14 @@ public sealed class NfeLookupService
                 {
                     return new NfeLookupResult(NfeLookupStatus.Failed, null, null, "Não foi possível comunicar com a SEFAZ.", false);
                 }
-                catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested && attempt < 2)
-                {
-                    await _delay(attempt == 0 ? TimeSpan.FromSeconds(2) : TimeSpan.FromSeconds(5), cancellationToken);
-                }
                 catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
                 {
-                    return new NfeLookupResult(NfeLookupStatus.Failed, null, null, "A consulta à SEFAZ excedeu o tempo limite.", false);
+                    return new NfeLookupResult(
+                        NfeLookupStatus.Failed,
+                        null,
+                        null,
+                        "A consulta à SEFAZ excedeu o tempo limite. Ela não será repetida automaticamente para evitar uma possível consulta duplicada.",
+                        false);
                 }
                 catch (InvalidDataException)
                 {
@@ -197,8 +207,7 @@ public sealed class NfeLookupService
             return true;
 
         var statusCode = (int)exception.StatusCode.Value;
-        return exception.StatusCode is HttpStatusCode.RequestTimeout or HttpStatusCode.TooManyRequests
-            || statusCode >= 500;
+        return exception.StatusCode == HttpStatusCode.RequestTimeout || statusCode >= 500;
     }
 
     private static NfeLookupResult InvalidFiscalStateResult() =>
