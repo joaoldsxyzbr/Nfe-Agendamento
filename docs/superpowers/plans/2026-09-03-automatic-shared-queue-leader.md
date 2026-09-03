@@ -1,10 +1,10 @@
 # Automatic Shared Queue Leader Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Status:** implementação concluída na `main`; validação automatizada final executada no CI #491 (`f63cb4d0a63ab1d7d1e85f6ccef9d4bc0d4605fa`) com testes .NET, regressões JS, build Release, publish Windows, ZIP e artifact em sucesso. A validação física multi-PC/A1/Portal permanece operacional antes de promover uma release.
 
 **Goal:** Permitir que qualquer PC confiável e já pareado assuma automaticamente a liderança da fila compartilhada, sem trocar a identidade pública atual e sem repetir consultas fiscais ambíguas.
 
-**Architecture:** A Central atual migra sua identidade RSA para um pacote compartilhado cifrado por uma `GroupStateKey`. Cada cliente autorizado recebe essa chave em um pacote individual cifrado com seu `ClientSecret`, guarda-a localmente via DPAPI e passa a disputar o `central.lock`. O estado de clientes autorizados e replay também passa a ser compartilhado e cifrado com a mesma chave de grupo.
+**Architecture:** A Central antiga migra sua identidade RSA para um pacote compartilhado cifrado por uma `GroupStateKey`. Cada cliente autorizado recebe essa chave em um pacote individual cifrado com seu `ClientSecret`, guarda-a localmente via DPAPI e passa a disputar o `central.lock`. O estado de clientes autorizados, replay e cooldown fiscal também é compartilhado e cifrado. A criação/migração do grupo acontece somente sob o lock exclusivo; a importação local de candidatura pode ocorrer em standby.
 
 **Tech Stack:** .NET 8, C#, Windows DPAPI, RSA OAEP/PSS, AES-256-GCM, filesystem/SMB locking, xUnit, GitHub Actions.
 
@@ -15,127 +15,118 @@
 - Alterar somente `main`.
 - Não abrir portas TCP/HTTP adicionais.
 - O certificado A1 nunca é exportado nem usado como segredo de transporte da fila.
-- `central.lock` é a única autoridade de liderança.
-- Sem lock exclusivo válido, nenhuma consulta SEFAZ pode começar.
-- A chave pública já pareada deve permanecer a mesma durante a migração.
-- Nenhum segredo privado pode ficar em claro na pasta compartilhada.
+- `central.lock` é a autoridade de liderança.
+- Sem lock exclusivo revalidado, nenhuma nova consulta SEFAZ pode começar.
+- A chave pública já pareada permanece a mesma durante a migração.
+- Nenhum segredo privado fica em claro na pasta compartilhada.
 - Failover nunca repete automaticamente consulta fiscal ambígua.
-- TDD obrigatório: teste vermelho antes de código de produção.
+- TDD aplicado nos blocos novos e regressões.
 
 ---
 
 ### Task 1: Primitivas de estado do grupo e pacotes de candidatura
 
 **Files:**
-- Create: `src/NfeAgendamento.App/SharedQueue/SharedQueueGroupState.cs`
-- Modify: `src/NfeAgendamento.App/SharedQueue/SharedQueuePaths.cs`
-- Modify: `src/NfeAgendamento.App/SharedQueue/CentralKeyStore.cs`
-- Test: `tests/NfeAgendamento.App.Tests/SharedQueueGroupStateTests.cs`
+- `src/NfeAgendamento.App/SharedQueue/SharedQueueGroupState.cs`
+- `src/NfeAgendamento.App/SharedQueue/SharedQueuePaths.cs`
+- `src/NfeAgendamento.App/SharedQueue/CentralKeyStore.cs`
+- `tests/NfeAgendamento.App.Tests/SharedQueueGroupStateTests.cs`
 
-**Interfaces:**
-- Produces: `CandidateStateStore`, `SharedGroupIdentityStore`, `CandidateBundleStore`.
-- Produces: `CentralKeyStore.ExportPrivateKeyPkcs8()` for one-time migration only.
-- Produces paths for `group-identity.bin`, `authorized-clients.bin` and candidate bundles.
-
-- [ ] **Step 1: Write failing tests** proving DPAPI local persistence, authenticated candidate bundle round-trip, tamper rejection, wrong-client-secret rejection, and group identity round-trip preserving the same public key.
-- [ ] **Step 2: Commit RED tests** and verify CI fails only because the new APIs do not exist.
-- [ ] **Step 3: Implement minimal cryptographic stores** with AES-GCM, explicit format version, AAD per file type, maximum size checks and zeroing of temporary key material.
-- [ ] **Step 4: Run full tests in CI** and keep existing queue crypto tests green.
-- [ ] **Step 5: Commit GREEN implementation.**
+- [x] **Step 1:** testes de DPAPI local, pacote autenticado, adulteração/segredo incorreto e identidade preservada.
+- [x] **Step 2:** ciclo RED registrado antes das APIs de grupo.
+- [x] **Step 3:** stores mínimos com AES-GCM, versão/AAD, limites e limpeza de material temporário.
+- [x] **Step 4:** suíte completa preservada.
+- [x] **Step 5:** implementação GREEN integrada à `main`.
 
 ### Task 2: Estado compartilhado de clientes autorizados e replay
 
 **Files:**
-- Create: `src/NfeAgendamento.App/SharedQueue/SharedAuthorizedClientStore.cs`
-- Modify: `src/NfeAgendamento.App/SharedQueue/SharedQueuePairing.cs`
-- Test: `tests/NfeAgendamento.App.Tests/SharedAuthorizedClientStoreTests.cs`
+- `src/NfeAgendamento.App/SharedQueue/SharedAuthorizedClientStore.cs`
+- `src/NfeAgendamento.App/SharedQueue/SharedQueuePairing.cs`
+- `tests/NfeAgendamento.App.Tests/SharedAuthorizedClientStoreTests.cs`
 
-**Interfaces:**
-- Consumes: `CandidateStateStore.GroupStateKey`.
-- Produces: `Authorize`, `TryAuthenticateAndAdvance`, `Snapshot`, `ReplaceFromLegacy`.
-
-- [ ] **Step 1: Write failing tests** for encrypted persistence, replay block across two store instances, tamper rejection, migration from legacy authorized clients, and monotonic sequence persistence.
-- [ ] **Step 2: Commit RED tests** and confirm expected CI failures.
-- [ ] **Step 3: Implement shared encrypted state** using atomic temp+rename writes; only leader callers may mutate it.
-- [ ] **Step 4: Expose a safe snapshot from legacy `AuthorizedClientStore`** solely for one-time bootstrap; clone and zero secrets where applicable.
-- [ ] **Step 5: Run full CI and commit GREEN.**
+- [x] **Step 1:** testes de persistência cifrada, replay entre líderes, adulteração e migração.
+- [x] **Step 2:** ciclo RED confirmado.
+- [x] **Step 3:** estado compartilhado com AES-GCM e escrita atômica.
+- [x] **Step 4:** leitura do estado legado limitada ao bootstrap de compatibilidade, preservando `LastSequence` e limpando segredos temporários.
+- [x] **Step 5:** GREEN confirmado no CI.
 
 ### Task 3: Bootstrap/migração e adesão automática
 
 **Files:**
-- Create: `src/NfeAgendamento.App/SharedQueue/SharedQueueGroupBootstrapService.cs`
-- Modify: `src/NfeAgendamento.App/SharedQueue/SharedQueueCentralService.cs`
-- Modify: `src/NfeAgendamento.App/SharedQueue/SharedQueuePairing.cs`
-- Modify: `src/NfeAgendamento.App/Program.cs`
-- Test: `tests/NfeAgendamento.App.Tests/SharedQueueGroupBootstrapTests.cs`
+- `src/NfeAgendamento.App/SharedQueue/SharedQueueGroupBootstrapService.cs`
+- `src/NfeAgendamento.App/SharedQueue/SharedQueueCentralService.cs`
+- `src/NfeAgendamento.App/SharedQueue/SharedQueueGroupPairingProcessor.cs`
+- `src/NfeAgendamento.App/Program.cs`
+- `tests/NfeAgendamento.App.Tests/SharedQueueGroupBootstrapTests.cs`
 
-**Interfaces:**
-- Produces: `EnsureBootstrapAsync()`, `TryImportCandidateBundle()`, `IsCandidateReady`.
-- Central bootstrap retains current public key.
-- Pairing publishes candidate bundle before completing new-client pairing.
-
-- [ ] **Step 1: Write failing tests** for idempotent bootstrap, same-public-key migration, existing client import without re-pair, bundle/public-key mismatch rejection and new-pair candidate publication.
-- [ ] **Step 2: Commit RED tests** and confirm failures represent missing migration behavior.
-- [ ] **Step 3: Implement bootstrap service** using the legacy central flag only to initialize the group when no group identity exists.
-- [ ] **Step 4: Implement candidate import background path** so already-paired clients become eligible automatically.
-- [ ] **Step 5: Update pairing** to persist authorization and candidate bundle before response publication.
-- [ ] **Step 6: Run full CI and commit GREEN.**
+- [x] **Step 1:** testes para bootstrap idempotente, mesma chave pública, import sem reapareamento e mismatch de identidade.
+- [x] **Step 2:** RED confirmado antes do bootstrap.
+- [x] **Step 3:** bootstrap usa a flag legada apenas quando ainda não existe grupo e escreve a migração somente sob `central.lock`.
+- [x] **Step 4:** clientes pareados importam a candidatura automaticamente sem interromper o líder atual.
+- [x] **Step 5:** novo pareamento grava autorização e pacote de candidatura antes da resposta.
+- [x] **Step 6:** GREEN confirmado no CI.
 
 ### Task 4: Liderança automática e despacho local/remoto
 
 **Files:**
-- Modify: `src/NfeAgendamento.App/SharedQueue/SharedQueueCentralService.cs`
-- Modify: `src/NfeAgendamento.App/SharedQueue/SharedQueueProcessor.cs`
-- Modify: `src/NfeAgendamento.App/Fiscal/LookupDispatchService.cs`
-- Test: `tests/NfeAgendamento.App.Tests/SharedQueueAutomaticLeaderTests.cs`
-- Test: `tests/NfeAgendamento.App.Tests/SafetyRegressionTests.cs`
+- `src/NfeAgendamento.App/SharedQueue/SharedQueueCentralLease.cs`
+- `src/NfeAgendamento.App/SharedQueue/SharedQueueCentralService.cs`
+- `src/NfeAgendamento.App/SharedQueue/SharedQueueGroupProcessor.cs`
+- `src/NfeAgendamento.App/Fiscal/LookupDispatchService.cs`
+- `tests/NfeAgendamento.App.Tests/SharedQueueAutomaticLeaderTests.cs`
+- regressões de segurança existentes.
 
-**Interfaces:**
-- `SharedQueueCentralService.IsActive` means this PC currently owns `central.lock`.
-- Standby PCs always dispatch to `SharedQueueClient`.
-- Active leader dispatches directly through `NfeLookupService`.
-
-- [ ] **Step 1: Write failing tests** showing two eligible PCs elect exactly one leader, release causes takeover, public key remains identical after takeover, and dispatch chooses direct only while active.
-- [ ] **Step 2: Extend safety regression** to prove recovered requests still never trigger a second fiscal call after leader takeover.
-- [ ] **Step 3: Commit RED tests** and verify expected failures.
-- [ ] **Step 4: Remove `IsConfiguredAsCentral` from runtime election/dispatch decisions** while preserving it as bootstrap compatibility state.
-- [ ] **Step 5: Switch processor authentication to shared authorized state.**
-- [ ] **Step 6: Run full CI and commit GREEN.**
+- [x] **Step 1:** testes cobrem exclusão de líder, takeover e preservação da chave pública.
+- [x] **Step 2:** recuperação pós-takeover prova que uma chamada fiscal potencialmente emitida não é repetida.
+- [x] **Step 3:** testes de failover adicionados antes do fechamento do runtime.
+- [x] **Step 4:** `IsConfiguredAsCentral` removido de eleição/dispatch normal; mantido apenas no bootstrap legado.
+- [x] **Step 5:** processador usa autorização/replay compartilhados.
+- [x] **Step 6:** lock é revalidado antes de novo trabalho e CI final está verde.
 
 ### Task 5: Certificado, Portal e UX de líder automático
 
 **Files:**
-- Modify: `src/NfeAgendamento.App/Program.cs`
-- Modify: `src/NfeAgendamento.App/CentralForm.cs`
-- Modify: `src/NfeAgendamento.App/TrayApplicationContext.cs`
-- Test: `tests/NfeAgendamento.App.Tests/CentralUiContractTests.cs` or existing equivalent.
-- Test: JS regression files covering bootstrap/Portal behavior.
+- `src/NfeAgendamento.App/Program.cs`
+- `src/NfeAgendamento.App/CentralForm.cs`
+- `src/NfeAgendamento.App/TrayApplicationContext.cs`
+- `src/NfeAgendamento.App/wwwroot/index.html`
+- `src/NfeAgendamento.App/wwwroot/pairing.js`
+- testes de UI/regressão.
 
-**Interfaces:**
-- Certificate selection is local and permitted on every trusted PC.
-- Portal fallback is local and permitted on every PC with a configured A1.
-- UI reports `leader`, `standby`, `share unavailable` instead of manual Central start/stop.
-
-- [ ] **Step 1: Write/adjust failing contract tests** for automatic status labels and removal of manual-start semantics.
-- [ ] **Step 2: Commit RED tests.**
-- [ ] **Step 3: Update API guards** so certificate and Portal are no longer tied to `ConfiguredAsCentral`.
-- [ ] **Step 4: Simplify Central/Tray UI** to diagnostics and automatic leader state; retain no manual action that could disable failover accidentally.
-- [ ] **Step 5: Run .NET and JS regression suites and commit GREEN.**
+- [x] **Step 1:** contratos atualizados para status automático e remoção de start/stop manual.
+- [x] **Step 2:** contratos antigos foram detectados pelo CI e corrigidos para a UX aprovada.
+- [x] **Step 3:** certificado e Portal não dependem mais de `ConfiguredAsCentral`.
+- [x] **Step 4:** janela/bandeja mostram líder, standby, pasta indisponível e autorização.
+- [x] **Step 5:** .NET e regressões JS verdes.
 
 ### Task 6: Documentação, migração e verificação final
 
 **Files:**
-- Modify: `README.md`
-- Modify: `docs/CENTRAL-LAN.md`
-- Modify: `docs/ATUALIZACAO-E-INICIALIZACAO.md`
-- Modify: `docs/superpowers/plans/2026-09-03-automatic-shared-queue-leader.md`
+- `README.md`
+- `docs/CENTRAL-LAN.md`
+- `docs/ATUALIZACAO-E-INICIALIZACAO.md`
+- este plano.
 
-**Interfaces:**
-- Documentation must state that all trusted PCs need the A1 installed/configured and shared-folder access.
-- Document one-time requirement: run the former Central once after upgrading so it can bootstrap the group.
+- [x] **Step 1:** documentação atualizada com arquitetura, migração, failure behavior e checklist físico.
+- [x] **Step 2:** CI #491 executou restore, todos os testes .NET, todas as regressões JS, build Release, publish Windows autocontido, ZIP e upload de artifact com sucesso.
+- [x] **Step 3:** diff revisado desde `f634331c2d4f0590ae54430f6ea542b6b5c294db`; alterações estão limitadas à liderança automática, segurança fiscal, testes e documentação relacionados.
+- [x] **Step 4:** plano atualizado apenas após evidência do CI.
+- [x] **Step 5:** nenhuma release foi publicada nesta execução.
 
-- [ ] **Step 1: Update docs** with architecture, migration, failure behavior and operational checklist.
-- [ ] **Step 2: Run final GitHub Actions**: restore, all .NET tests, all JS regressions, Release build, Windows self-contained publish, ZIP and artifact upload.
-- [ ] **Step 3: Review commit diff** for accidental unrelated changes, plaintext secrets, weakened path validation or retry regressions.
-- [ ] **Step 4: Mark plan checkboxes complete** only for actually verified steps.
-- [ ] **Step 5: Do not publish a release unless explicitly requested.**
+## Aceitação física ainda necessária
+
+Antes de promover a candidata para release, validar em ambiente real:
+
+- [ ] dois ou mais PCs reais disputam e somente um fica líder;
+- [ ] ao encerrar o líder, outro PC assume automaticamente;
+- [ ] antigo líder volta como standby se já houver líder;
+- [ ] consulta funciona no líder e em standby antes/depois do failover;
+- [ ] A1 está instalado/configurado nos candidatos reais;
+- [ ] cooldown/replay permanecem consistentes no compartilhamento real SMB;
+- [ ] WebView2 abre o Portal Nacional atual;
+- [ ] preenchimento de chave e hCaptcha manual continuam funcionais;
+- [ ] certificado A1 é oferecido/selecionado no Portal real;
+- [ ] XML oficial entra no cache e uma nova consulta retorna do cache.
+
+Não provocar `cStat=656` real apenas para teste.
