@@ -66,6 +66,7 @@ public sealed class SharedQueueProcessor
         if (candidate is null)
             return false;
 
+        var recoveredCandidate = IsRecoveredCandidate(candidate);
         var processingPath = _paths.ProcessingPath(requestId);
         try
         {
@@ -109,7 +110,9 @@ public sealed class SharedQueueProcessor
 
             if (!_authorizedClients.TryAuthenticateAndAdvance(envelope, out var authenticationError))
             {
-                var message = authenticationError.Contains("repetida", StringComparison.OrdinalIgnoreCase)
+                var interruptedRecovery = recoveredCandidate
+                    && authenticationError.Contains("repetida", StringComparison.OrdinalIgnoreCase);
+                var message = interruptedRecovery
                     ? "A Central foi interrompida durante esta consulta. Por segurança, a tentativa não foi repetida automaticamente na SEFAZ. Faça uma nova consulta."
                     : authenticationError;
                 var denied = new NfeLookupResult(
@@ -282,6 +285,19 @@ public sealed class SharedQueueProcessor
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
             {
             }
+        }
+    }
+
+    private static bool IsRecoveredCandidate(string path)
+    {
+        try
+        {
+            var lastWrite = new DateTimeOffset(File.GetLastWriteTimeUtc(path), TimeSpan.Zero);
+            return DateTimeOffset.UtcNow - lastWrite >= ProcessingRecoveryAge;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
         }
     }
 
