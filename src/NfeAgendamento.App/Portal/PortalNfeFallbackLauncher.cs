@@ -36,7 +36,7 @@ public sealed class PortalNfeFallbackLauncher
         {
             return new PortalFallbackLaunchResult(
                 PortalFallbackLaunchStatus.Busy,
-                "Já existe uma consulta alternativa aberta no PC Central.");
+                "Já existe uma consulta alternativa aberta neste PC líder.");
         }
 
         try
@@ -50,7 +50,7 @@ public sealed class PortalNfeFallbackLauncher
                 Volatile.Write(ref _windowOpen, 0);
                 return new PortalFallbackLaunchResult(
                     PortalFallbackLaunchStatus.RuntimeMissing,
-                    "O Microsoft Edge WebView2 Runtime não está disponível neste PC Central.");
+                    "O Microsoft Edge WebView2 Runtime não está disponível neste PC.");
             }
 
             var thread = new Thread(() => RunWindow(accessKey))
@@ -63,14 +63,14 @@ public sealed class PortalNfeFallbackLauncher
 
             return new PortalFallbackLaunchResult(
                 PortalFallbackLaunchStatus.Started,
-                "A consulta alternativa foi aberta no PC Central.");
+                "A consulta alternativa foi aberta neste PC líder.");
         }
         catch (WebView2RuntimeNotFoundException)
         {
             Volatile.Write(ref _windowOpen, 0);
             return new PortalFallbackLaunchResult(
                 PortalFallbackLaunchStatus.RuntimeMissing,
-                "O Microsoft Edge WebView2 Runtime não está instalado neste PC Central.");
+                "O Microsoft Edge WebView2 Runtime não está instalado neste PC.");
         }
         catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException)
         {
