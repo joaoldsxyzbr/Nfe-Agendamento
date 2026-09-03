@@ -7,7 +7,7 @@ Aplicativo Windows interno para consultar, visualizar e baixar NF-e. O certifica
 - última release publicada: **v0.1.21**;
 - `main`: candidata **v0.1.22**.
 
-A v0.1.22 adiciona uma contingência manual pelo **Portal Nacional da NF-e** quando a consulta automática recebe `cStat=656`, sem copiar o A1 para os PCs clientes e sem automatizar captcha.
+A v0.1.22 adiciona uma contingência manual pelo **Portal Nacional da NF-e** quando a consulta automática recebe `cStat=656`, sem copiar o A1 para os PCs clientes e sem automatizar captcha. A revisão geral desta candidata também endureceu retries fiscais, timeout da fila, vínculo do pareamento e o fluxo de release.
 
 ## Arquitetura atual
 
@@ -143,6 +143,8 @@ Proteções principais:
 - publicação e recuperação usam escrita/movimentação atômica;
 - pedidos inválidos/adulterados não chegam à camada fiscal.
 
+Os clientes aguardam até **3 minutos** pela resposta da Central. Esse prazo cobre espera normal da fila mais uma chamada fiscal sem fazer o cliente abandonar cedo demais o segredo usado para abrir a resposta cifrada.
+
 ## Central e pareamento
 
 No PC que contém o A1:
@@ -160,7 +162,7 @@ Para autorizar um cliente:
 2. no cliente, informe esse código na área **Conectar à Central**;
 3. após o pareamento, a identidade e as chaves locais ficam protegidas por DPAPI.
 
-O cliente valida a identidade/assinatura da Central e usa AES-GCM, HMAC e RSA OAEP-SHA256 no protocolo da fila.
+O cliente valida a identidade/assinatura da Central e usa AES-GCM, HMAC e RSA OAEP-SHA256 no protocolo da fila. A resposta de pareamento precisa corresponder ao **mesmo `requestId`** da solicitação criada pelo cliente; uma resposta válida de outra solicitação é rejeitada.
 
 ## Consulta em lote
 
@@ -196,7 +198,9 @@ O Central mantém:
 - fila única e serializada;
 - limite de operações admitidas;
 - cooldown persistente de 656;
-- retry limitado apenas para falhas transitórias;
+- HTTP `429 Too Many Requests` **não é repetido automaticamente**;
+- timeout do transporte fiscal **não é repetido automaticamente**, porque o resultado da tentativa é ambíguo;
+- retry com backoff permanece limitado a falhas HTTP/rede transitórias que não sejam 429 nem timeout do transporte;
 - auditoria local sem XML, chave completa ou certificado.
 
 A contingência do Portal é uma rota manual separada e **não remove nem reduz essas proteções**.
@@ -229,6 +233,7 @@ Podem incluir:
 - fila cifrada e autenticada;
 - replay bloqueado por sequência monotônica;
 - heartbeat assinado;
+- resposta de pareamento vinculada à solicitação exata;
 - somente uma Central ativa;
 - XML do Portal validado antes do cache;
 - captcha permanece humano;
@@ -238,7 +243,7 @@ Podem incluir:
 
 Na bandeja do Windows, use **Verificar atualização**. O atualizador valida a release e o pacote antes da instalação.
 
-A atualização da v0.1.22 deve ser publicada pelo fluxo **Release Bridge**, com versão superior à v0.1.21.
+A atualização da v0.1.22 deve ser publicada pelo fluxo **Release Bridge**, com versão superior à v0.1.21. O workflow manual recusa execução quando a referência selecionada não é `main` e mantém a tag presa ao SHA exato que foi testado e empacotado.
 
 ## Desenvolvimento e validação
 
@@ -247,6 +252,7 @@ dotnet restore Nfe-Agendamento.sln
 dotnet test Nfe-Agendamento.sln -c Release
 node tests/js/product-mapping-regression.test.js
 node tests/js/lookup-feedback-regression.test.js
+node tests/js/portal-fallback-regression.test.js
 node tests/js/batch-lookup-regression.test.js
 node tests/js/release-readiness-regression.test.js
 dotnet build Nfe-Agendamento.sln -c Release
@@ -261,8 +267,8 @@ A integração real Portal + hCaptcha + A1 não é automatizada no CI. Ela exige
 ### Automatizado
 
 - [x] restore;
-- [x] testes .NET;
-- [x] regressões JS existentes;
+- [x] testes .NET, incluindo regressões de retry fiscal, timeout da fila e vínculo do pareamento;
+- [x] regressões JS de produto, feedback fiscal, contingência, lote e prontidão de release;
 - [x] build Release;
 - [x] publish Windows x64 autocontido;
 - [x] geração do ZIP/artifact.
@@ -288,11 +294,12 @@ Fluxo oficial:
 
 1. abra **Actions**;
 2. escolha **Release Bridge**;
-3. **Run workflow**;
-4. informe `v0.1.22`;
-5. execute somente depois da validação desejada para a release.
+3. mantenha a referência em **main**;
+4. clique em **Run workflow**;
+5. informe `v0.1.22`;
+6. execute somente depois da validação desejada para a release.
 
-O workflow valida versão, executa testes/build/publish e cria a release no SHA aprovado.
+O workflow valida referência e versão, executa testes/build/publish e cria a release no SHA aprovado.
 
 ## Documentação técnica
 
