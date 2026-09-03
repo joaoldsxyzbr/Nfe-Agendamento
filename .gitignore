@@ -5,4 +5,17 @@ obj/
 *.suo
 TestResults/
 coverage/
+artifacts/
 *.log
+
+# Segredos e material criptografico
+*.pfx
+*.p12
+*.pem
+*.key
+*.snk
+.env
+.env.*
+secrets.json
+appsettings.*.local.json
+*.local.json
