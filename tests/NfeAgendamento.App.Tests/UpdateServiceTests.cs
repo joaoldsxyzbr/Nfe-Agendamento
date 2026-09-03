@@ -2,6 +2,7 @@ using System.IO.Compression;
 using System.Net;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
+using System.Text;
 using NfeAgendamento.App.Updates;
 using Xunit;
 
@@ -9,8 +10,13 @@ namespace NfeAgendamento.App.Tests;
 
 public sealed class UpdateServiceTests
 {
+    private static readonly Uri PackageUri = new(
+        "https://github.com/joaoldsxyzbr/Nfe-Agendamento/releases/download/v1.2.0/Nfe-Agendamento-win-x64.zip");
+    private static readonly Uri SignatureUri = new(
+        "https://github.com/joaoldsxyzbr/Nfe-Agendamento/releases/download/v1.2.0/Nfe-Agendamento-win-x64.zip.sig");
+
     [Fact]
-    public async Task CheckAsync_detects_newer_release_and_official_windows_package()
+    public async Task CheckAsync_detects_newer_release_and_signed_windows_package()
     {
         var publishedDigest = new string('a', 64);
         using var client = new HttpClient(new Handler(_ => new HttpResponseMessage(HttpStatusCode.OK)
@@ -25,14 +31,14 @@ public sealed class UpdateServiceTests
                         name = "Nfe-Agendamento-win-x64.zip",
                         size = 1234,
                         digest = $"sha256:{publishedDigest}",
-                        browser_download_url = "https://github.com/joaoldsxyzbr/Nfe-Agendamento/releases/download/v1.2.0/Nfe-Agendamento-win-x64.zip"
+                        browser_download_url = PackageUri.ToString()
                     },
                     new
                     {
                         name = "Nfe-Agendamento-win-x64.zip.sig",
                         size = 512,
                         digest = (string?)null,
-                        browser_download_url = "https://github.com/joaoldsxyzbr/Nfe-Agendamento/releases/download/v1.2.0/Nfe-Agendamento-win-x64.zip.sig"
+                        browser_download_url = SignatureUri.ToString()
                     }
                 }
             })
@@ -46,7 +52,8 @@ public sealed class UpdateServiceTests
         Assert.Equal(new Version(1, 2, 0), result.LatestVersion);
         Assert.Equal(1234, result.Package!.Size);
         Assert.Equal(publishedDigest, result.Package.Sha256);
-        Assert.Equal("github.com", result.Package.DownloadUrl.Host);
+        Assert.Equal(PackageUri, result.Package.DownloadUrl);
+        Assert.Equal(SignatureUri, result.Package.SignatureUrl);
     }
 
     [Fact]
@@ -65,7 +72,7 @@ public sealed class UpdateServiceTests
                         name = "Nfe-Agendamento-win-x64.zip",
                         size = 1234,
                         digest = $"sha256:{publishedDigest}",
-                        browser_download_url = "https://github.com/joaoldsxyzbr/Nfe-Agendamento/releases/download/v1.2.0/Nfe-Agendamento-win-x64.zip"
+                        browser_download_url = PackageUri.ToString()
                     }
                 }
             })
@@ -94,24 +101,17 @@ public sealed class UpdateServiceTests
     }
 
     [Fact]
-    public async Task PrepareUpdateAsync_validates_digest_and_creates_post_exit_installer()
+    public async Task PrepareUpdateAsync_validates_digest_and_signature_before_staging()
     {
         using var temp = new TemporaryDirectory();
         var zip = BuildPackage();
         var digest = Convert.ToHexString(SHA256.HashData(zip)).ToLowerInvariant();
-        using var client = new HttpClient(new Handler(request =>
-        {
-            Assert.Equal("github.com", request.RequestUri!.Host);
-            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(zip) };
-        }));
-        using var service = new UpdateService(client, new Version(1, 0, 0));
-        var update = new UpdateCheckResult(
-            new Version(1, 0, 0),
-            new Version(1, 2, 0),
-            new UpdatePackage(
-                new Uri("https://github.com/joaoldsxyzbr/Nfe-Agendamento/releases/download/v1.2.0/Nfe-Agendamento-win-x64.zip"),
-                zip.Length,
-                digest));
+        using var signingKey = RSA.Create(2048);
+        var publicKey = signingKey.ExportSubjectPublicKeyInfo();
+        var signature = signingKey.SignData(zip, HashAlgorithmName.SHA256, RSASignaturePadding.Pss);
+        using var client = SignedPackageClient(zip, signature);
+        using var service = new UpdateService(client, new Version(1, 0, 0), publicKey);
+        var update = SignedUpdate(zip.Length, digest);
 
         var prepared = await service.PrepareUpdateAsync(update, temp.Path, processId: 4321);
 
@@ -130,26 +130,63 @@ public sealed class UpdateServiceTests
     }
 
     [Fact]
-    public async Task PrepareUpdateAsync_rejects_package_with_wrong_digest()
+    public async Task PrepareUpdateAsync_rejects_package_with_wrong_digest_before_signature()
     {
         using var temp = new TemporaryDirectory();
         var zip = BuildPackage();
-        using var client = new HttpClient(new Handler(_ =>
-            new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(zip) }));
-        using var service = new UpdateService(client, new Version(1, 0, 0));
-        var update = new UpdateCheckResult(
-            new Version(1, 0, 0),
-            new Version(1, 2, 0),
-            new UpdatePackage(
-                new Uri("https://github.com/joaoldsxyzbr/Nfe-Agendamento/releases/download/v1.2.0/Nfe-Agendamento-win-x64.zip"),
-                zip.Length,
-                new string('0', 64)));
+        using var signingKey = RSA.Create(2048);
+        var publicKey = signingKey.ExportSubjectPublicKeyInfo();
+        var signature = signingKey.SignData(zip, HashAlgorithmName.SHA256, RSASignaturePadding.Pss);
+        using var client = SignedPackageClient(zip, signature);
+        using var service = new UpdateService(client, new Version(1, 0, 0), publicKey);
+        var update = SignedUpdate(zip.Length, new string('0', 64));
 
         var exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
             service.PrepareUpdateAsync(update, temp.Path, processId: 4321));
 
         Assert.Contains("integridade", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public async Task PrepareUpdateAsync_rejects_invalid_detached_signature()
+    {
+        using var temp = new TemporaryDirectory();
+        var zip = BuildPackage();
+        var digest = Convert.ToHexString(SHA256.HashData(zip)).ToLowerInvariant();
+        using var trustedKey = RSA.Create(2048);
+        using var attackerKey = RSA.Create(2048);
+        var publicKey = trustedKey.ExportSubjectPublicKeyInfo();
+        var forgedSignature = attackerKey.SignData(zip, HashAlgorithmName.SHA256, RSASignaturePadding.Pss);
+        using var client = SignedPackageClient(zip, forgedSignature);
+        using var service = new UpdateService(client, new Version(1, 0, 0), publicKey);
+        var update = SignedUpdate(zip.Length, digest);
+
+        var exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
+            service.PrepareUpdateAsync(update, temp.Path, processId: 4321));
+
+        Assert.Contains("assinatura", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(Directory.EnumerateDirectories(temp.Path, ".*.update-*", SearchOption.TopDirectoryOnly));
+    }
+
+    private static UpdateCheckResult SignedUpdate(int size, string digest) =>
+        new(
+            new Version(1, 0, 0),
+            new Version(1, 2, 0),
+            new UpdatePackage(PackageUri, size, digest, SignatureUri));
+
+    private static HttpClient SignedPackageClient(byte[] zip, byte[] signature) =>
+        new(new Handler(request =>
+        {
+            Assert.Equal("github.com", request.RequestUri!.Host);
+            if (request.RequestUri == PackageUri)
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(zip) };
+            if (request.RequestUri == SignatureUri)
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(Convert.ToBase64String(signature), Encoding.ASCII, "text/plain")
+                };
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        }));
 
     private static byte[] BuildPackage()
     {
