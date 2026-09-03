@@ -9,6 +9,26 @@ public sealed class SharedQueueCentralLease : IDisposable
         _stream = stream;
     }
 
+    public bool IsHealthy
+    {
+        get
+        {
+            var stream = Volatile.Read(ref _stream);
+            if (stream is null)
+                return false;
+
+            try
+            {
+                stream.Flush(flushToDisk: true);
+                return true;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ObjectDisposedException)
+            {
+                return false;
+            }
+        }
+    }
+
     public static SharedQueueCentralLease? TryAcquire(SharedQueuePaths paths)
     {
         ArgumentNullException.ThrowIfNull(paths);
