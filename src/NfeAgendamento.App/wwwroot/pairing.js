@@ -32,6 +32,7 @@
     const status = byId('clientPairingStatus');
     const lookup = byId('lookup');
     if (form) form.hidden = Boolean(bootstrap.clientPaired);
+    if (lookup) lookup.disabled = false;
 
     if (bootstrap.clientPaired) {
       if (status) {
@@ -42,13 +43,11 @@
             : 'PC autorizado. Aguardando um líder da fila ficar disponível.';
         status.className = 'status';
       }
-      if (lookup) lookup.disabled = false;
     } else {
       if (status) {
         status.textContent = 'Este PC ainda precisa ser autorizado uma vez por um PC que esteja processando a fila.';
         status.className = 'status error';
       }
-      if (lookup) lookup.disabled = true;
     }
   }
 
