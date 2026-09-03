@@ -121,48 +121,42 @@ public sealed class NfeLookupService
                 return InvalidFiscalStateResult();
             }
 
-            NfeDistributionResponse? response = null;
-            for (var attempt = 0; attempt < 3; attempt++)
+            NfeDistributionResponse response;
+            try
             {
-                try
-                {
-                    response = await _transport.QueryByAccessKeyAsync(accessKey, cancellationToken);
-                    break;
-                }
-                catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.TooManyRequests)
-                {
-                    return new NfeLookupResult(
-                        NfeLookupStatus.Failed,
-                        null,
-                        null,
-                        "A SEFAZ recusou a consulta por excesso de requisições. Aguarde antes de tentar novamente.",
-                        false);
-                }
-                catch (HttpRequestException ex) when (IsTransientHttpError(ex) && attempt < 2)
-                {
-                    await _delay(attempt == 0 ? TimeSpan.FromSeconds(2) : TimeSpan.FromSeconds(5), cancellationToken);
-                }
-                catch (HttpRequestException)
-                {
-                    return new NfeLookupResult(NfeLookupStatus.Failed, null, null, "Não foi possível comunicar com a SEFAZ.", false);
-                }
-                catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
-                {
-                    return new NfeLookupResult(
-                        NfeLookupStatus.Failed,
-                        null,
-                        null,
-                        "A consulta à SEFAZ excedeu o tempo limite. Ela não será repetida automaticamente para evitar uma possível consulta duplicada.",
-                        false);
-                }
-                catch (InvalidDataException)
-                {
-                    return new NfeLookupResult(NfeLookupStatus.Failed, null, null, "A resposta recebida da SEFAZ não pôde ser validada com segurança.", false);
-                }
+                response = await _transport.QueryByAccessKeyAsync(accessKey, cancellationToken);
             }
-
-            if (response is null)
-                return new NfeLookupResult(NfeLookupStatus.Failed, null, null, "Não foi possível comunicar com a SEFAZ após novas tentativas.", false);
+            catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.TooManyRequests)
+            {
+                return new NfeLookupResult(
+                    NfeLookupStatus.Failed,
+                    null,
+                    null,
+                    "A SEFAZ recusou a consulta por excesso de requisições. Aguarde antes de tentar novamente. A tentativa não será repetida automaticamente.",
+                    false);
+            }
+            catch (HttpRequestException)
+            {
+                return new NfeLookupResult(
+                    NfeLookupStatus.Failed,
+                    null,
+                    null,
+                    "Não foi possível comunicar com a SEFAZ. Por segurança, a tentativa não será repetida automaticamente para evitar uma possível consulta duplicada.",
+                    false);
+            }
+            catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                return new NfeLookupResult(
+                    NfeLookupStatus.Failed,
+                    null,
+                    null,
+                    "A consulta à SEFAZ excedeu o tempo limite. Ela não será repetida automaticamente para evitar uma possível consulta duplicada.",
+                    false);
+            }
+            catch (InvalidDataException)
+            {
+                return new NfeLookupResult(NfeLookupStatus.Failed, null, null, "A resposta recebida da SEFAZ não pôde ser validada com segurança.", false);
+            }
 
             try
             {
@@ -199,15 +193,6 @@ public sealed class NfeLookupService
                 return new NfeLookupResult(NfeLookupStatus.Failed, null, null, "A resposta recebida da SEFAZ não pôde ser validada com segurança.", false);
             }
         }
-    }
-
-    private static bool IsTransientHttpError(HttpRequestException exception)
-    {
-        if (exception.StatusCode is null)
-            return true;
-
-        var statusCode = (int)exception.StatusCode.Value;
-        return exception.StatusCode == HttpStatusCode.RequestTimeout || statusCode >= 500;
     }
 
     private static NfeLookupResult InvalidFiscalStateResult() =>
