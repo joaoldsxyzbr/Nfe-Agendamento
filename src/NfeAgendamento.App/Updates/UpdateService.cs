@@ -71,9 +71,21 @@ public sealed class UpdateService : IDisposable
         if (processId <= 0)
             throw new ArgumentOutOfRangeException(nameof(processId));
 
-        var installPath = Path.GetFullPath(installDirectory);
+        var installPath = Path.TrimEndingDirectorySeparator(Path.GetFullPath(installDirectory));
         Directory.CreateDirectory(installPath);
-        EnsureInstallDirectoryIsWritable(installPath);
+        EnsureDirectoryIsWritable(
+            installPath,
+            "A pasta atual não permite atualização automática. Mova o aplicativo para uma pasta gravável ou atualize manualmente.");
+
+        var installParent = Directory.GetParent(installPath)?.FullName
+            ?? throw new InvalidOperationException("A pasta de instalação não possui um diretório pai válido para atualização segura.");
+        EnsureDirectoryIsWritable(
+            installParent,
+            "A pasta pai da instalação não permite preparar uma troca segura. Atualize manualmente.");
+
+        var installName = Path.GetFileName(installPath);
+        if (string.IsNullOrWhiteSpace(installName))
+            throw new InvalidOperationException("A pasta de instalação não pode ser substituída com segurança.");
 
         var workspace = Path.Combine(
             Path.GetTempPath(),
@@ -82,6 +94,8 @@ public sealed class UpdateService : IDisposable
             Guid.NewGuid().ToString("N"));
         var staging = Path.Combine(workspace, "staging");
         var packagePath = Path.Combine(workspace, WindowsPackageName);
+        var nextInstall = Path.Combine(installParent, $".{installName}.update-{Guid.NewGuid():N}");
+        var backupInstall = Path.Combine(installParent, $".{installName}.backup");
         Directory.CreateDirectory(staging);
 
         try
@@ -95,7 +109,13 @@ public sealed class UpdateService : IDisposable
                 throw new InvalidDataException("O pacote de atualização não contém o executável esperado.");
 
             var scriptPath = Path.Combine(workspace, "apply-update.ps1");
-            var script = BuildInstallerScript(processId, staging, installPath, workspace);
+            var script = BuildInstallerScript(
+                processId,
+                staging,
+                installPath,
+                nextInstall,
+                backupInstall,
+                workspace);
             await File.WriteAllTextAsync(scriptPath, script, new UTF8Encoding(false), cancellationToken);
 
             return new PreparedUpdate(update.LatestVersion, scriptPath, staging);
@@ -241,38 +261,122 @@ public sealed class UpdateService : IDisposable
         int processId,
         string stagingDirectory,
         string installDirectory,
+        string nextInstallDirectory,
+        string backupInstallDirectory,
         string workspace)
     {
         static string Ps(string value) => "'" + value.Replace("'", "''", StringComparison.Ordinal) + "'";
 
         return $$"""
 $ErrorActionPreference = 'Stop'
-try { Wait-Process -Id {{processId}} -ErrorAction SilentlyContinue } catch { }
-Start-Sleep -Milliseconds 500
 $staging = {{Ps(stagingDirectory)}}
 $install = {{Ps(installDirectory)}}
-Get-ChildItem -LiteralPath $staging -Force | ForEach-Object {
-    Copy-Item -LiteralPath $_.FullName -Destination $install -Recurse -Force
-}
-$exe = Join-Path $install 'NfeAgendamento.App.exe'
-Start-Process -FilePath $exe -WorkingDirectory $install
+$next = {{Ps(nextInstallDirectory)}}
+$backup = {{Ps(backupInstallDirectory)}}
+$workspace = {{Ps(workspace)}}
+$newProcess = $null
+$swapped = $false
+
+try { Wait-Process -Id {{processId}} -ErrorAction SilentlyContinue } catch { }
 Start-Sleep -Milliseconds 500
-Remove-Item -LiteralPath {{Ps(workspace)}} -Recurse -Force -ErrorAction SilentlyContinue
+
+try {
+    if (Test-Path -LiteralPath $next) {
+        Remove-Item -LiteralPath $next -Recurse -Force
+    }
+    if (Test-Path -LiteralPath $backup) {
+        throw 'Existe um backup de atualização anterior. Restaure ou remova esse backup manualmente antes de atualizar novamente.'
+    }
+
+    Move-Item -LiteralPath $staging -Destination $next
+    if (-not (Test-Path -LiteralPath (Join-Path $next 'NfeAgendamento.App.exe'))) {
+        throw 'A versão preparada não contém o executável esperado.'
+    }
+
+    Move-Item -LiteralPath $install -Destination $backup
+    $swapped = $true
+    Move-Item -LiteralPath $next -Destination $install
+
+    $exe = Join-Path $install 'NfeAgendamento.App.exe'
+    $newProcess = Start-Process -FilePath $exe -WorkingDirectory $install -PassThru
+    $deadline = [DateTime]::UtcNow.AddSeconds(20)
+    $healthy = $false
+
+    while ([DateTime]::UtcNow -lt $deadline) {
+        if ($newProcess.HasExited) {
+            break
+        }
+
+        try {
+            $response = Invoke-WebRequest -Uri 'http://127.0.0.1:17345/api/bootstrap' -UseBasicParsing -TimeoutSec 2
+            if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 300) {
+                $healthy = $true
+                break
+            }
+        } catch { }
+
+        Start-Sleep -Milliseconds 500
+    }
+
+    if (-not $healthy) {
+        throw 'A nova versão não respondeu ao health check local em até 20 segundos.'
+    }
+
+    Remove-Item -LiteralPath $backup -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $workspace -Recurse -Force -ErrorAction SilentlyContinue
+    exit 0
+}
+catch {
+    $failure = $_.Exception.Message
+
+    if ($newProcess -ne $null) {
+        try {
+            if (-not $newProcess.HasExited) {
+                Stop-Process -Id $newProcess.Id -Force -ErrorAction SilentlyContinue
+                $newProcess.WaitForExit(5000) | Out-Null
+            }
+        } catch { }
+    }
+
+    if ($swapped) {
+        try {
+            if (Test-Path -LiteralPath $install) {
+                Remove-Item -LiteralPath $install -Recurse -Force
+            }
+            if (Test-Path -LiteralPath $backup) {
+                Move-Item -LiteralPath $backup -Destination $install
+            }
+        } catch {
+            try { Set-Content -LiteralPath (Join-Path $workspace 'rollback-error.txt') -Value $_.Exception.Message -Encoding UTF8 } catch { }
+            throw
+        }
+    }
+
+    if (Test-Path -LiteralPath $next) {
+        Remove-Item -LiteralPath $next -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    $oldExe = Join-Path $install 'NfeAgendamento.App.exe'
+    if (Test-Path -LiteralPath $oldExe) {
+        try { Start-Process -FilePath $oldExe -WorkingDirectory $install } catch { }
+    }
+
+    try { Set-Content -LiteralPath (Join-Path $workspace 'update-error.txt') -Value $failure -Encoding UTF8 } catch { }
+    exit 1
+}
 """;
     }
 
-    private static void EnsureInstallDirectoryIsWritable(string installDirectory)
+    private static void EnsureDirectoryIsWritable(string directory, string errorMessage)
     {
-        var probe = Path.Combine(installDirectory, $".nfe-update-{Guid.NewGuid():N}.tmp");
+        var probe = Path.Combine(directory, $".nfe-update-{Guid.NewGuid():N}.tmp");
         try
         {
             File.WriteAllText(probe, string.Empty);
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
         {
-            throw new InvalidOperationException(
-                "A pasta atual não permite atualização automática. Mova o aplicativo para uma pasta gravável ou atualize manualmente.",
-                ex);
+            throw new InvalidOperationException(errorMessage, ex);
         }
         finally
         {
