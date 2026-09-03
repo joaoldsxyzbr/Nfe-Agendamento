@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using NfeAgendamento.App.SharedQueue;
 
 namespace NfeAgendamento.App.Fiscal;
 
@@ -11,8 +12,12 @@ public sealed record FiscalCooldownState(DateTimeOffset? BlockedUntilUtc)
 
 public sealed class FiscalCooldownStore
 {
+    private const int MaxSharedBytes = 16 * 1024;
     private static readonly byte[] Entropy = Encoding.UTF8.GetBytes("NfeAgendamento.FiscalCooldown.v1");
+    private static readonly byte[] SharedAssociatedData = Encoding.UTF8.GetBytes("nfe-agendamento:fiscal-cooldown:v1");
     private readonly string _path;
+    private readonly CandidateStateStore? _candidateState;
+    private readonly bool _sharedMode;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private DateTimeOffset? _volatileBlockedUntilUtc;
 
@@ -26,6 +31,14 @@ public sealed class FiscalCooldownStore
         if (string.IsNullOrWhiteSpace(path))
             throw new ArgumentException("Caminho do estado fiscal inválido.", nameof(path));
         _path = path;
+    }
+
+    public FiscalCooldownStore(SharedQueuePaths paths, CandidateStateStore candidateState)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        _candidateState = candidateState ?? throw new ArgumentNullException(nameof(candidateState));
+        _path = Path.Combine(paths.StatusDirectory, "fiscal-cooldown.bin");
+        _sharedMode = true;
     }
 
     public async Task<FiscalCooldownState> ReadAsync(CancellationToken cancellationToken = default)
@@ -82,8 +95,6 @@ public sealed class FiscalCooldownStore
                 ? existing.ToUniversalTime()
                 : candidate;
 
-            // O bloqueio em memória é aplicado antes da persistência. Assim, uma falha de disco/permissão
-            // após um cStat=656 nunca libera novas consultas durante a vida deste processo.
             _volatileBlockedUntilUtc = blockedUntil;
 
             try
@@ -92,8 +103,7 @@ public sealed class FiscalCooldownStore
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                // A proteção fiscal é prioritária. A persistência pode ser recuperada depois,
-                // mas o processo atual permanece bloqueado até o horário calculado.
+                // Fail-safe: o processo atual continua bloqueado mesmo se a persistência compartilhada falhar.
             }
         }
         finally
@@ -106,10 +116,8 @@ public sealed class FiscalCooldownStore
     {
         if (_volatileBlockedUntilUtc is not { } volatileUntil)
             return persisted;
-
         if (persisted.BlockedUntilUtc is { } persistedUntil && persistedUntil.ToUniversalTime() > volatileUntil.ToUniversalTime())
             return persisted;
-
         return new FiscalCooldownState(volatileUntil.ToUniversalTime());
     }
 
@@ -117,6 +125,43 @@ public sealed class FiscalCooldownStore
     {
         if (!File.Exists(_path))
             return FiscalCooldownState.Empty;
+
+        if (_sharedMode)
+        {
+            var groupKey = _candidateState!.Load()
+                ?? throw new InvalidOperationException("Este PC não possui o estado seguro do grupo para validar o cooldown fiscal.");
+            byte[]? bytes = null;
+            byte[]? plain = null;
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                SharedQueueFileIO.EnsureNotReparsePoint(_path);
+                bytes = SharedQueueFileIO.ReadAllBytes(_path, MaxSharedBytes);
+                ProtectedGroupEnvelope envelope;
+                try
+                {
+                    envelope = JsonSerializer.Deserialize<ProtectedGroupEnvelope>(bytes)
+                        ?? throw new CryptographicException("Estado fiscal compartilhado inválido.");
+                }
+                catch (JsonException ex)
+                {
+                    throw new CryptographicException("Estado fiscal compartilhado inválido.", ex);
+                }
+                plain = CandidateBundleStore.Unprotect(groupKey, envelope, SharedAssociatedData);
+                return JsonSerializer.Deserialize<FiscalCooldownState>(plain)
+                    ?? throw new InvalidDataException("Estado fiscal compartilhado inválido.");
+            }
+            catch (Exception ex) when (ex is CryptographicException or JsonException)
+            {
+                throw new InvalidDataException("O estado fiscal compartilhado não pôde ser validado com segurança.", ex);
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(groupKey);
+                if (bytes is not null) CryptographicOperations.ZeroMemory(bytes);
+                if (plain is not null) CryptographicOperations.ZeroMemory(plain);
+            }
+        }
 
         try
         {
@@ -134,24 +179,63 @@ public sealed class FiscalCooldownStore
     private async Task WriteCoreAsync(FiscalCooldownState state, CancellationToken cancellationToken)
     {
         var directory = Path.GetDirectoryName(_path)
-            ?? throw new InvalidOperationException("Caminho do estado fiscal local inválido.");
+            ?? throw new InvalidOperationException("Caminho do estado fiscal inválido.");
         Directory.CreateDirectory(directory);
+
+        if (_sharedMode)
+        {
+            var groupKey = _candidateState!.Load()
+                ?? throw new InvalidOperationException("Este PC não possui o estado seguro do grupo para persistir o cooldown fiscal.");
+            var plain = JsonSerializer.SerializeToUtf8Bytes(state);
+            byte[]? bytes = null;
+            try
+            {
+                var envelope = CandidateBundleStore.Protect(groupKey, plain, SharedAssociatedData);
+                bytes = JsonSerializer.SerializeToUtf8Bytes(envelope);
+                var temporary = _path + $".{Guid.NewGuid():N}.tmp";
+                try
+                {
+                    await SharedQueueFileIO.WriteAtomicAsync(temporary, _path, bytes, MaxSharedBytes, true, cancellationToken);
+                }
+                finally
+                {
+                    TryDelete(temporary);
+                }
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(groupKey);
+                CryptographicOperations.ZeroMemory(plain);
+                if (bytes is not null) CryptographicOperations.ZeroMemory(bytes);
+            }
+            return;
+        }
 
         var plainBytes = JsonSerializer.SerializeToUtf8Bytes(state);
         var protectedBytes = ProtectedData.Protect(plainBytes, Entropy, DataProtectionScope.CurrentUser);
-        var temporary = _path + ".tmp";
-        await File.WriteAllBytesAsync(temporary, protectedBytes, cancellationToken);
-        File.Move(temporary, _path, overwrite: true);
+        try
+        {
+            var temporary = _path + ".tmp";
+            await File.WriteAllBytesAsync(temporary, protectedBytes, cancellationToken);
+            File.Move(temporary, _path, overwrite: true);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(plainBytes);
+            CryptographicOperations.ZeroMemory(protectedBytes);
+        }
     }
 
     private static void TryDelete(string path)
     {
         try
         {
-            if (File.Exists(path))
-                File.Delete(path);
+            if (File.Exists(path)) File.Delete(path);
         }
         catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
         {
         }
     }
