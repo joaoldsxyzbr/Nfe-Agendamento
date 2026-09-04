@@ -127,6 +127,8 @@ O fallback manual do Portal não exige `central.lock`, mas o PC precisa ter o es
 
 O XML oficial baixado e validado entra no mesmo cache compartilhado de 24 horas. Assim que aparece no cache, a interface local carrega a NF-e automaticamente sem polling fiscal.
 
+Callbacks tardios do WebView2 durante o fechamento da janela são tratados somente para falhas esperadas de ciclo de vida do controle. Erros de XML, certificado, disco ou falhas COM não relacionadas ao encerramento continuam visíveis e não são silenciosamente ignorados.
+
 ## Iniciar com o Windows
 
 A opção **Iniciar com o Windows** registra o executável no perfil atual em:
@@ -169,11 +171,11 @@ Após confirmação:
 11. verifica `http://127.0.0.1:17345/api/bootstrap` por até 20 segundos;
 12. em falha, encerra a versão nova, restaura o backup e reinicia a versão anterior.
 
-### Hardening em andamento para v0.1.31
+### Health check vinculado à versão
 
-A `main` já expõe `appVersion` em `/api/bootstrap`. Antes da v0.1.31 ainda falta concluir a segunda metade do hardening: o script de instalação deve comparar `appVersion` com a versão exata que acabou de instalar. Um HTTP 2xx de outra versão não será suficiente para confirmar sucesso; nesse caso deverá ocorrer rollback.
+A partir da v0.1.31, `/api/bootstrap` expõe `appVersion` e o instalador só aceita o health check quando a resposta é HTTP 2xx, contém JSON válido e `appVersion` é uma string exatamente igual à versão preparada. JSON malformado, campo ausente, tipo incorreto ou outra versão respondendo na porta local não confirmam sucesso e provocam rollback.
 
-Até esse gate voltar a GREEN e a release ser publicada, a última release oficial continua sendo **v0.1.30**.
+Assim, uma instância antiga ainda viva em `127.0.0.1:17345` não pode ser confundida com a versão recém-instalada.
 
 Os dados persistentes em `%LOCALAPPDATA%\NfeAgendamento` não são substituídos.
 
