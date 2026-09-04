@@ -186,7 +186,8 @@ Em pelo menos um PC autorizado em standby:
 - [ ] XML baixado é validado contra a chave solicitada;
 - [ ] XML válido entra no cache compartilhado;
 - [ ] a interface local carrega a NF-e sem nova consulta automática à SEFAZ;
-- [ ] uma segunda janela de contingência não abre enquanto a primeira ainda está ativa.
+- [ ] uma segunda janela de contingência não abre enquanto a primeira ainda está ativa;
+- [ ] fechar a janela durante navegação/download não derruba o app por callback tardio do WebView2.
 
 ## Cancelamento fiscal
 
@@ -198,8 +199,6 @@ No lote ou em consulta iniciada, valide que:
 
 ## Cobertura automatizada relacionada
 
-O CI já cobre eleição de um único líder, takeover, conservação/rotação controlada da identidade, fail-closed após perda de lease, não repetição de pedido fiscal ambíguo, cache compartilhado, fencing imediatamente antes da SEFAZ, bootstrap recuperável, pareamento one-shot, staging de rotação, cadeia RSA assinada, gerenciamento de PCs e rollback do atualizador.
+O CI cobre eleição de um único líder, takeover, conservação/rotação controlada da identidade, fail-closed após perda de lease, não repetição de pedido fiscal ambíguo, cache compartilhado, fencing imediatamente antes da SEFAZ, bootstrap recuperável, pareamento one-shot, staging de rotação, cadeia RSA assinada, gerenciamento de PCs, rollback do atualizador, health check vinculado à versão e tratamento estreito de falhas de ciclo de vida do WebView2.
 
-O gate de health check vinculado à versão está em implementação para a v0.1.31; ele deve estar GREEN antes da release.
-
-Este roteiro existe especificamente para validar diferenças de SMB, Windows Certificate Store, rede, WebView2 e processo entre máquinas reais.
+Os checkboxes acima permanecem deliberadamente manuais porque validam diferenças reais de SMB, Windows Certificate Store, rede, WebView2 e processo entre máquinas distintas; eles não devem ser marcados como concluídos apenas com evidência de CI.
