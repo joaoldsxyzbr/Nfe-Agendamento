@@ -71,6 +71,64 @@ public sealed class PairingRobustnessTests
     }
 
     [Fact]
+    public async Task Pairing_code_is_consumed_after_first_successful_authorization()
+    {
+        using var temp = new TempDirectory();
+        var share = Path.Combine(temp.Path, "share");
+        Directory.CreateDirectory(share);
+        var paths = new SharedQueuePaths(share);
+        paths.InitializeAsCentral();
+
+        var groupKey = RandomNumberGenerator.GetBytes(32);
+        using var rsa = RSA.Create(2048);
+        var privateKey = rsa.ExportPkcs8PrivateKey();
+        var groupIdentity = new SharedGroupIdentityStore(paths);
+        groupIdentity.Initialize(groupKey, privateKey);
+        var leaderCandidate = new CandidateStateStore(Path.Combine(temp.Path, "leader-candidate.bin"));
+        leaderCandidate.Save(groupKey);
+        var codes = new PairingCodeService();
+        var processor = new SharedQueueGroupPairingProcessor(
+            paths,
+            codes,
+            new SharedAuthorizedClientStore(paths, leaderCandidate),
+            new CentralKeyStore(leaderCandidate, groupIdentity),
+            leaderCandidate,
+            new CandidateBundleStore(paths));
+        var code = codes.Generate();
+
+        var first = new SharedQueuePairingClient(
+            paths,
+            new ClientPairingStore(Path.Combine(temp.Path, "client-1.bin")),
+            TimeSpan.FromMilliseconds(20),
+            TimeSpan.FromSeconds(2));
+        var firstTask = first.PairAsync(code.Code);
+        await WaitForPairingRequestAsync(paths.PairingDirectory);
+        Assert.True(await processor.ProcessOneAsync());
+        Assert.True((await firstTask).Success);
+
+        using var cts = new CancellationTokenSource();
+        var second = new SharedQueuePairingClient(
+            paths,
+            new ClientPairingStore(Path.Combine(temp.Path, "client-2.bin")),
+            TimeSpan.FromMilliseconds(20),
+            TimeSpan.FromSeconds(2));
+        var secondTask = second.PairAsync(code.Code, cts.Token);
+        await WaitForPairingRequestAsync(paths.PairingDirectory);
+
+        try
+        {
+            Assert.False(await processor.ProcessOneAsync());
+        }
+        finally
+        {
+            cts.Cancel();
+            try { await secondTask; } catch (OperationCanceledException) { }
+            CryptographicOperations.ZeroMemory(groupKey);
+            CryptographicOperations.ZeroMemory(privateKey);
+        }
+    }
+
+    [Fact]
     public async Task Leader_without_group_state_does_not_consume_pairing_request()
     {
         using var temp = new TempDirectory();
