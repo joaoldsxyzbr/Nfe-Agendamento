@@ -4,10 +4,10 @@ Aplicativo Windows interno para consultar, visualizar e baixar NF-e. Cada PC exe
 
 ## Versão
 
-- última release publicada: **v0.1.29**;
-- `main`: **v0.1.29**.
+- última release publicada: **v0.1.30**;
+- `main`: **v0.1.30**.
 
-A v0.1.29 corrige a recuperação do pareamento na arquitetura de grupo automático: somente o estado seguro real do grupo marca o PC como autorizado, e a API não confirma sucesso quando o pacote de candidatura não foi importado. O fallback manual do Portal continua disponível em qualquer PC autorizado, inclusive em standby, e a atualização permanece protegida por **Sigstore keyless**.
+A v0.1.30 endurece o pareamento da arquitetura de grupo automático. O líder usa obrigatoriamente a identidade criptográfica compartilhada do grupo, o pareamento só retorna sucesso depois da importação segura do estado do grupo, estados locais incompletos são descartados, pedidos não são consumidos quando o líder perdeu o estado seguro e envios duplicados são serializados no backend e bloqueados na interface.
 
 ## Arquitetura atual
 
@@ -43,7 +43,7 @@ resposta cifrada ao solicitante
 
 Mesmo com A1 nos PCs confiáveis, somente o líder com lock exclusivo e saudável inicia trabalho fiscal automático.
 
-## Liderança automática e fencing fiscal
+## Liderança automática e identidade do grupo
 
 O lock exclusivo fica em:
 
@@ -53,25 +53,58 @@ P:\01-Nfe agendamento\status\central.lock
 
 Somente um processo pode mantê-lo aberto com exclusividade. O líder publica heartbeat assinado e processa a fila; os demais permanecem em standby.
 
+A chave RSA usada pelo líder não pertence ao PC que venceu a eleição. Ela vem de `group-identity.bin`, protegida pela chave de estado do grupo. Assim, troca de líder não altera a identidade pública confiada pelos clientes.
+
 Antes de cada chamada fiscal, a autoridade do líder é revalidada no último boundary possível. Se a liderança foi perdida, a operação falha de forma segura e uma nova chamada fiscal não é iniciada automaticamente.
 
-A configuração legada `ConfiguredAsCentral` existe apenas por compatibilidade/migração e não controla o dispatch normal.
+A configuração legada `ConfiguredAsCentral` existe apenas para compatibilidade/migração e não controla o dispatch normal.
 
-## Migração da Central antiga
+## Pareamento robusto
+
+O código temporário de autorização só pode ser gerado pelo líder atual.
+
+Fluxo normal:
+
+1. no líder, abra **Configurar**;
+2. clique em **Gerar código de autorização**;
+3. no novo PC, informe o código em **Autorizar este PC**;
+4. o cliente publica um pedido cifrado na pasta compartilhada;
+5. o líder valida o pedido usando o código ativo;
+6. o líder registra o cliente e publica seu pacote de candidatura;
+7. a resposta fixa a mesma identidade pública compartilhada do grupo;
+8. o cliente importa e valida o estado seguro do grupo;
+9. somente depois dessa validação a API responde sucesso;
+10. o PC passa a operar como cliente e futuro candidato a líder.
+
+Proteções da v0.1.30:
+
+- o `CentralKeyStore` de produção usa `CandidateStateStore + SharedGroupIdentityStore`;
+- um líder sem estado seguro do grupo não consome nem apaga o pedido de pareamento;
+- falhas transitórias depois da leitura do pedido restauram o arquivo para nova tentativa;
+- o cliente tenta recuperar um pareamento parcial anterior antes de iniciar outro;
+- se a validação final do grupo falhar, o estado local parcial é apagado;
+- solicitações simultâneas no mesmo PC são serializadas por um coordenador único;
+- cliques ou `Enter` repetidos são bloqueados na interface;
+- `clientPaired` só fica verdadeiro quando `CandidateStateStore` está realmente pronto;
+- um `409` representa falha real de pareamento, não sucesso parcial mascarado.
+
+O código é temporário e ligado ao líder que o gerou. Se ocorrer troca de líder durante a autorização, gere um novo código no líder atual.
+
+## Migração da arquitetura anterior
 
 Na primeira execução desta arquitetura:
 
-1. atualize o aplicativo;
-2. abra primeiro o PC que era a Central antiga;
+1. atualize todos os PCs;
+2. abra primeiro o PC que possuía o estado legado da Central;
 3. mantenha `P:\01-Nfe agendamento` acessível;
-4. a identidade já pareada, autorização e replay são migrados para o estado do grupo;
-5. os clientes pareados importam seus pacotes de candidatura;
-6. o antigo Central também recebe identidade de cliente;
+4. identidade, autorização e replay são migrados para o estado do grupo;
+5. clientes já pareados tentam importar seus pacotes de candidatura;
+6. estados locais legados que não validarem são tratados como não autorizados;
 7. depois disso qualquer PC autorizado e saudável pode assumir a liderança.
 
-A migração é idempotente e preserva a confiança dos clientes já autorizados. Se existir estado legado local sem candidatura válida do grupo, a interface volta a oferecer a autorização em vez de tratar o PC como pareado.
+A migração é idempotente e preserva a identidade do grupo.
 
-## Estrutura e segurança do grupo
+## Estrutura compartilhada
 
 ```text
 P:\01-Nfe agendamento\
@@ -187,19 +220,6 @@ Proteções do Portal:
 - XML de outra chave é rejeitado;
 - apenas uma janela de contingência pode ficar aberta por vez em cada PC.
 
-A integração WebView2 + Portal + hCaptcha + A1 continua exigindo teste físico em ambiente real.
-
-## Autorizar outro PC
-
-O código temporário de autorização só pode ser gerado pelo líder atual.
-
-1. no líder, abra **Configurar**;
-2. clique em **Gerar código de autorização**;
-3. no novo PC, informe o código em **Autorizar este PC**;
-4. o líder registra o cliente e publica seu pacote de candidatura;
-5. o novo PC importa o estado seguro do grupo;
-6. somente após essa importação o PC é considerado autorizado e passa a operar como cliente e futuro candidato a líder.
-
 ## Consulta em lote
 
 O lote reutiliza o mesmo endpoint e a mesma fila fiscal da consulta individual.
@@ -284,7 +304,15 @@ O script executa:
 - regressões JavaScript;
 - build Release.
 
-O CI usa o mesmo script e depois gera um pacote Windows x64 autocontido como artifact de curta retenção.
+A v0.1.30 adiciona regressões específicas para:
+
+- composição real do `CentralKeyStore` com identidade compartilhada;
+- round-trip de pareamento e importação da mesma identidade de grupo;
+- líder sem estado seguro não consumir pedido;
+- descarte de estado local quando a importação final falha;
+- colapso de solicitações locais duplicadas em uma única autorização;
+- composição do endpoint com `SharedQueuePairingCoordinator`;
+- bloqueio de duplicidade no JavaScript.
 
 ## GitHub Actions
 
@@ -318,7 +346,7 @@ Exemplo:
 
 ```json
 {
-  "version": "0.1.29"
+  "version": "0.1.30"
 }
 ```
 
@@ -337,8 +365,6 @@ Para uma release automática:
 
 `workflow_dispatch` continua disponível como fallback operacional e passa pelos mesmos gates.
 
-Um push comum na `main` que não altera `.github/release-request.json` não cria release.
-
 ## Checklist automatizado
 
 Antes de uma release oficial, os gates cobrem:
@@ -348,7 +374,7 @@ Antes de uma release oficial, os gates cobrem:
 - auditoria de dependências NuGet transitivas;
 - build Release;
 - publish Windows x64 autocontido;
-- versão coerente entre request e projeto;
+- versão coerente entre request, projeto e README;
 - tag nova e semanticamente superior;
 - vínculo ao SHA imutável;
 - assinatura e verificação Sigstore;
@@ -359,6 +385,9 @@ Antes de uma release oficial, os gates cobrem:
 
 Antes de considerar uma implantação operacional totalmente aceita:
 
+- [ ] autorizar um PC novo usando código gerado no líder atual;
+- [ ] repetir o teste em um líder diferente do PC que criou originalmente o grupo;
+- [ ] confirmar que um segundo clique/Enter não cria autorização duplicada;
 - [ ] pelo menos dois PCs reais disputam a liderança e somente um vence;
 - [ ] ao fechar o líder, outro assume automaticamente;
 - [ ] consulta funciona pelo standby antes e depois do failover;
@@ -376,9 +405,9 @@ Não provoque `cStat=656` real apenas para testar.
 
 ## Release atual
 
-A última release publicada é **v0.1.29**.
+A última release publicada é **v0.1.30**.
 
-Ela corrige o pareamento do grupo automático: estado legado local não mascara mais uma candidatura ausente e a autorização só é confirmada depois da importação do estado seguro do grupo. O fallback do Portal continua disponível nos PCs autorizados e a atualização permanece protegida por SHA-256 + Sigstore keyless vinculada ao workflow oficial.
+Ela corrige a causa estrutural do `409` observado no pareamento: líderes automáticos agora usam a identidade criptográfica compartilhada do grupo. O fluxo também ficou transacional do ponto de vista local, recuperável diante de falhas transitórias e protegido contra solicitações duplicadas.
 
 ## Documentação técnica
 
