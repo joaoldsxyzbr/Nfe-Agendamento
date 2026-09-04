@@ -1,0 +1,100 @@
+name: Migrate Release Signing v0.1.26
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/migrate-release-sigstore-v0.1.26.yml'
+      - '.github/scripts/migrate-release-sigstore-v0.1.26.py'
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  migrate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Aplicar migração Sigstore
+        run: python .github/scripts/migrate-release-sigstore-v0.1.26.py
+
+      - name: Remover automação temporária da árvore final
+        shell: pwsh
+        run: |
+          Remove-Item -LiteralPath '.github/workflows/migrate-release-sigstore-v0.1.26.yml' -Force
+          Remove-Item -LiteralPath '.github/scripts/migrate-release-sigstore-v0.1.26.py' -Force
+
+      - name: Verificar diff
+        shell: pwsh
+        run: |
+          git diff --check
+          git status --short
+
+      - name: Restaurar dependências
+        run: dotnet restore Nfe-Agendamento.sln
+
+      - name: Auditar dependências NuGet
+        shell: pwsh
+        run: |
+          $reportPath = Join-Path $env:RUNNER_TEMP 'nuget-vulnerabilities.json'
+          dotnet list Nfe-Agendamento.sln package --vulnerable --include-transitive --format json | Out-File -FilePath $reportPath -Encoding utf8
+          if ($LASTEXITCODE -ne 0) { throw 'Falha ao executar a auditoria de dependências NuGet.' }
+          $report = Get-Content -LiteralPath $reportPath -Raw | ConvertFrom-Json
+          $findings = @()
+          foreach ($project in @($report.projects)) {
+            foreach ($framework in @($project.frameworks)) {
+              foreach ($package in @($framework.topLevelPackages) + @($framework.transitivePackages)) {
+                if ($null -ne $package -and @($package.vulnerabilities).Count -gt 0) {
+                  $findings += "$($project.path): $($package.id) $($package.resolvedVersion)"
+                }
+              }
+            }
+          }
+          if ($findings.Count -gt 0) {
+            $findings | ForEach-Object { Write-Error $_ }
+            throw 'Dependências NuGet vulneráveis encontradas.'
+          }
+
+      - name: Executar testes .NET
+        run: dotnet test Nfe-Agendamento.sln -c Release --no-restore
+
+      - name: Regressões JS
+        shell: pwsh
+        run: |
+          node tests/js/product-mapping-regression.test.js
+          node tests/js/lookup-feedback-regression.test.js
+          node tests/js/portal-fallback-regression.test.js
+          node tests/js/pairing-lookup-regression.test.js
+          node tests/js/batch-lookup-regression.test.js
+          node tests/js/release-readiness-regression.test.js
+
+      - name: Compilar solução
+        run: dotnet build Nfe-Agendamento.sln -c Release --no-restore
+
+      - name: Commitar migração validada
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'feat: assinar releases com sigstore keyless'
+          git push origin HEAD:main
+
+      - name: Disparar v0.1.26
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run release-bridge.yml --repo joaoldsxyzbr/Nfe-Agendamento --ref main -f version=v0.1.26
