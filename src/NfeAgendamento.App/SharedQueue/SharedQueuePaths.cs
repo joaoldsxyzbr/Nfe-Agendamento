@@ -80,6 +80,12 @@ public sealed class SharedQueuePaths
     public string CandidateBundleTemporaryPath(Guid clientId, Guid writeId) =>
         EnsureInsideRoot(Path.Combine(CandidatesDirectory, $"{ValidateId(clientId):N}.{ValidateId(writeId):N}.candidate.tmp"));
 
+    public string CandidateTransitionPath(Guid clientId) =>
+        EnsureInsideRoot(Path.Combine(CandidatesDirectory, $"{ValidateId(clientId):N}.transitions"));
+
+    public string CandidateTransitionTemporaryPath(Guid clientId, Guid writeId) =>
+        EnsureInsideRoot(Path.Combine(CandidatesDirectory, $"{ValidateId(clientId):N}.{ValidateId(writeId):N}.transitions.tmp"));
+
     public string HeartbeatTemporaryPath(Guid writeId) =>
         EnsureInsideRoot(Path.Combine(StatusDirectory, $"heartbeat.{ValidateId(writeId):N}.tmp"));
 
