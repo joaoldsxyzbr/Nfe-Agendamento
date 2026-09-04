@@ -39,10 +39,14 @@ assert.ok(bridge.includes('ref: ${{ github.sha }}'), 'Release deve fazer checkou
 assert.ok(bridge.includes('--target "${{ github.sha }}"'), 'Tag/release deve apontar para o mesmo SHA que foi testado e empacotado.');
 assert.ok(!bridge.includes('--target main'), 'Release não pode tagar main mutável depois dos testes.');
 assert.ok(bridge.includes('-p:Version=${{ steps.version.outputs.version }}'), 'Release deve aplicar ao binário a versão validada informada no workflow.');
-assert.ok(bridge.includes('NFE_UPDATE_SIGNING_KEY_PKCS8_B64'), 'Release deve exigir a chave privada de assinatura via GitHub Secret.');
-assert.ok(bridge.includes('ImportPkcs8PrivateKey'), 'Release deve importar a chave privada PKCS#8 sem versioná-la.');
-assert.ok(bridge.includes('RSASignaturePadding]::Pss'), 'Release deve assinar o pacote com RSA-PSS.');
-assert.ok(bridge.includes('Nfe-Agendamento-win-x64.zip.sig'), 'Release deve publicar a assinatura destacada do pacote.');
+assert.ok(bridge.includes('id-token: write'), 'Release deve permitir OIDC somente para assinatura keyless.');
+assert.ok(bridge.includes('sigstore/cosign-installer@v4.1.2'), 'Release deve instalar Cosign por action oficial.');
+assert.ok(bridge.includes('cosign sign-blob'), 'Release deve assinar o pacote com Sigstore keyless.');
+assert.ok(bridge.includes('cosign verify-blob'), 'Release deve verificar a assinatura antes de publicar.');
+assert.ok(bridge.includes('https://token.actions.githubusercontent.com'), 'Release deve fixar o issuer OIDC do GitHub Actions.');
+assert.ok(bridge.includes('release-bridge.yml@refs/heads/main'), 'Release deve fixar a identidade do workflow oficial.');
+assert.ok(bridge.includes('Nfe-Agendamento-win-x64.zip.sigstore.json'), 'Release deve publicar o bundle Sigstore.');
+assert.ok(!bridge.includes('NFE_UPDATE_SIGNING_KEY_PKCS8_B64'), 'Release não deve depender de chave privada persistente.');
 
 assert.ok(project.includes('<TargetFramework>net10.0-windows</TargetFramework>'), 'Aplicação deve usar .NET 10 LTS.');
 assert.ok(testProject.includes('<TargetFramework>net10.0-windows</TargetFramework>'), 'Testes devem usar .NET 10 LTS.');
@@ -73,7 +77,7 @@ assert.ok(codeql.includes('cron:'), 'CodeQL deve executar análise agendada.');
 const projectVersionMatch = project.match(/<Version>(\d+\.\d+\.\d+)<\/Version>/);
 assert.ok(projectVersionMatch, 'Projeto deve declarar uma versão semântica base no formato X.Y.Z.');
 const projectVersion = projectVersionMatch[1];
-assert.strictEqual(projectVersion, '0.1.25', 'Versão esperada para este hardening é 0.1.25.');
+assert.strictEqual(projectVersion, '0.1.26', 'Versão esperada para este hardening é 0.1.26.');
 const mainVersionPattern = new RegExp('`main`:[^\\n]*\\*\\*v' + projectVersion.replace(/\./g, '\\.') + '\\*\\*');
 assert.ok(mainVersionPattern.test(readme), 'README deve indicar na linha da main a mesma versão declarada no projeto.');
 assert.doesNotThrow(() => new vm.Script(read(tabsPath), { filename: tabsPath }), 'tabs.js deve permanecer sintaticamente válido.');
@@ -110,4 +114,4 @@ const certificateFiles = walk(root)
   .filter((file) => /\.(pfx|p12)$/i.test(file));
 assert.deepStrictEqual(certificateFiles, [], 'Repositório não pode conter certificado A1 empacotado.');
 
-console.log(`OK: release usa SHA imutável, assinatura RSA-PSS, .NET 10, v${projectVersion}, auditoria de dependências, hardening do repositório e nenhuma credencial fiscal real.`);
+console.log(`OK: release usa SHA imutável, Sigstore keyless, .NET 10, v${projectVersion}, auditoria de dependências, hardening do repositório e nenhuma credencial fiscal real.`);

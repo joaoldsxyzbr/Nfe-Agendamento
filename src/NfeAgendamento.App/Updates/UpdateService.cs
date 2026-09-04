@@ -29,24 +29,22 @@ public sealed class UpdateService : IDisposable
     private const string LatestReleaseUrl =
         "https://api.github.com/repos/joaoldsxyzbr/Nfe-Agendamento/releases/latest";
     private const string WindowsPackageName = "Nfe-Agendamento-win-x64.zip";
-    private const string WindowsSignatureName = WindowsPackageName + ".sig";
+    private const string WindowsSignatureName = WindowsPackageName + ".sigstore.json";
     private const long MaxPackageBytes = 200L * 1024 * 1024;
-    private const long MaxSignatureBytes = 16L * 1024;
+    private const long MaxSignatureBytes = 128L * 1024;
     private readonly HttpClient _httpClient;
     private readonly Version _currentVersion;
-    private readonly byte[] _signingPublicKey;
+    private readonly IUpdateSignatureVerifier _signatureVerifier;
 
     public UpdateService(
         HttpClient? httpClient = null,
         Version? currentVersion = null,
-        byte[]? signingPublicKey = null)
+        IUpdateSignatureVerifier? signatureVerifier = null)
     {
         _httpClient = httpClient ?? new HttpClient();
         _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("NfeAgendamento-Updater/1.0");
         _currentVersion = currentVersion ?? Assembly.GetEntryAssembly()?.GetName().Version ?? new Version(0, 0, 0);
-        _signingPublicKey = (signingPublicKey ?? UpdateSigningKey.GetSubjectPublicKeyInfo()).ToArray();
-        if (_signingPublicKey.Length == 0)
-            throw new ArgumentException("Chave pública de assinatura de update inválida.", nameof(signingPublicKey));
+        _signatureVerifier = signatureVerifier ?? new SigstoreUpdateSignatureVerifier();
     }
 
     public async Task<UpdateCheckResult> CheckAsync(CancellationToken cancellationToken = default)
@@ -112,15 +110,13 @@ public sealed class UpdateService : IDisposable
             await DownloadPackageAsync(update.Package, packagePath, cancellationToken);
             VerifyPackageIntegrity(packagePath, update.Package);
 
-            var signature = await DownloadSignatureAsync(update.Package.SignatureUrl, cancellationToken);
-            try
-            {
-                VerifyPackageSignature(packagePath, signature);
-            }
-            finally
-            {
-                CryptographicOperations.ZeroMemory(signature);
-            }
+            var verificationBundle = await DownloadSignatureBundleAsync(
+                update.Package.SignatureUrl,
+                cancellationToken);
+            await _signatureVerifier.VerifyAsync(
+                packagePath,
+                verificationBundle,
+                cancellationToken);
 
             ExtractPackageSafely(packagePath, staging);
 
@@ -174,7 +170,6 @@ public sealed class UpdateService : IDisposable
     public void Dispose()
     {
         _httpClient.Dispose();
-        CryptographicOperations.ZeroMemory(_signingPublicKey);
     }
 
     private static UpdatePackage? BuildPackage(IReadOnlyList<GitHubReleaseAsset>? assets)
@@ -252,10 +247,12 @@ public sealed class UpdateService : IDisposable
             throw new InvalidDataException("O tamanho do pacote baixado não corresponde ao publicado pelo GitHub.");
     }
 
-    private async Task<byte[]> DownloadSignatureAsync(Uri signatureUrl, CancellationToken cancellationToken)
+    private async Task<string> DownloadSignatureBundleAsync(
+        Uri signatureUrl,
+        CancellationToken cancellationToken)
     {
         if (!TryGetTrustedGitHubUri(signatureUrl.ToString(), out _))
-            throw new InvalidDataException("Endereço da assinatura de atualização inválido.");
+            throw new InvalidDataException("Endereço do bundle Sigstore de atualização inválido.");
 
         using var response = await _httpClient.GetAsync(
             signatureUrl,
@@ -264,7 +261,7 @@ public sealed class UpdateService : IDisposable
         response.EnsureSuccessStatusCode();
 
         if (response.Content.Headers.ContentLength is > MaxSignatureBytes)
-            throw new InvalidDataException("Assinatura de atualização excede o limite permitido.");
+            throw new InvalidDataException("Bundle Sigstore de atualização excede o limite permitido.");
 
         await using var input = await response.Content.ReadAsStreamAsync(cancellationToken);
         using var output = new MemoryStream();
@@ -278,23 +275,15 @@ public sealed class UpdateService : IDisposable
 
             total += read;
             if (total > MaxSignatureBytes)
-                throw new InvalidDataException("Assinatura de atualização excede o limite permitido.");
+                throw new InvalidDataException("Bundle Sigstore de atualização excede o limite permitido.");
 
             output.Write(buffer, 0, read);
         }
 
-        var encoded = Encoding.ASCII.GetString(output.ToArray()).Trim();
-        try
-        {
-            var signature = Convert.FromBase64String(encoded);
-            if (signature.Length == 0 || signature.Length > 2048)
-                throw new InvalidDataException("Assinatura de atualização possui tamanho inválido.");
-            return signature;
-        }
-        catch (FormatException ex)
-        {
-            throw new InvalidDataException("Assinatura de atualização possui formato inválido.", ex);
-        }
+        if (total <= 0)
+            throw new InvalidDataException("Bundle Sigstore de atualização vazio.");
+
+        return Encoding.UTF8.GetString(output.ToArray());
     }
 
     private static void VerifyPackageIntegrity(string packagePath, UpdatePackage package)
@@ -314,25 +303,6 @@ public sealed class UpdateService : IDisposable
         if (expectedHash.Length != actualHash.Length
             || !CryptographicOperations.FixedTimeEquals(actualHash, expectedHash))
             throw new InvalidDataException("A verificação de integridade da atualização falhou.");
-    }
-
-    private void VerifyPackageSignature(string packagePath, byte[] signature)
-    {
-        try
-        {
-            using var rsa = RSA.Create();
-            rsa.ImportSubjectPublicKeyInfo(_signingPublicKey, out var bytesRead);
-            if (bytesRead != _signingPublicKey.Length)
-                throw new InvalidDataException("Chave pública de assinatura de atualização inválida.");
-
-            using var stream = File.OpenRead(packagePath);
-            if (!rsa.VerifyData(stream, signature, HashAlgorithmName.SHA256, RSASignaturePadding.Pss))
-                throw new InvalidDataException("A assinatura criptográfica da atualização é inválida.");
-        }
-        catch (CryptographicException ex)
-        {
-            throw new InvalidDataException("Não foi possível validar a assinatura criptográfica da atualização.", ex);
-        }
     }
 
     private static void ExtractPackageSafely(string packagePath, string stagingDirectory)

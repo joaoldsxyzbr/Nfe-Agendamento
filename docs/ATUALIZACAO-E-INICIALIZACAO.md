@@ -117,18 +117,18 @@ O atualizador aceita somente pacote oficial verificável:
 - release oficial do projeto;
 - versão maior que a instalada;
 - asset `Nfe-Agendamento-win-x64.zip`;
-- assinatura destacada `Nfe-Agendamento-win-x64.zip.sig`;
+- bundle de assinatura `Nfe-Agendamento-win-x64.zip.sigstore.json`;
 - HTTPS com host oficial esperado;
 - tamanho dentro dos limites;
 - digest SHA-256 válido;
-- assinatura RSA-PSS/SHA-256 válida contra a chave pública embutida no aplicativo.
+- assinatura Sigstore keyless válida para o workflow oficial `release-bridge.yml` em `main`, issuer OIDC do GitHub Actions e transparency log.
 
 Após confirmação:
 
 1. baixa o ZIP para área temporária;
 2. valida tamanho e SHA-256;
-3. baixa a assinatura destacada;
-4. valida a assinatura RSA-PSS/SHA-256;
+3. baixa o bundle Sigstore;
+4. valida a assinatura, identidade do workflow, issuer OIDC e transparency log;
 5. somente depois da validação criptográfica extrai o pacote;
 6. rejeita caminhos que escapem do diretório temporário;
 7. prepara a versão nova sem sobrescrever o processo em execução;
@@ -140,23 +140,20 @@ Após confirmação:
 
 Os dados persistentes em `%LOCALAPPDATA%\NfeAgendamento` não são substituídos.
 
-### Chave de assinatura das releases
+### Assinatura keyless das releases
 
-A chave privada **não pertence ao repositório nem ao aplicativo**. O Release Bridge espera exclusivamente o GitHub Secret:
+A partir da v0.1.26, a release não depende de chave privada persistente nem de GitHub Secret de assinatura. O `Release Bridge` usa Sigstore keyless com o token OIDC efêmero do GitHub Actions.
 
-```text
-NFE_UPDATE_SIGNING_KEY_PKCS8_B64
-```
+O pacote é aceito somente quando o bundle comprova:
 
-O valor é a chave privada RSA em PKCS#8 DER codificada em Base64. Antes de assinar, o workflow deriva a chave pública e confere seu fingerprint com a chave pública incorporada ao aplicativo. Secret ausente, inválido ou de outra chave faz a release falhar antes da publicação.
+- issuer `https://token.actions.githubusercontent.com`;
+- identidade `https://github.com/joaoldsxyzbr/Nfe-Agendamento/.github/workflows/release-bridge.yml@refs/heads/main`;
+- repositório oficial `https://github.com/joaoldsxyzbr/Nfe-Agendamento`;
+- execução em runner hospedado pelo GitHub;
+- inclusão verificável no transparency log;
+- assinatura correspondente exatamente aos bytes do ZIP cujo SHA-256 também foi validado.
 
-Fingerprint SHA-256 da chave pública atualmente confiável:
-
-```text
-98cba72b2874a069a8eb8553dbd5c0851e52051ceae013b7c1b00917ede9e2d4
-```
-
-Nunca coloque o valor do Secret em arquivo versionado, issue, log ou pasta compartilhada.
+O workflow verifica o bundle antes de publicar a release. O updater repete essa verificação antes de extrair qualquer arquivo.
 
 ## Atualização manual segura
 

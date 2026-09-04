@@ -2,8 +2,8 @@ using System.IO.Compression;
 using System.Net;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
-using System.Text;
 using NfeAgendamento.App.Updates;
+using Sigstore;
 using Xunit;
 
 namespace NfeAgendamento.App.Tests;
@@ -13,10 +13,10 @@ public sealed class UpdateServiceTests
     private static readonly Uri PackageUri = new(
         "https://github.com/joaoldsxyzbr/Nfe-Agendamento/releases/download/v1.2.0/Nfe-Agendamento-win-x64.zip");
     private static readonly Uri SignatureUri = new(
-        "https://github.com/joaoldsxyzbr/Nfe-Agendamento/releases/download/v1.2.0/Nfe-Agendamento-win-x64.zip.sig");
+        "https://github.com/joaoldsxyzbr/Nfe-Agendamento/releases/download/v1.2.0/Nfe-Agendamento-win-x64.zip.sigstore.json");
 
     [Fact]
-    public async Task CheckAsync_detects_newer_release_and_signed_windows_package()
+    public async Task CheckAsync_detects_newer_release_and_sigstore_bundle()
     {
         var publishedDigest = new string('a', 64);
         using var client = new HttpClient(new Handler(_ => new HttpResponseMessage(HttpStatusCode.OK)
@@ -35,8 +35,8 @@ public sealed class UpdateServiceTests
                     },
                     new
                     {
-                        name = "Nfe-Agendamento-win-x64.zip.sig",
-                        size = 512,
+                        name = "Nfe-Agendamento-win-x64.zip.sigstore.json",
+                        size = 4096,
                         digest = (string?)null,
                         browser_download_url = SignatureUri.ToString()
                     }
@@ -57,7 +57,7 @@ public sealed class UpdateServiceTests
     }
 
     [Fact]
-    public async Task CheckAsync_rejects_release_without_detached_signature()
+    public async Task CheckAsync_rejects_release_without_sigstore_bundle()
     {
         var publishedDigest = new string('a', 64);
         using var client = new HttpClient(new Handler(_ => new HttpResponseMessage(HttpStatusCode.OK)
@@ -101,20 +101,20 @@ public sealed class UpdateServiceTests
     }
 
     [Fact]
-    public async Task PrepareUpdateAsync_validates_digest_and_signature_before_staging()
+    public async Task PrepareUpdateAsync_validates_digest_and_sigstore_before_staging()
     {
         using var temp = new TemporaryDirectory();
         var zip = BuildPackage();
         var digest = Convert.ToHexString(SHA256.HashData(zip)).ToLowerInvariant();
-        using var signingKey = RSA.Create(2048);
-        var publicKey = signingKey.ExportSubjectPublicKeyInfo();
-        var signature = signingKey.SignData(zip, HashAlgorithmName.SHA256, RSASignaturePadding.Pss);
-        using var client = SignedPackageClient(zip, signature);
-        using var service = new UpdateService(client, new Version(1, 0, 0), publicKey);
+        var verifier = new RecordingSignatureVerifier();
+        using var client = VerifiedPackageClient(zip, "{}");
+        using var service = new UpdateService(client, new Version(1, 0, 0), verifier);
         var update = SignedUpdate(zip.Length, digest);
 
         var prepared = await service.PrepareUpdateAsync(update, temp.Path, processId: 4321);
 
+        Assert.Equal(1, verifier.Calls);
+        Assert.Equal("{}", verifier.LastBundle);
         Assert.Equal(new Version(1, 2, 0), prepared.Version);
         Assert.True(File.Exists(prepared.ScriptPath));
         Assert.True(File.Exists(Path.Combine(prepared.StagingDirectory, "NfeAgendamento.App.exe")));
@@ -130,35 +130,31 @@ public sealed class UpdateServiceTests
     }
 
     [Fact]
-    public async Task PrepareUpdateAsync_rejects_package_with_wrong_digest_before_signature()
+    public async Task PrepareUpdateAsync_rejects_package_with_wrong_digest_before_sigstore()
     {
         using var temp = new TemporaryDirectory();
         var zip = BuildPackage();
-        using var signingKey = RSA.Create(2048);
-        var publicKey = signingKey.ExportSubjectPublicKeyInfo();
-        var signature = signingKey.SignData(zip, HashAlgorithmName.SHA256, RSASignaturePadding.Pss);
-        using var client = SignedPackageClient(zip, signature);
-        using var service = new UpdateService(client, new Version(1, 0, 0), publicKey);
+        var verifier = new RecordingSignatureVerifier();
+        using var client = VerifiedPackageClient(zip, "{}");
+        using var service = new UpdateService(client, new Version(1, 0, 0), verifier);
         var update = SignedUpdate(zip.Length, new string('0', 64));
 
         var exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
             service.PrepareUpdateAsync(update, temp.Path, processId: 4321));
 
         Assert.Contains("integridade", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, verifier.Calls);
     }
 
     [Fact]
-    public async Task PrepareUpdateAsync_rejects_invalid_detached_signature()
+    public async Task PrepareUpdateAsync_rejects_invalid_sigstore_bundle()
     {
         using var temp = new TemporaryDirectory();
         var zip = BuildPackage();
         var digest = Convert.ToHexString(SHA256.HashData(zip)).ToLowerInvariant();
-        using var trustedKey = RSA.Create(2048);
-        using var attackerKey = RSA.Create(2048);
-        var publicKey = trustedKey.ExportSubjectPublicKeyInfo();
-        var forgedSignature = attackerKey.SignData(zip, HashAlgorithmName.SHA256, RSASignaturePadding.Pss);
-        using var client = SignedPackageClient(zip, forgedSignature);
-        using var service = new UpdateService(client, new Version(1, 0, 0), publicKey);
+        var verifier = new RecordingSignatureVerifier(new InvalidDataException("assinatura Sigstore inválida"));
+        using var client = VerifiedPackageClient(zip, "{}");
+        using var service = new UpdateService(client, new Version(1, 0, 0), verifier);
         var update = SignedUpdate(zip.Length, digest);
 
         var exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
@@ -168,13 +164,31 @@ public sealed class UpdateServiceTests
         Assert.Empty(Directory.EnumerateDirectories(temp.Path, ".*.update-*", SearchOption.TopDirectoryOnly));
     }
 
+    [Fact]
+    public void Sigstore_policy_pins_official_repository_workflow_and_github_hosted_runner()
+    {
+        var policy = SigstoreUpdateSignatureVerifier.CreatePolicy();
+        var identity = Assert.IsType<CertificateIdentity>(policy.CertificateIdentity);
+        var extensions = Assert.IsType<CertificateExtensionPolicy>(identity.Extensions);
+
+        Assert.Equal(SigstoreUpdateSignatureVerifier.GitHubOidcIssuer, identity.Issuer);
+        Assert.Equal(SigstoreUpdateSignatureVerifier.ReleaseWorkflowIdentity, identity.SubjectAlternativeName);
+        Assert.Equal(SigstoreUpdateSignatureVerifier.RepositoryUri, extensions.SourceRepositoryUri);
+        Assert.Equal("refs/heads/main", extensions.SourceRepositoryRef);
+        Assert.Equal("github-hosted", extensions.RunnerEnvironment);
+        Assert.Equal("public", extensions.SourceRepositoryVisibilityAtSigning);
+        Assert.True(policy.RequireTransparencyLog);
+        Assert.Equal(1, policy.TransparencyLogThreshold);
+        Assert.True(policy.RequireSignedCertificateTimestamps);
+    }
+
     private static UpdateCheckResult SignedUpdate(int size, string digest) =>
         new(
             new Version(1, 0, 0),
             new Version(1, 2, 0),
             new UpdatePackage(PackageUri, size, digest, SignatureUri));
 
-    private static HttpClient SignedPackageClient(byte[] zip, byte[] signature) =>
+    private static HttpClient VerifiedPackageClient(byte[] zip, string bundle) =>
         new(new Handler(request =>
         {
             Assert.Equal("github.com", request.RequestUri!.Host);
@@ -183,7 +197,7 @@ public sealed class UpdateServiceTests
             if (request.RequestUri == SignatureUri)
                 return new HttpResponseMessage(HttpStatusCode.OK)
                 {
-                    Content = new StringContent(Convert.ToBase64String(signature), Encoding.ASCII, "text/plain")
+                    Content = new StringContent(bundle, System.Text.Encoding.UTF8, "application/json")
                 };
             return new HttpResponseMessage(HttpStatusCode.NotFound);
         }));
@@ -200,9 +214,29 @@ public sealed class UpdateServiceTests
         return buffer.ToArray();
     }
 
+    private sealed class RecordingSignatureVerifier(Exception? exception = null) : IUpdateSignatureVerifier
+    {
+        public int Calls { get; private set; }
+        public string? LastBundle { get; private set; }
+
+        public Task VerifyAsync(
+            string packagePath,
+            string bundleJson,
+            CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            LastBundle = bundleJson;
+            if (exception is not null)
+                return Task.FromException(exception);
+            return Task.CompletedTask;
+        }
+    }
+
     private sealed class Handler(Func<HttpRequestMessage, HttpResponseMessage> responder) : HttpMessageHandler
     {
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken) =>
             Task.FromResult(responder(request));
     }
 
@@ -210,7 +244,10 @@ public sealed class UpdateServiceTests
     {
         public TemporaryDirectory()
         {
-            Path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "nfe-agendamento-update-tests", Guid.NewGuid().ToString("N"));
+            Path = System.IO.Path.Combine(
+                System.IO.Path.GetTempPath(),
+                "nfe-agendamento-update-tests",
+                Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(Path);
         }
 

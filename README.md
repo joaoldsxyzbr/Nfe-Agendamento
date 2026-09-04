@@ -5,11 +5,11 @@ Aplicativo Windows interno para consultar, visualizar e baixar NF-e. Cada PC usa
 ## Versão
 
 - última release publicada: **v0.1.25**;
-- `main`: em desenvolvimento após a **v0.1.25**.
+- `main`: preparada para a **v0.1.26**.
 
 A versão v0.1.25 acrescenta **fencing fiscal imediatamente antes do envio à SEFAZ**, atualização com **backup, health check local e rollback automático**, migração para **.NET 10 LTS** e novos gates de segurança no CI/release. A assinatura independente de pacotes continua condicionada ao provisionamento de uma chave privada em GitHub Secret; nenhuma chave privada é versionada no repositório.
 
-A `main` também inclui a evolução do fallback pelo Portal: o fluxo é acionado pelo site local, o hCaptcha continua manual no WebView2 e, após o XML oficial ser validado e salvo no cache, a interface carrega a NF-e automaticamente sem nova consulta fiscal.
+A `main` preparada para v0.1.26 inclui o fallback do Portal acionado pelo site local, carregamento automático do XML pelo cache e atualização assinada com Sigstore keyless vinculada ao workflow oficial do GitHub Actions.
 
 ## Arquitetura atual
 
@@ -304,7 +304,7 @@ Não provoque `cStat=656` real apenas para testar.
 
 ## Release
 
-A última release publicada é **v0.1.25**. A `main` contém mudanças posteriores ainda não publicadas em release.
+A última release publicada é **v0.1.25**. A `main` está preparada para a **v0.1.26**; a publicação é feita exclusivamente pelo Release Bridge após todos os gates.
 
 A publicação oficial usa o workflow **Release Bridge**, que restaura dependências, audita vulnerabilidades, testa, compila, publica o pacote Windows e prende a tag ao SHA efetivamente validado.
 
