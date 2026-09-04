@@ -4,7 +4,9 @@ const path = require('path');
 const vm = require('vm');
 
 const scriptPath = path.resolve(__dirname, '../../src/NfeAgendamento.App/wwwroot/pairing.js');
+const programPath = path.resolve(__dirname, '../../src/NfeAgendamento.App/Program.cs');
 const source = fs.readFileSync(scriptPath, 'utf8');
+const program = fs.readFileSync(programPath, 'utf8');
 
 function makeElement(initial = {}) {
   const listeners = new Map();
@@ -81,9 +83,22 @@ function makeResponse(status, payload) {
   assert.strictEqual(elements.clientPairingPanel.hidden, false, 'A orientação de autorização deve continuar visível quando necessária.');
   assert.ok(elements.clientPairingStatus.textContent.includes('precisa ser autorizado'), elements.clientPairingStatus.textContent);
 
+  assert.ok(
+    program.includes('clientPaired = group.IsCandidateReady,'),
+    'Somente o estado real do grupo pode marcar o PC como autorizado; pareamento legado não pode esconder o formulário de recuperação.'
+  );
+  assert.ok(
+    !program.includes('clientPaired = group.IsCandidateReady || clientStatus.IsPaired || state.IsConfiguredAsCentral'),
+    'Estado legado/local não pode mascarar falha na adesão ao grupo automático.'
+  );
+  assert.ok(
+    program.includes('result.Success && !group.TryImportCandidateBundle()'),
+    'A API de pareamento não pode responder sucesso quando o pacote do grupo não foi importado.'
+  );
+
   assert.doesNotThrow(() => new vm.Script(source, { filename: scriptPath }), 'pairing.js deve ser sintaticamente válido.');
 
-  console.log('OK: estado de pareamento nunca deixa Consultar NF-e sem ação.');
+  console.log('OK: estado de pareamento nunca deixa Consultar NF-e sem ação e não aceita autorização incompleta.');
 })().catch(error => {
   console.error(error);
   process.exitCode = 1;
