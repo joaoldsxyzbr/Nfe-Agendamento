@@ -88,7 +88,7 @@ internal static class Program
                 centralActive = central.IsActive,
                 leaderStatus = central.Status.ToString().ToLowerInvariant(),
                 candidateReady = group.IsCandidateReady,
-                clientPaired = group.IsCandidateReady || clientStatus.IsPaired || state.IsConfiguredAsCentral,
+                clientPaired = group.IsCandidateReady,
                 portalFallbackAvailable,
                 centralOnline = central.IsActive || clientStatus.CentralOnline,
                 shareAvailable = central.ShareAvailable || clientStatus.ShareAvailable,
@@ -122,8 +122,17 @@ internal static class Program
                 return Results.BadRequest(new { status = "invalid_pairing_code", message = "Informe o código exibido pelo PC que está processando a fila." });
 
             var result = await pairingClient.PairAsync(request.Code, cancellationToken);
-            if (result.Success)
-                group.TryImportCandidateBundle();
+            if (result.Success && !group.TryImportCandidateBundle())
+            {
+                return Results.Json(
+                    new
+                    {
+                        status = "group_import_failed",
+                        message = "A autorização foi recebida, mas o estado seguro do grupo não pôde ser importado. Gere um novo código no líder atual e tente novamente."
+                    },
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+
             return result.Success
                 ? Results.Ok(new { status = "paired", message = result.Message })
                 : Results.Json(new { status = "pairing_failed", message = result.Message }, statusCode: StatusCodes.Status409Conflict);
