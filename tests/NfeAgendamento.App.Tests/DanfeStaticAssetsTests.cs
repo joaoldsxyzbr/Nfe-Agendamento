@@ -62,15 +62,17 @@ public sealed class DanfeStaticAssetsTests
     public void New_lookup_clears_previous_result_and_is_left_of_lookup_button()
     {
         var html = Fixture("index.html");
+        var resetScript = Fixture("reset-lookup.js");
 
         Assert.Contains("id=\"newLookup\"", html);
         Assert.Contains(">Nova consulta<", html);
         Assert.True(html.IndexOf("id=\"newLookup\"", StringComparison.Ordinal) < html.IndexOf("id=\"lookup\"", StringComparison.Ordinal));
-        Assert.Contains("function resetLookup()", html);
-        Assert.Contains("accessKey.value = '';", html);
-        Assert.Contains("actions.hidden = true;", html);
-        Assert.Contains("accessKey.focus();", html);
-        Assert.Contains("document.getElementById('newLookup').addEventListener('click', resetLookup);", html);
+        Assert.Contains("/reset-lookup.js", html);
+        Assert.Contains("function resetLookup()", resetScript);
+        Assert.Contains("accessKey.value = '';", resetScript);
+        Assert.Contains("actions.hidden = true;", resetScript);
+        Assert.Contains("accessKey.focus();", resetScript);
+        Assert.Contains("document.getElementById('newLookup')?.addEventListener('click', resetLookup);", resetScript);
     }
 
     [Fact]
