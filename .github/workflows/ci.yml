@@ -17,8 +17,8 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # actions/checkout@v4
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
       - name: Verificar projeto
@@ -30,7 +30,7 @@ jobs:
         shell: pwsh
         run: Compress-Archive -Path artifacts/nfe-agendamento/* -DestinationPath artifacts/Nfe-Agendamento-win-x64.zip
       - name: Disponibilizar pacote
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact@v7
         with:
           name: Nfe-Agendamento-win-x64
           path: artifacts/Nfe-Agendamento-win-x64.zip

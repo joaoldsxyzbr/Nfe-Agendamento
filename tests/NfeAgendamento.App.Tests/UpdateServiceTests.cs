@@ -125,8 +125,9 @@ public sealed class UpdateServiceTests
         Assert.Contains("AddSeconds(20)", script, StringComparison.Ordinal);
         Assert.Contains("http://127.0.0.1:17345/api/bootstrap", script, StringComparison.Ordinal);
         Assert.Contains("$expectedVersion = '1.2.0'", script, StringComparison.Ordinal);
-        Assert.Contains("ConvertFrom-Json", script, StringComparison.Ordinal);
+        Assert.Contains("$bootstrap = $response.Content | ConvertFrom-Json -ErrorAction Stop", script, StringComparison.Ordinal);
         Assert.Contains("$bootstrap.appVersion -eq $expectedVersion", script, StringComparison.Ordinal);
+        Assert.Contains("$response.StatusCode -ge 200 -and $response.StatusCode -lt 300", script, StringComparison.Ordinal);
         Assert.Contains("Move-Item -LiteralPath $install -Destination $backup", script, StringComparison.Ordinal);
         Assert.Contains("Move-Item -LiteralPath $backup -Destination $install", script, StringComparison.Ordinal);
         Assert.DoesNotContain("Copy-Item -LiteralPath $_.FullName", script, StringComparison.Ordinal);

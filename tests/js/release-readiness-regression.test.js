@@ -17,6 +17,7 @@ const testProjectPath = 'tests/NfeAgendamento.App.Tests/NfeAgendamento.App.Tests
 const gitignorePath = '.gitignore';
 const readmePath = 'README.md';
 const tabsPath = 'src/NfeAgendamento.App/wwwroot/tabs.js';
+const updateServicePath = 'src/NfeAgendamento.App/Updates/UpdateService.cs';
 
 const ci = read(ciPath);
 const bridge = read(bridgePath);
@@ -25,6 +26,7 @@ const project = read(projectPath);
 const testProject = read(testProjectPath);
 const gitignore = read(gitignorePath);
 const readme = read(readmePath);
+const updateService = read(updateServicePath);
 
 const workflowFiles = fs.readdirSync(path.join(root, '.github/workflows'))
   .filter((name) => /\.ya?ml$/i.test(name))
@@ -61,7 +63,10 @@ assert.ok(!bridge.includes('fallback do Portal integrado ao site'), 'Release not
 assert.ok(bridge.includes('ref: ${{ github.sha }}'), 'Release deve fazer checkout do SHA disparador.');
 assert.ok(bridge.includes('--target "${{ github.sha }}"'), 'Release deve publicar exatamente o SHA testado.');
 assert.ok(bridge.includes('id-token: write'), 'Release deve manter OIDC para Sigstore.');
-assert.ok(bridge.includes('sigstore/cosign-installer@v4.1.2'), 'Release deve instalar Cosign oficial.');
+assert.ok(
+  bridge.includes('sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # sigstore/cosign-installer@v4.1.2'),
+  'Release deve instalar a v4.1.2 oficial do Cosign fixada por SHA.'
+);
 assert.ok(bridge.includes('cosign sign-blob'), 'Release deve assinar o ZIP.');
 assert.ok(bridge.includes('cosign verify-blob'), 'Release deve verificar a assinatura.');
 assert.ok(bridge.includes('release-bridge.yml@refs/heads/main'), 'Identidade Sigstore deve permanecer fixada ao workflow oficial.');
@@ -104,9 +109,15 @@ assert.ok(dependabot.includes('package-ecosystem: "nuget"'), 'Dependabot deve mo
 assert.ok(dependabot.includes('package-ecosystem: "github-actions"'), 'Dependabot deve monitorar GitHub Actions.');
 assert.ok((dependabot.match(/open-pull-requests-limit:\s*3/g) || []).length >= 2, 'Dependabot deve limitar PRs automáticos.');
 
-assert.ok(codeql.includes('github/codeql-action/init@v3'), 'CodeQL deve usar action oficial.');
+assert.ok(
+  codeql.includes('github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # github/codeql-action/init@v4'),
+  'CodeQL deve usar a v4 oficial fixada por SHA.'
+);
 assert.ok(codeql.includes('languages: csharp'), 'CodeQL deve analisar C#.');
-assert.ok(codeql.includes('github/codeql-action/analyze@v3'), 'CodeQL deve executar análise.');
+assert.ok(
+  codeql.includes('github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # github/codeql-action/analyze@v4'),
+  'CodeQL deve executar análise com a v4 fixada por SHA.'
+);
 assert.ok(codeql.includes('cron:'), 'CodeQL deve manter análise agendada.');
 
 assert.ok(readme.includes(`última release publicada: **v${projectVersion}**`), 'README deve refletir a release publicada da versão atual.');
@@ -116,6 +127,19 @@ assert.ok(readme.includes('.github/release-request.json'), 'README deve document
 assert.ok(
   !/depende de uma chave privada externa armazenada em GitHub Secret/i.test(readme),
   'README não pode anunciar a assinatura RSA antiga como necessária.'
+);
+
+assert.ok(
+  updateService.includes('$expectedVersion = {{Ps(expectedVersion.ToString())}}'),
+  'Instalador deve fixar o health check à versão preparada.'
+);
+assert.ok(
+  updateService.includes('$bootstrap = $response.Content | ConvertFrom-Json -ErrorAction Stop'),
+  'Instalador deve rejeitar resposta malformada no health check.'
+);
+assert.ok(
+  updateService.includes('$bootstrap.appVersion -eq $expectedVersion'),
+  'Instalador deve rejeitar bootstrap com versão ausente ou diferente.'
 );
 
 assert.doesNotThrow(() => new vm.Script(read(tabsPath), { filename: tabsPath }), 'tabs.js deve permanecer sintaticamente válido.');

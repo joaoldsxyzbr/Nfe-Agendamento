@@ -127,6 +127,7 @@ public sealed class UpdateService : IDisposable
             var scriptPath = Path.Combine(workspace, "apply-update.ps1");
             var script = BuildInstallerScript(
                 processId,
+                update.LatestVersion,
                 staging,
                 installPath,
                 nextInstall,
@@ -332,6 +333,7 @@ public sealed class UpdateService : IDisposable
 
     private static string BuildInstallerScript(
         int processId,
+        Version expectedVersion,
         string stagingDirectory,
         string installDirectory,
         string nextInstallDirectory,
@@ -347,6 +349,7 @@ $install = {{Ps(installDirectory)}}
 $next = {{Ps(nextInstallDirectory)}}
 $backup = {{Ps(backupInstallDirectory)}}
 $workspace = {{Ps(workspace)}}
+$expectedVersion = {{Ps(expectedVersion.ToString())}}
 $newProcess = $null
 $swapped = $false
 
@@ -383,8 +386,11 @@ try {
         try {
             $response = Invoke-WebRequest -Uri 'http://127.0.0.1:17345/api/bootstrap' -UseBasicParsing -TimeoutSec 2
             if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 300) {
-                $healthy = $true
-                break
+                $bootstrap = $response.Content | ConvertFrom-Json -ErrorAction Stop
+                if ($bootstrap.appVersion -eq $expectedVersion) {
+                    $healthy = $true
+                    break
+                }
             }
         } catch { }
 

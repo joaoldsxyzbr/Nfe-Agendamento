@@ -10,6 +10,23 @@ const project = read('src/NfeAgendamento.App/NfeAgendamento.App.csproj');
 const index = read('src/NfeAgendamento.App/wwwroot/index.html');
 const bootstrap = read('src/NfeAgendamento.App/SharedQueue/SharedQueueGroupBootstrapService.cs');
 const cosignInstallerSha = '6f9f17788090df1f26f669e9d70d6ae9567deba6';
+const workflowDirectory = path.join(root, '.github/workflows');
+const workflowFiles = fs.readdirSync(workflowDirectory)
+  .filter((name) => /\.ya?ml$/i.test(name));
+
+for (const workflowFile of workflowFiles) {
+  const workflow = read(path.join('.github/workflows', workflowFile));
+  const mutableUses = workflow.split(/\r?\n/).filter((line) => {
+    const match = line.match(/^\s*-?\s*uses:\s*([^\s#]+)/i);
+    if (!match || match[1].startsWith('./')) return false;
+    return !/@[0-9a-f]{40}$/i.test(match[1]);
+  });
+  assert.deepStrictEqual(
+    mutableUses,
+    [],
+    `${workflowFile} deve fixar toda action em um commit SHA hexadecimal de 40 caracteres.`
+  );
+}
 
 assert.ok(
   bridge.includes(`sigstore/cosign-installer@${cosignInstallerSha}`),
