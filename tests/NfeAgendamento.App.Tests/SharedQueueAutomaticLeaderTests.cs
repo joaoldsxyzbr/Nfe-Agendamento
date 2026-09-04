@@ -28,7 +28,7 @@ public sealed class SharedQueueAutomaticLeaderTests
     }
 
     [Fact]
-    public async Task Exactly_one_candidate_leads_and_second_takes_over_with_same_public_key()
+    public async Task Exactly_one_authorized_candidate_leads_and_second_takes_over_with_same_public_key()
     {
         using var temp = new TempDirectory();
         var share = Path.Combine(temp.Path, "share");
@@ -51,8 +51,21 @@ public sealed class SharedQueueAutomaticLeaderTests
         var secondKeys = new CentralKeyStore(secondCandidate, groupIdentity);
         var expectedPublic = firstKeys.GetOrCreatePublicKey();
 
-        using var first = CreateRuntime(temp.Path, "first", paths, firstCandidate, firstKeys);
-        using var second = CreateRuntime(temp.Path, "second", paths, secondCandidate, secondKeys);
+        var firstId = Guid.NewGuid();
+        var secondId = Guid.NewGuid();
+        var firstSecret = RandomNumberGenerator.GetBytes(32);
+        var secondSecret = RandomNumberGenerator.GetBytes(32);
+        var authorized = new SharedAuthorizedClientStore(paths, firstCandidate);
+        authorized.Authorize(firstId, "PC-FIRST", firstSecret);
+        authorized.Authorize(secondId, "PC-SECOND", secondSecret);
+
+        var firstPairing = new ClientPairingStore(Path.Combine(temp.Path, "first-client.bin"));
+        var secondPairing = new ClientPairingStore(Path.Combine(temp.Path, "second-client.bin"));
+        firstPairing.SavePaired(firstId, "PC-FIRST", firstSecret, expectedPublic, "GROUP");
+        secondPairing.SavePaired(secondId, "PC-SECOND", secondSecret, expectedPublic, "GROUP");
+
+        using var first = CreateRuntime(temp.Path, "first", paths, firstCandidate, firstKeys, firstPairing);
+        using var second = CreateRuntime(temp.Path, "second", paths, secondCandidate, secondKeys, secondPairing);
 
         await first.TryActivateOnceAsync();
         await second.TryActivateOnceAsync();
@@ -70,6 +83,8 @@ public sealed class SharedQueueAutomaticLeaderTests
         CryptographicOperations.ZeroMemory(groupKey);
         CryptographicOperations.ZeroMemory(privateKey);
         CryptographicOperations.ZeroMemory(expectedPublic);
+        CryptographicOperations.ZeroMemory(firstSecret);
+        CryptographicOperations.ZeroMemory(secondSecret);
     }
 
     [Fact]
@@ -142,7 +157,8 @@ public sealed class SharedQueueAutomaticLeaderTests
         string suffix,
         SharedQueuePaths paths,
         CandidateStateStore candidate,
-        CentralKeyStore keyStore)
+        CentralKeyStore keyStore,
+        ClientPairingStore pairing)
     {
         var state = new CentralStateService(new CentralSettingsStore(Path.Combine(root, $"{suffix}-central.json")));
         var bootstrap = new SharedQueueGroupBootstrapService(
@@ -150,7 +166,7 @@ public sealed class SharedQueueAutomaticLeaderTests
             state,
             keyStore,
             new AuthorizedClientStore(Path.Combine(root, $"{suffix}-authorized.bin")),
-            new ClientPairingStore(Path.Combine(root, $"{suffix}-client.bin")),
+            pairing,
             candidate);
         return new SharedQueueCentralService(state, paths, keyStore, bootstrap);
     }
