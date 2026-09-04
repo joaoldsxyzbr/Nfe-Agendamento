@@ -1,5 +1,7 @@
 (() => {
   let pairingCsrfToken = '';
+  let pairingInFlight = false;
+  let codeGenerationInFlight = false;
 
   const byId = (id) => document.getElementById(id);
 
@@ -17,7 +19,7 @@
     const generateButton = byId('generatePairingCode');
     if (centralPanel) centralPanel.hidden = false;
     if (clientPanel) clientPanel.hidden = Boolean(bootstrap.clientPaired);
-    if (generateButton) generateButton.disabled = !bootstrap.centralActive;
+    if (generateButton) generateButton.disabled = !bootstrap.centralActive || codeGenerationInFlight;
 
     const centralStatus = byId('centralPairingStatus');
     if (centralStatus) {
@@ -52,6 +54,9 @@
   }
 
   async function generatePairingCode() {
+    if (codeGenerationInFlight) return;
+    codeGenerationInFlight = true;
+
     const button = byId('generatePairingCode');
     const resultBox = byId('centralPairingResult');
     const codeValue = byId('centralPairingCode');
@@ -85,6 +90,7 @@
       if (resultBox) resultBox.hidden = true;
       if (status) status.textContent = 'Não foi possível gerar o código agora.';
     } finally {
+      codeGenerationInFlight = false;
       try {
         const bootstrap = await readBootstrap();
         renderRole(bootstrap);
@@ -95,6 +101,8 @@
   }
 
   async function pairClient() {
+    if (pairingInFlight) return;
+
     const input = byId('pairingCode');
     const button = byId('pairClient');
     const status = byId('clientPairingStatus');
@@ -109,6 +117,7 @@
       return;
     }
 
+    pairingInFlight = true;
     if (button) button.disabled = true;
     if (status) {
       status.textContent = 'Autorizando este PC na fila...';
@@ -147,6 +156,7 @@
         status.className = 'status error';
       }
     } finally {
+      pairingInFlight = false;
       if (button) button.disabled = false;
     }
   }
