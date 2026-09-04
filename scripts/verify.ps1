@@ -48,7 +48,8 @@ $jsTests = @(
     'tests/js/portal-fallback-regression.test.js',
     'tests/js/pairing-lookup-regression.test.js',
     'tests/js/batch-lookup-regression.test.js',
-    'tests/js/release-readiness-regression.test.js'
+    'tests/js/release-readiness-regression.test.js',
+    'tests/js/audit-hardening-regression.test.js'
 )
 
 foreach ($test in $jsTests) {

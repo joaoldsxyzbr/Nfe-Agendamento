@@ -1,0 +1,26 @@
+const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
+
+const root = path.resolve(__dirname, '../..');
+const read = (relativePath) => fs.readFileSync(path.join(root, relativePath), 'utf8');
+
+const bridge = read('.github/workflows/release-bridge.yml');
+const project = read('src/NfeAgendamento.App/NfeAgendamento.App.csproj');
+const index = read('src/NfeAgendamento.App/wwwroot/index.html');
+const cosignInstallerSha = '6f9f17788090df1f26f669e9d70d6ae9567deba6';
+
+assert.ok(
+  bridge.includes(`sigstore/cosign-installer@${cosignInstallerSha}`),
+  'Release Bridge deve fixar cosign-installer no commit exato da v4.1.2.'
+);
+assert.ok(
+  !project.includes('PackageReference Include="System.Security.Cryptography.ProtectedData"'),
+  'ProtectedData não deve permanecer como PackageReference redundante no .NET 10.'
+);
+assert.ok(
+  !/<script(?![^>]*\bsrc=)[^>]*>[\s\S]*?<\/script>/i.test(index),
+  'index.html não deve conter script inline para permitir CSP estrita.'
+);
+
+console.log('OK: hardening de supply chain, dependências e CSP permanece aplicado.');
