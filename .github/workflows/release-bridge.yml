@@ -1,10 +1,14 @@
 name: Release Bridge
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/release-request.json'
   workflow_dispatch:
     inputs:
       version:
-        description: 'Versão da release (ex.: v0.1.26)'
+        description: 'Versão da release (ex.: v0.1.27)'
         required: true
         type: string
 
@@ -19,6 +23,7 @@ concurrency:
 jobs:
   release:
     runs-on: windows-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
@@ -39,7 +44,22 @@ jobs:
             throw "A release deve ser executada a partir da branch main. Ref atual: $env:GITHUB_REF"
           }
 
-          $raw = $env:INPUT_VERSION.Trim()
+          if ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch') {
+            $raw = $env:INPUT_VERSION
+          }
+          elseif ($env:GITHUB_EVENT_NAME -eq 'push') {
+            $request = Get-Content -LiteralPath '.github/release-request.json' -Raw | ConvertFrom-Json
+            $raw = [string]$request.version
+          }
+          else {
+            throw "Evento de release não suportado: $env:GITHUB_EVENT_NAME"
+          }
+
+          if ([string]::IsNullOrWhiteSpace($raw)) {
+            throw 'Versão da release não informada.'
+          }
+
+          $raw = $raw.Trim()
           if ($raw -notmatch '^v?[0-9]+\.[0-9]+\.[0-9]+$') {
             throw 'Versão inválida. Use o formato v1.2.3.'
           }
@@ -48,7 +68,20 @@ jobs:
           $requested = [version]$normalized
           $tag = "v$normalized"
 
+          $projectText = Get-Content -LiteralPath 'src/NfeAgendamento.App/NfeAgendamento.App.csproj' -Raw
+          $projectVersionMatch = [regex]::Match($projectText, '<Version>\s*(\d+\.\d+\.\d+)\s*</Version>')
+          if (-not $projectVersionMatch.Success) {
+            throw 'O projeto não possui <Version> semântica válida.'
+          }
+
+          $projectVersion = $projectVersionMatch.Groups[1].Value
+          if ($normalized -ne $projectVersion) {
+            throw "Versão solicitada ($normalized) difere de <Version> do projeto ($projectVersion)."
+          }
+
           git fetch --tags --force
+          if ($LASTEXITCODE -ne 0) { throw 'Falha ao atualizar tags do repositório.' }
+
           if (git tag --list $tag) {
             throw "A versão $tag já existe."
           }
@@ -69,59 +102,15 @@ jobs:
           "version=$normalized" >> $env:GITHUB_OUTPUT
           "tag=$tag" >> $env:GITHUB_OUTPUT
 
-      - name: Restaurar dependências
-        run: dotnet restore Nfe-Agendamento.sln
-
-      - name: Auditar dependências NuGet
+      - name: Verificar projeto
         shell: pwsh
-        run: |
-          $reportPath = Join-Path $env:RUNNER_TEMP 'nuget-vulnerabilities.json'
-          dotnet list Nfe-Agendamento.sln package --vulnerable --include-transitive --format json | Out-File -FilePath $reportPath -Encoding utf8
-          if ($LASTEXITCODE -ne 0) { throw 'Falha ao executar a auditoria de dependências NuGet.' }
-          $report = Get-Content -LiteralPath $reportPath -Raw | ConvertFrom-Json
-          $findings = @()
-          foreach ($project in @($report.projects)) {
-            foreach ($framework in @($project.frameworks)) {
-              foreach ($package in @($framework.topLevelPackages) + @($framework.transitivePackages)) {
-                if ($null -ne $package -and @($package.vulnerabilities).Count -gt 0) {
-                  $findings += "$($project.path): $($package.id) $($package.resolvedVersion)"
-                }
-              }
-            }
-          }
-          if ($findings.Count -gt 0) {
-            $findings | ForEach-Object { Write-Error $_ }
-            throw 'Dependências NuGet vulneráveis encontradas.'
-          }
-
-      - name: Executar testes .NET
-        run: dotnet test Nfe-Agendamento.sln -c Release --no-restore
-
-      - name: Testar regressão de produtos Fernando Klein
-        run: node tests/js/product-mapping-regression.test.js
-
-      - name: Testar feedback de erros fiscais
-        run: node tests/js/lookup-feedback-regression.test.js
-
-      - name: Testar contingência pelo Portal NF-e
-        run: node tests/js/portal-fallback-regression.test.js
-
-      - name: Testar botão de consulta durante bootstrap
-        run: node tests/js/pairing-lookup-regression.test.js
-
-      - name: Testar consulta em lote
-        run: node tests/js/batch-lookup-regression.test.js
-
-      - name: Testar prontidão dos workflows de release
-        run: node tests/js/release-readiness-regression.test.js
-
-      - name: Compilar solução
-        run: dotnet build Nfe-Agendamento.sln -c Release --no-restore
+        run: ./scripts/verify.ps1 -Restore
 
       - name: Publicar pacote Windows
         shell: pwsh
         run: |
           dotnet publish src/NfeAgendamento.App/NfeAgendamento.App.csproj -c Release -r win-x64 --self-contained true -p:Version=${{ steps.version.outputs.version }} -p:AssemblyVersion=${{ steps.version.outputs.version }}.0 -p:FileVersion=${{ steps.version.outputs.version }}.0 -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o artifacts/nfe-agendamento
+          if ($LASTEXITCODE -ne 0) { throw 'Falha ao publicar pacote Windows.' }
           Compress-Archive -Path artifacts/nfe-agendamento/* -DestinationPath artifacts/Nfe-Agendamento-win-x64.zip
 
       - name: Instalar Cosign
@@ -147,4 +136,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
-          gh release create "${{ steps.version.outputs.tag }}" artifacts/Nfe-Agendamento-win-x64.zip artifacts/Nfe-Agendamento-win-x64.zip.sigstore.json --target "${{ github.sha }}" --title "NFe Agendamento ${{ steps.version.outputs.tag }}" --notes "v${{ steps.version.outputs.version }}: fallback do Portal integrado ao site e atualização protegida por SHA-256 + Sigstore keyless vinculada ao workflow oficial."
+          gh release create "${{ steps.version.outputs.tag }}" artifacts/Nfe-Agendamento-win-x64.zip artifacts/Nfe-Agendamento-win-x64.zip.sigstore.json --target "${{ github.sha }}" --title "NFe Agendamento ${{ steps.version.outputs.tag }}" --generate-notes
+          if ($LASTEXITCODE -ne 0) { throw 'Falha ao criar release no GitHub.' }
