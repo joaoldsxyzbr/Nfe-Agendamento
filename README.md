@@ -4,10 +4,10 @@ Aplicativo Windows interno para consultar, visualizar e baixar NF-e. Cada PC exe
 
 ## Versão
 
-- última release publicada: **v0.1.28**;
-- `main`: **v0.1.28**.
+- última release publicada: **v0.1.29**;
+- `main`: **v0.1.29**.
 
-A v0.1.28 libera o fallback manual do Portal Nacional em qualquer PC autorizado com estado real do grupo, inclusive em standby, mantendo as consultas automáticas à SEFAZ exclusivas do líder. O hCaptcha continua manual, o XML validado entra no cache compartilhado e a atualização permanece protegida por **Sigstore keyless**.
+A v0.1.29 corrige a recuperação do pareamento na arquitetura de grupo automático: somente o estado seguro real do grupo marca o PC como autorizado, e a API não confirma sucesso quando o pacote de candidatura não foi importado. O fallback manual do Portal continua disponível em qualquer PC autorizado, inclusive em standby, e a atualização permanece protegida por **Sigstore keyless**.
 
 ## Arquitetura atual
 
@@ -69,7 +69,7 @@ Na primeira execução desta arquitetura:
 6. o antigo Central também recebe identidade de cliente;
 7. depois disso qualquer PC autorizado e saudável pode assumir a liderança.
 
-A migração é idempotente e preserva a confiança dos clientes já autorizados.
+A migração é idempotente e preserva a confiança dos clientes já autorizados. Se existir estado legado local sem candidatura válida do grupo, a interface volta a oferecer a autorização em vez de tratar o PC como pareado.
 
 ## Estrutura e segurança do grupo
 
@@ -197,7 +197,8 @@ O código temporário de autorização só pode ser gerado pelo líder atual.
 2. clique em **Gerar código de autorização**;
 3. no novo PC, informe o código em **Autorizar este PC**;
 4. o líder registra o cliente e publica seu pacote de candidatura;
-5. o novo PC passa a operar como cliente e futuro candidato a líder.
+5. o novo PC importa o estado seguro do grupo;
+6. somente após essa importação o PC é considerado autorizado e passa a operar como cliente e futuro candidato a líder.
 
 ## Consulta em lote
 
@@ -317,7 +318,7 @@ Exemplo:
 
 ```json
 {
-  "version": "0.1.28"
+  "version": "0.1.29"
 }
 ```
 
@@ -375,9 +376,9 @@ Não provoque `cStat=656` real apenas para testar.
 
 ## Release atual
 
-A última release publicada é **v0.1.28**.
+A última release publicada é **v0.1.29**.
 
-Ela libera o fallback manual do Portal em qualquer PC autorizado com estado real do grupo, inclusive em standby, sem retirar a exclusividade do líder para consultas automáticas à SEFAZ. A atualização continua protegida por SHA-256 + Sigstore keyless vinculada ao workflow oficial.
+Ela corrige o pareamento do grupo automático: estado legado local não mascara mais uma candidatura ausente e a autorização só é confirmada depois da importação do estado seguro do grupo. O fallback do Portal continua disponível nos PCs autorizados e a atualização permanece protegida por SHA-256 + Sigstore keyless vinculada ao workflow oficial.
 
 ## Documentação técnica
 
