@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
@@ -11,6 +12,9 @@ public sealed class PortalNfeFallbackForm : Form
     private const string OfficialHost = "www.nfe.fazenda.gov.br";
     private const string PortalUrl = "https://www.nfe.fazenda.gov.br/portal/consultaRecaptcha.aspx?tipoConsulta=resumo&tipoConteudo=7PhJ+gAVw2g%3D";
     private const long MaxXmlBytes = 10L * 1024 * 1024;
+    private const int RpcEDisconnected = unchecked((int)0x80010108);
+    private const int RoEClosed = unchecked((int)0x80000013);
+    private const int EAbort = unchecked((int)0x80004004);
 
     private readonly string _accessKey;
     private readonly CertificateService _certificates;
@@ -88,7 +92,11 @@ public sealed class PortalNfeFallbackForm : Form
         Controls.Add(header);
 
         Shown += async (_, _) => await InitializeBrowserAsync();
-        FormClosed += (_, _) => CleanupTemporaryDownload();
+        FormClosed += (_, _) =>
+        {
+            DetachBrowserHandlers();
+            CleanupTemporaryDownload();
+        };
     }
 
     private async Task InitializeBrowserAsync()
@@ -124,7 +132,11 @@ public sealed class PortalNfeFallbackForm : Form
         {
             SetStatus("O Microsoft Edge WebView2 Runtime não está instalado neste PC.", error: true);
         }
-        catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (IsBrowserLifecycleException(ex))
+        {
+            SetStatus(ex.Message, error: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             SetStatus(ex.Message, error: true);
         }
@@ -158,7 +170,7 @@ public sealed class PortalNfeFallbackForm : Form
                 "})();";
             await _webView.CoreWebView2.ExecuteScriptAsync(script);
         }
-        catch (InvalidOperationException)
+        catch (Exception ex) when (IsBrowserLifecycleException(ex))
         {
         }
     }
@@ -166,10 +178,19 @@ public sealed class PortalNfeFallbackForm : Form
     private void CoreNewWindowRequested(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
     {
         e.Handled = true;
-        if (IsOfficialPortalUri(e.Uri))
-            _webView.CoreWebView2.Navigate(e.Uri);
-        else
+        if (!IsOfficialPortalUri(e.Uri))
+        {
             SetStatus("Uma tentativa de abrir conteúdo externo foi bloqueada.", error: true);
+            return;
+        }
+
+        try
+        {
+            _webView.CoreWebView2.Navigate(e.Uri);
+        }
+        catch (Exception ex) when (IsBrowserLifecycleException(ex))
+        {
+        }
     }
 
     private void CoreClientCertificateRequested(object? sender, CoreWebView2ClientCertificateRequestedEventArgs e)
@@ -243,21 +264,29 @@ public sealed class PortalNfeFallbackForm : Form
         EventHandler<object>? stateChanged = null;
         stateChanged = async (_, _) =>
         {
-            if (operation.State == CoreWebView2DownloadState.InProgress)
-                return;
-
-            if (stateChanged is not null)
-                operation.StateChanged -= stateChanged;
-
-            if (operation.State == CoreWebView2DownloadState.Completed)
+            try
             {
-                await ImportDownloadedXmlAsync(_temporaryDownloadPath);
-                return;
-            }
+                if (operation.State == CoreWebView2DownloadState.InProgress)
+                    return;
 
-            _downloadInProgress = false;
-            CleanupTemporaryDownload();
-            SetStatus($"O download do XML foi interrompido ({operation.InterruptReason}). Tente novamente pelo Portal.", error: true);
+                if (stateChanged is not null)
+                    operation.StateChanged -= stateChanged;
+
+                if (operation.State == CoreWebView2DownloadState.Completed)
+                {
+                    await ImportDownloadedXmlAsync(_temporaryDownloadPath);
+                    return;
+                }
+
+                _downloadInProgress = false;
+                CleanupTemporaryDownload();
+                SetStatus($"O download do XML foi interrompido ({operation.InterruptReason}). Tente novamente pelo Portal.", error: true);
+            }
+            catch (Exception ex) when (IsBrowserLifecycleException(ex))
+            {
+                _downloadInProgress = false;
+                CleanupTemporaryDownload();
+            }
         };
         operation.StateChanged += stateChanged;
         SetStatus("Download oficial iniciado. Validando o XML...");
@@ -300,17 +329,48 @@ public sealed class PortalNfeFallbackForm : Form
 
     private void SetStatus(string message, bool error = false)
     {
-        if (IsDisposed)
+        if (IsDisposed || Disposing)
             return;
 
         if (InvokeRequired)
         {
-            BeginInvoke(new Action(() => SetStatus(message, error)));
+            try
+            {
+                BeginInvoke(new Action(() => SetStatus(message, error)));
+            }
+            catch (Exception ex) when (IsBrowserLifecycleException(ex))
+            {
+            }
             return;
         }
 
-        _status.Text = message;
-        _status.ForeColor = error ? Color.Firebrick : Color.FromArgb(65, 72, 82);
+        try
+        {
+            _status.Text = message;
+            _status.ForeColor = error ? Color.Firebrick : Color.FromArgb(65, 72, 82);
+        }
+        catch (Exception ex) when (IsBrowserLifecycleException(ex))
+        {
+        }
+    }
+
+    private void DetachBrowserHandlers()
+    {
+        try
+        {
+            var core = _webView.CoreWebView2;
+            if (core is null)
+                return;
+
+            core.NavigationStarting -= CoreNavigationStarting;
+            core.NavigationCompleted -= CoreNavigationCompleted;
+            core.NewWindowRequested -= CoreNewWindowRequested;
+            core.ClientCertificateRequested -= CoreClientCertificateRequested;
+            core.DownloadStarting -= CoreDownloadStarting;
+        }
+        catch (Exception ex) when (IsBrowserLifecycleException(ex))
+        {
+        }
     }
 
     private void CleanupTemporaryDownload()
@@ -331,6 +391,17 @@ public sealed class PortalNfeFallbackForm : Form
         catch (UnauthorizedAccessException)
         {
         }
+    }
+
+    private static bool IsBrowserLifecycleException(Exception exception)
+    {
+        if (exception is ObjectDisposedException or InvalidOperationException)
+            return true;
+
+        if (exception is not COMException comException)
+            return false;
+
+        return comException.HResult is RpcEDisconnected or RoEClosed or EAbort;
     }
 
     private static bool IsAllowedTopLevelUri(string? uri)
