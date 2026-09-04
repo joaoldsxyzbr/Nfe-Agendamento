@@ -13,7 +13,6 @@ permissions:
 
 jobs:
   dispatch:
-    if: github.event.head_commit.message == 'chore: dispatch release v0.1.26'
     runs-on: ubuntu-latest
     steps:
       - name: Disparar Release Bridge
