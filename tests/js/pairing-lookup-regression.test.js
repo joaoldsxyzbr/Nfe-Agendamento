@@ -22,7 +22,8 @@ function makeElement(initial = {}) {
     },
     listener(type) {
       return listeners.get(type);
-    }
+    },
+    focus() {}
   };
 }
 
@@ -92,13 +93,21 @@ function makeResponse(status, payload) {
     'Estado legado/local não pode mascarar falha na adesão ao grupo automático.'
   );
   assert.ok(
-    program.includes('result.Success && !group.TryImportCandidateBundle()'),
-    'A API de pareamento não pode responder sucesso quando o pacote do grupo não foi importado.'
+    program.includes('builder.Services.AddSingleton<SharedQueuePairingCoordinator>();')
+      && program.includes('SharedQueuePairingCoordinator pairing')
+      && program.includes('await pairing.PairAsync(request.Code, cancellationToken)'),
+    'A API deve delegar o pareamento ao coordenador que só confirma sucesso depois da validação segura do grupo.'
+  );
+  assert.ok(
+    source.includes('if (pairingInFlight) return;')
+      && source.includes('pairingInFlight = true;')
+      && source.includes('pairingInFlight = false;'),
+    'O navegador deve bloquear envios duplicados do mesmo pareamento.'
   );
 
   assert.doesNotThrow(() => new vm.Script(source, { filename: scriptPath }), 'pairing.js deve ser sintaticamente válido.');
 
-  console.log('OK: estado de pareamento nunca deixa Consultar NF-e sem ação e não aceita autorização incompleta.');
+  console.log('OK: pareamento exige estado real do grupo, coordenação atômica e bloqueio de duplicidade.');
 })().catch(error => {
   console.error(error);
   process.exitCode = 1;
