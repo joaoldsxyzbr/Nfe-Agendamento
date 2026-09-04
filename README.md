@@ -5,9 +5,11 @@ Aplicativo Windows interno para consultar, visualizar e baixar NF-e. Cada PC usa
 ## Versão
 
 - última release publicada: **v0.1.25**;
-- `main`: alinhada à **v0.1.25**.
+- `main`: em desenvolvimento após a **v0.1.25**.
 
 A versão v0.1.25 acrescenta **fencing fiscal imediatamente antes do envio à SEFAZ**, atualização com **backup, health check local e rollback automático**, migração para **.NET 10 LTS** e novos gates de segurança no CI/release. A assinatura independente de pacotes continua condicionada ao provisionamento de uma chave privada em GitHub Secret; nenhuma chave privada é versionada no repositório.
+
+A `main` também inclui a evolução do fallback pelo Portal: o fluxo é acionado pelo site local, o hCaptcha continua manual no WebView2 e, após o XML oficial ser validado e salvo no cache, a interface carrega a NF-e automaticamente sem nova consulta fiscal.
 
 ## Arquitetura atual
 
@@ -149,7 +151,19 @@ O A1 é configurado **localmente em cada PC confiável**. Antes de contar com um
 
 Quando a consulta automática recebe `cStat=656`, o aplicativo mantém o cooldown e não insiste automaticamente.
 
-**Consultar pela Fazenda** é oferecido somente no **líder atual com lock saudável**. O hCaptcha permanece manual e não é automatizado nem contornado.
+**Baixar pelo Portal** é oferecido somente no **líder atual com lock saudável**. O hCaptcha permanece manual e não é automatizado nem contornado.
+
+Fluxo da interface:
+
+1. o site local abre o Portal no WebView2 seguro;
+2. a chave é preenchida automaticamente;
+3. o usuário resolve o hCaptcha e conclui o download;
+4. o XML é validado e salvo no cache compartilhado;
+5. a janela do Portal fecha sem exigir confirmação adicional;
+6. o site acompanha apenas o cache por `GET /api/nfe/cache/{accessKey}`;
+7. quando o XML aparece, a NF-e é carregada automaticamente pela interface.
+
+O acompanhamento do cache não chama a SEFAZ e não cria retry fiscal durante o cooldown.
 
 Proteções do Portal:
 
@@ -264,6 +278,13 @@ Automatizado validado para a release:
 - publish Windows x64 autocontido;
 - ZIP da release.
 
+Mudanças posteriores presentes na `main`:
+
+- fallback do Portal acionado e acompanhado pela interface web;
+- leitura exclusiva do cache durante a espera, sem polling fiscal;
+- carregamento automático da NF-e após o XML oficial entrar no cache;
+- fechamento automático da janela do Portal após importação bem-sucedida.
+
 Teste físico ainda necessário para aceitação operacional:
 
 - [ ] pelo menos dois PCs reais disputam a liderança e somente um vence;
@@ -275,7 +296,7 @@ Teste físico ainda necessário para aceitação operacional:
 - [ ] A1 local funciona nos candidatos;
 - [ ] Portal Nacional aparece somente no líder e abre no WebView2 real;
 - [ ] hCaptcha permanece manual e o A1 funciona no fluxo real;
-- [ ] XML oficial chega ao cache compartilhado;
+- [ ] XML oficial chega ao cache compartilhado e a interface carrega a NF-e automaticamente;
 - [ ] atualização real conclui o health check;
 - [ ] cenário de health check inválido restaura a versão anterior.
 
@@ -283,7 +304,7 @@ Não provoque `cStat=656` real apenas para testar.
 
 ## Release
 
-A última release publicada é **v0.1.25** e a `main` permanece alinhada à versão **v0.1.25**.
+A última release publicada é **v0.1.25**. A `main` contém mudanças posteriores ainda não publicadas em release.
 
 A publicação oficial usa o workflow **Release Bridge**, que restaura dependências, audita vulnerabilidades, testa, compila, publica o pacote Windows e prende a tag ao SHA efetivamente validado.
 

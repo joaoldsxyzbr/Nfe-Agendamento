@@ -278,13 +278,7 @@ public sealed class PortalNfeFallbackForm : Form
             var validated = NfePortalXmlValidator.ValidateAndNormalize(xml, _accessKey);
             await _cache.PutAsync(_accessKey, validated);
 
-            SetStatus("XML validado e salvo no cache. Volte ao sistema e consulte a mesma chave novamente.");
-            MessageBox.Show(
-                this,
-                "XML obtido com sucesso pelo Portal Nacional e salvo no cache do NFe Agendamento.\n\nAgora você pode consultar a mesma chave novamente no sistema.",
-                "NF-e localizada",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
+            SetStatus("XML validado e salvo no cache. O site será atualizado automaticamente.");
             Close();
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException)

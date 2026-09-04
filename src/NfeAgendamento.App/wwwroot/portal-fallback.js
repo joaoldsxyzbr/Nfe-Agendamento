@@ -2,12 +2,15 @@
   let centralActive = false;
   let roleKnown = false;
   let opening = false;
+  let watchingAccessKey = '';
 
   const panel = document.getElementById('portalFallbackPanel');
   const button = document.getElementById('portalFallback');
   const accessKeyInput = document.getElementById('accessKey');
   const status = document.getElementById('status');
   const lookupButton = document.getElementById('lookup');
+  const portalPollDelayMs = 2000;
+  const portalPollAttempts = 300;
 
   function hideFallback() {
     if (panel) panel.hidden = true;
@@ -15,6 +18,10 @@
 
   function showFallback() {
     if (panel) panel.hidden = false;
+  }
+
+  function sleep(milliseconds) {
+    return new Promise(resolve => setTimeout(resolve, milliseconds));
   }
 
   async function loadRole() {
@@ -46,6 +53,46 @@
 
       return message;
     };
+  }
+
+  async function watchPortalImport(accessKey) {
+    if (watchingAccessKey === accessKey) return;
+    watchingAccessKey = accessKey;
+
+    try {
+      for (let attempt = 0; attempt < portalPollAttempts; attempt++) {
+        await sleep(portalPollDelayMs);
+        if (watchingAccessKey !== accessKey) return;
+
+        const currentKey = String(accessKeyInput?.value || '').replace(/\D/g, '');
+        if (currentKey !== accessKey) return;
+
+        let response;
+        try {
+          response = await fetch(`/api/nfe/cache/${encodeURIComponent(accessKey)}`, { cache: 'no-store' });
+        } catch {
+          continue;
+        }
+
+        if (response.status === 404 || response.status === 204) continue;
+        if (!response.ok) return;
+
+        hideFallback();
+        if (status) {
+          status.textContent = 'XML recebido do Portal. Carregando a NF-e...';
+          status.className = 'status';
+        }
+
+        if (typeof globalThis.lookup === 'function') {
+          await globalThis.lookup();
+        } else if (status) {
+          status.textContent = 'XML recebido do Portal. Clique em Consultar NF-e para abrir o documento.';
+        }
+        return;
+      }
+    } finally {
+      if (watchingAccessKey === accessKey) watchingAccessKey = '';
+    }
   }
 
   async function openPortalFallback() {
@@ -92,9 +139,10 @@
       if (response.status !== 202) throw new Error(payload.message || 'Não foi possível abrir o Portal da NF-e.');
 
       if (status) {
-        status.textContent = 'Portal da NF-e aberto neste PC líder. Resolva o hCaptcha e conclua o download do XML; depois consulte a mesma chave novamente.';
+        status.textContent = 'Portal da NF-e aberto. Resolva o hCaptcha e baixe o XML; esta tela será atualizada automaticamente.';
         status.className = 'status';
       }
+      void watchPortalImport(accessKey);
     } catch (error) {
       if (status) {
         status.textContent = error?.message || 'Não foi possível abrir o Portal da NF-e.';
@@ -104,7 +152,7 @@
       opening = false;
       if (button) {
         button.disabled = false;
-        button.textContent = 'Consultar pela Fazenda';
+        button.textContent = 'Baixar pelo Portal';
       }
     }
   }

@@ -15,6 +15,7 @@ public sealed class PortalFallbackStaticAssetsTests
 
         Assert.Contains("id=\"portalFallback\"", html, StringComparison.Ordinal);
         Assert.Contains("/portal-fallback.js", html, StringComparison.Ordinal);
+        Assert.Contains("Baixar pelo Portal", html, StringComparison.Ordinal);
         Assert.Contains("/api/nfe/portal-fallback", script, StringComparison.Ordinal);
         Assert.Contains("centralActive", script, StringComparison.Ordinal);
         Assert.DoesNotContain("configuredAsCentral", script, StringComparison.Ordinal);
@@ -23,6 +24,19 @@ public sealed class PortalFallbackStaticAssetsTests
         Assert.Contains("SharedQueueCentralService central", program, StringComparison.Ordinal);
         Assert.Contains("central.CanProcessWork()", program, StringComparison.Ordinal);
         Assert.Contains("leader_inactive", program, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Portal_fallback_returns_cached_xml_to_site_without_fiscal_polling()
+    {
+        var script = Fixture("portal-fallback.js");
+        var program = Fixture("Program.cs");
+
+        Assert.Contains("/api/nfe/cache/{accessKey}", program, StringComparison.Ordinal);
+        Assert.Contains("cache.TryGetAsync(accessKey", program, StringComparison.Ordinal);
+        Assert.Contains("`/api/nfe/cache/${encodeURIComponent(accessKey)}`", script, StringComparison.Ordinal);
+        Assert.Contains("globalThis.lookup", script, StringComparison.Ordinal);
+        Assert.Contains("atualizada automaticamente", script, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

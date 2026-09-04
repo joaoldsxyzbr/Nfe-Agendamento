@@ -186,6 +186,27 @@ internal static class Program
             }
         });
 
+        app.MapGet("/api/nfe/cache/{accessKey}", async (
+            string accessKey,
+            EncryptedXmlCache cache,
+            CancellationToken cancellationToken) =>
+        {
+            if (!AccessKeyValidator.IsValid(accessKey))
+                return Results.BadRequest(new { status = "invalid_key", message = "Informe uma chave NF-e válida com 44 dígitos." });
+
+            try
+            {
+                var cached = await cache.TryGetAsync(accessKey, cancellationToken);
+                return cached is null
+                    ? Results.Json(new { status = "cache_miss" }, statusCode: StatusCodes.Status404NotFound)
+                    : Results.Ok(new { status = "cache_hit" });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Json(new { status = "configuration_error", message = ex.Message }, statusCode: StatusCodes.Status409Conflict);
+            }
+        });
+
         app.MapPost("/api/nfe/portal-fallback", (
             LookupRequest? request,
             SharedQueueCentralService central,

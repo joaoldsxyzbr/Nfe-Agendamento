@@ -107,7 +107,9 @@ O cache também é compartilhado: uma NF-e já obtida por um líder pode ser ent
 
 O A1 é uma configuração local de cada PC confiável e não depende de papel fixo de Central.
 
-O fallback manual pelo Portal Nacional só pode ser iniciado no **líder atual com lock saudável**. O front-end esconde o botão nos PCs em standby e o backend rejeita a operação se o lock não estiver válido. O hCaptcha permanece manual e o XML baixado é validado antes de entrar no cache compartilhado.
+O fallback pelo Portal Nacional só pode ser iniciado no **líder atual com lock saudável**. Após `cStat=656`, o site local exibe **Baixar pelo Portal**; o backend continua rejeitando a operação se o lock não estiver válido. O hCaptcha permanece manual.
+
+Depois que o Portal baixa o XML oficial, o aplicativo valida o arquivo, grava no cache compartilhado e fecha a janela do WebView2. O site acompanha apenas o cache local por um endpoint que **não consulta a SEFAZ**; assim que o XML aparece, a mesma NF-e é carregada automaticamente na interface sem exigir nova ação do usuário.
 
 ## Estados exibidos
 
@@ -173,7 +175,7 @@ Após uma release que altere esta arquitetura:
 9. validar DANFE e download XML;
 10. executar lote pequeno;
 11. confirmar que replay e cooldown permanecem compartilhados;
-12. validar que o Portal aparece somente no líder e funciona com WebView2/A1 real;
+12. validar que o Portal aparece somente no líder, funciona com WebView2/A1 real e que o site carrega automaticamente o XML após o download;
 13. confirmar que arquivos fora da árvore dedicada permaneceram intocados.
 
 Não provoque um `cStat=656` real apenas para testar.
