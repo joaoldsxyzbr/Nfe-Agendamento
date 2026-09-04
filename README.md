@@ -4,10 +4,10 @@ Aplicativo Windows interno para consultar, visualizar e baixar NF-e. Cada PC exe
 
 ## Versão
 
-- última release publicada: **v0.1.26**;
-- `main`: **v0.1.26**.
+- última release publicada: **v0.1.27**;
+- `main`: **v0.1.27**.
 
-A v0.1.26 consolidou o fallback do Portal Nacional acionado pela interface local e migrou a assinatura de atualização para **Sigstore keyless**, vinculada ao workflow oficial do GitHub Actions. Não existe chave privada persistente de assinatura nem GitHub Secret com chave RSA de release.
+A v0.1.27 consolida o hardening pós-auditoria: limpeza física do cache expirado, headers defensivos com CSP, persistência atômica de certificado + UF, build sem warnings e pin do Cosign por SHA. Ela mantém o fallback do Portal Nacional pela interface local e a assinatura de atualização por **Sigstore keyless**, vinculada ao workflow oficial do GitHub Actions.
 
 ## Arquitetura atual
 
@@ -374,9 +374,9 @@ Não provoque `cStat=656` real apenas para testar.
 
 ## Release atual
 
-A última release publicada é **v0.1.26**.
+A última release publicada é **v0.1.27**.
 
-Ela contém o fallback do Portal integrado ao site local e atualização protegida por SHA-256 + Sigstore keyless vinculada ao workflow oficial.
+Ela contém o hardening final pós-auditoria, mantendo o fallback do Portal integrado ao site local e a atualização protegida por SHA-256 + Sigstore keyless vinculada ao workflow oficial.
 
 ## Documentação técnica
 
