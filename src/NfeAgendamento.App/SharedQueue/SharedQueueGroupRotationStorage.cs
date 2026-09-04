@@ -134,9 +134,11 @@ public sealed class SharedQueueGroupRotationStorage
         EnsurePrepared(authorized);
         EnsurePrepared(cooldown);
 
-        PromoteOne(authorized, _paths.AuthorizedClientsPath);
-        PromoteOne(cooldown, _paths.StatusPath("fiscal-cooldown.bin"));
-        PromoteOne(identity, _paths.GroupIdentityPath);
+        // Mantém os arquivos preparados até o marcador ser removido. Assim uma
+        // queda entre promoções pode ser concluída repetindo a operação.
+        PromoteOne(authorized, _paths.AuthorizedClientsPath, MaxAuthorizedBytes);
+        PromoteOne(cooldown, _paths.StatusPath("fiscal-cooldown.bin"), MaxCooldownBytes);
+        PromoteOne(identity, _paths.GroupIdentityPath, MaxIdentityBytes);
     }
 
     public async Task WriteMarkerAsync(GroupRotationMarker marker, CancellationToken cancellationToken = default)
@@ -287,12 +289,29 @@ public sealed class SharedQueueGroupRotationStorage
         SharedQueueFileIO.EnsureNotReparsePoint(path);
     }
 
-    private static void PromoteOne(string prepared, string active)
+    private static void PromoteOne(string prepared, string active, int maxBytes)
     {
         SharedQueueFileIO.EnsureNotReparsePoint(prepared);
         if (File.Exists(active))
             SharedQueueFileIO.EnsureNotReparsePoint(active);
-        File.Move(prepared, active, overwrite: true);
+
+        var bytes = SharedQueueFileIO.ReadAllBytes(prepared, maxBytes);
+        var temporary = active + $".{Guid.NewGuid():N}.rotation.tmp";
+        try
+        {
+            SharedQueueFileIO.WriteAtomicAsync(
+                temporary,
+                active,
+                bytes,
+                maxBytes,
+                overwrite: true,
+                CancellationToken.None).GetAwaiter().GetResult();
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(bytes);
+            TryDelete(temporary);
+        }
     }
 
     private static void ZeroClients(IEnumerable<AuthorizedClientSnapshot> clients)

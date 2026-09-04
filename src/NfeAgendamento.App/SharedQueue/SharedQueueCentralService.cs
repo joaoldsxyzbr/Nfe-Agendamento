@@ -20,6 +20,7 @@ public sealed class SharedQueueCentralService : BackgroundService
     private readonly SharedQueuePaths _paths;
     private readonly CentralKeyStore _keyStore;
     private readonly SharedQueueGroupBootstrapService? _groupBootstrap;
+    private readonly SharedQueueGroupRotationService? _rotationService;
     private SharedQueueCentralLease? _lease;
     private CentralRuntimeStatus _status = CentralRuntimeStatus.Client;
     private string? _lastError;
@@ -29,7 +30,7 @@ public sealed class SharedQueueCentralService : BackgroundService
         CentralStateService centralState,
         SharedQueuePaths paths,
         CentralKeyStore keyStore)
-        : this(centralState, paths, keyStore, null)
+        : this(centralState, paths, keyStore, null, null)
     {
     }
 
@@ -38,11 +39,22 @@ public sealed class SharedQueueCentralService : BackgroundService
         SharedQueuePaths paths,
         CentralKeyStore keyStore,
         SharedQueueGroupBootstrapService? groupBootstrap)
+        : this(centralState, paths, keyStore, groupBootstrap, null)
+    {
+    }
+
+    public SharedQueueCentralService(
+        CentralStateService centralState,
+        SharedQueuePaths paths,
+        CentralKeyStore keyStore,
+        SharedQueueGroupBootstrapService? groupBootstrap,
+        SharedQueueGroupRotationService? rotationService)
     {
         _centralState = centralState ?? throw new ArgumentNullException(nameof(centralState));
         _paths = paths ?? throw new ArgumentNullException(nameof(paths));
         _keyStore = keyStore ?? throw new ArgumentNullException(nameof(keyStore));
         _groupBootstrap = groupBootstrap;
+        _rotationService = rotationService;
         _centralState.Changed += CentralStateChanged;
     }
 
@@ -77,6 +89,9 @@ public sealed class SharedQueueCentralService : BackgroundService
                 return false;
             lease = _lease;
         }
+
+        if (_rotationService?.BlocksFiscalWork == true)
+            return false;
 
         if (lease.IsHealthy)
             return true;
@@ -129,6 +144,15 @@ public sealed class SharedQueueCentralService : BackgroundService
 
             if (automaticMode)
             {
+                if (_rotationService is not null
+                    && !await _rotationService.CompletePendingAsync(cancellationToken))
+                {
+                    ReleaseLease(
+                        CentralRuntimeStatus.Client,
+                        "Existe uma rotação de confiança pendente que este PC não conseguiu concluir. Nenhum trabalho fiscal será iniciado.");
+                    return;
+                }
+
                 await _groupBootstrap!.EnsureBootstrapAsync(cancellationToken);
                 if (!_groupBootstrap.IsCandidateReady)
                 {

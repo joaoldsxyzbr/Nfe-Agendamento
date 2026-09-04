@@ -17,6 +17,7 @@ public sealed class SharedQueueGroupBootstrapService
     private readonly CandidateStateStore _candidateState;
     private readonly CandidateBundleStore _candidateBundles;
     private readonly SharedGroupIdentityStore _groupIdentity;
+    private readonly SharedQueueGroupRotationStorage _rotationStorage;
 
     public SharedQueueGroupBootstrapService(
         SharedQueuePaths paths,
@@ -37,9 +38,10 @@ public sealed class SharedQueueGroupBootstrapService
         _candidateState = candidateState ?? throw new ArgumentNullException(nameof(candidateState));
         _candidateBundles = new CandidateBundleStore(paths);
         _groupIdentity = new SharedGroupIdentityStore(paths);
+        _rotationStorage = new SharedQueueGroupRotationStorage(paths);
     }
 
-    public bool IsCandidateReady => _candidateState.IsReady && _groupIdentity.Exists;
+    public bool IsCandidateReady => ValidateCandidateReady();
 
     public async Task EnsureBootstrapAsync(CancellationToken cancellationToken = default)
     {
@@ -65,15 +67,17 @@ public sealed class SharedQueueGroupBootstrapService
             }
         }
 
-        if (_groupIdentity.Exists)
-            return;
-
         if (!_legacyCentralState.IsConfiguredAsCentral)
             return;
 
+        // Uma central legada pode ter caído depois de publicar a identidade, mas
+        // antes da lista compartilhada. Nesse caso ela continua o mesmo bootstrap.
         var groupKey = _candidateState.Load();
         if (groupKey is null)
         {
+            if (_groupIdentity.Exists)
+                throw new InvalidOperationException("A identidade do grupo existe, mas a chave local de recuperação não está disponível.");
+
             groupKey = RandomNumberGenerator.GetBytes(32);
             _candidateState.Save(groupKey);
         }
@@ -117,15 +121,12 @@ public sealed class SharedQueueGroupBootstrapService
     {
         if (IsCandidateReady)
             return true;
-        if (!_groupIdentity.Exists)
-            return false;
 
         var paired = _clientPairingStore.Load();
         if (paired is null)
             return false;
 
         CandidateBundlePayload? bundle = null;
-        byte[]? expectedFingerprint = null;
         byte[]? actualPublicKey = null;
         byte[]? actualFingerprint = null;
         try
@@ -134,19 +135,31 @@ public sealed class SharedQueueGroupBootstrapService
                 return false;
 
             bundle = _candidateBundles.Read(paired.ClientId, paired.ClientSecret);
-            expectedFingerprint = SHA256.HashData(paired.CentralPublicKey);
-            if (!CryptographicOperations.FixedTimeEquals(expectedFingerprint, bundle.CentralPublicKeySha256))
-                return false;
+            var marker = _rotationStorage.ReadMarker();
+            if (marker is not null && _rotationStorage.PreparedFilesExist(marker.RotationId))
+            {
+                actualPublicKey = _rotationStorage.GetPreparedPublicKey(marker.RotationId, bundle.GroupStateKey);
+            }
+            else
+            {
+                if (!_groupIdentity.Exists)
+                    return false;
+                actualPublicKey = _groupIdentity.GetPublicKey(bundle.GroupStateKey);
+            }
 
-            actualPublicKey = _groupIdentity.GetPublicKey(bundle.GroupStateKey);
             actualFingerprint = SHA256.HashData(actualPublicKey);
-            if (!CryptographicOperations.FixedTimeEquals(expectedFingerprint, actualFingerprint))
+            if (!CryptographicOperations.FixedTimeEquals(actualFingerprint, bundle.CentralPublicKeySha256))
                 return false;
 
             _candidateState.Save(bundle.GroupStateKey);
-            return true;
+            _clientPairingStore.UpdateCentralPublicKey(actualPublicKey);
+            return IsCandidateReady;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CryptographicException or InvalidDataException)
+        catch (Exception ex) when (ex is IOException
+            or UnauthorizedAccessException
+            or CryptographicException
+            or InvalidDataException
+            or InvalidOperationException)
         {
             return false;
         }
@@ -158,9 +171,57 @@ public sealed class SharedQueueGroupBootstrapService
                 CryptographicOperations.ZeroMemory(bundle.GroupStateKey);
                 CryptographicOperations.ZeroMemory(bundle.CentralPublicKeySha256);
             }
-            if (expectedFingerprint is not null) CryptographicOperations.ZeroMemory(expectedFingerprint);
             if (actualPublicKey is not null) CryptographicOperations.ZeroMemory(actualPublicKey);
             if (actualFingerprint is not null) CryptographicOperations.ZeroMemory(actualFingerprint);
+        }
+    }
+
+    private bool ValidateCandidateReady()
+    {
+        if (!_groupIdentity.Exists || !File.Exists(_paths.AuthorizedClientsPath))
+            return false;
+
+        var groupKey = _candidateState.Load();
+        if (groupKey is null)
+            return false;
+
+        byte[]? publicKey = null;
+        byte[]? publicFingerprint = null;
+        byte[]? pinnedFingerprint = null;
+        ClientPairingState? paired = null;
+        IReadOnlyList<AuthorizedClientSnapshot>? clients = null;
+        try
+        {
+            publicKey = _groupIdentity.GetPublicKey(groupKey);
+            clients = new SharedAuthorizedClientStore(_paths, _candidateState).Snapshot();
+            paired = _clientPairingStore.Load();
+
+            if (paired is null)
+                return _legacyCentralState.IsConfiguredAsCentral;
+
+            if (!clients.Any(item => item.ClientId == paired.ClientId))
+                return false;
+
+            publicFingerprint = SHA256.HashData(publicKey);
+            pinnedFingerprint = SHA256.HashData(paired.CentralPublicKey);
+            return CryptographicOperations.FixedTimeEquals(publicFingerprint, pinnedFingerprint);
+        }
+        catch (Exception ex) when (ex is IOException
+            or UnauthorizedAccessException
+            or CryptographicException
+            or InvalidDataException
+            or InvalidOperationException)
+        {
+            return false;
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(groupKey);
+            if (publicKey is not null) CryptographicOperations.ZeroMemory(publicKey);
+            if (publicFingerprint is not null) CryptographicOperations.ZeroMemory(publicFingerprint);
+            if (pinnedFingerprint is not null) CryptographicOperations.ZeroMemory(pinnedFingerprint);
+            if (paired is not null) ZeroPairingState(paired);
+            if (clients is not null) ZeroClients(clients);
         }
     }
 

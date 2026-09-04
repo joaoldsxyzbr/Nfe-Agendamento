@@ -145,13 +145,9 @@ public sealed class ClientPairingStore
             throw new ArgumentException("Nome do cliente inválido.", nameof(clientName));
         if (clientSecret is null || clientSecret.Length != 32)
             throw new CryptographicException("Segredo do cliente inválido.");
-        if (centralPublicKey is null || centralPublicKey.Length == 0)
-            throw new CryptographicException("Chave pública da Central inválida.");
+        ValidateCentralPublicKey(centralPublicKey);
         if (string.IsNullOrWhiteSpace(centralId))
             throw new ArgumentException("Identidade da Central inválida.", nameof(centralId));
-
-        using var rsa = RSA.Create();
-        rsa.ImportSubjectPublicKeyInfo(centralPublicKey, out _);
 
         lock (_sync)
         {
@@ -162,6 +158,17 @@ public sealed class ClientPairingStore
                 centralPublicKey.ToArray(),
                 centralId.Trim(),
                 0));
+        }
+    }
+
+    public void UpdateCentralPublicKey(byte[] centralPublicKey)
+    {
+        ValidateCentralPublicKey(centralPublicKey);
+        lock (_sync)
+        {
+            var state = LoadUnlocked()
+                ?? throw new InvalidOperationException("Este PC ainda não possui uma identidade de pareamento local.");
+            SaveUnlocked(state with { CentralPublicKey = centralPublicKey.ToArray() });
         }
     }
 
@@ -271,6 +278,14 @@ public sealed class ClientPairingStore
             CryptographicOperations.ZeroMemory(plainBytes);
             CryptographicOperations.ZeroMemory(protectedBytes);
         }
+    }
+
+    private static void ValidateCentralPublicKey(byte[] centralPublicKey)
+    {
+        if (centralPublicKey is null || centralPublicKey.Length == 0)
+            throw new CryptographicException("Chave pública da Central inválida.");
+        using var rsa = RSA.Create();
+        rsa.ImportSubjectPublicKeyInfo(centralPublicKey, out _);
     }
 
     private static ClientPairingState? Clone(ClientPairingState? state) =>
