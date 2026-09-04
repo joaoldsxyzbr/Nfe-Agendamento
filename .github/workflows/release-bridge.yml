@@ -4,12 +4,13 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Versão da release (ex.: v0.1.15)'
+        description: 'Versão da release (ex.: v0.1.26)'
         required: true
         type: string
 
 permissions:
   contents: write
+  id-token: write
 
 concurrency:
   group: release-nfe-agendamento
@@ -123,79 +124,27 @@ jobs:
           dotnet publish src/NfeAgendamento.App/NfeAgendamento.App.csproj -c Release -r win-x64 --self-contained true -p:Version=${{ steps.version.outputs.version }} -p:AssemblyVersion=${{ steps.version.outputs.version }}.0 -p:FileVersion=${{ steps.version.outputs.version }}.0 -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o artifacts/nfe-agendamento
           Compress-Archive -Path artifacts/nfe-agendamento/* -DestinationPath artifacts/Nfe-Agendamento-win-x64.zip
 
-      - name: Assinar pacote Windows
+      - name: Instalar Cosign
+        uses: sigstore/cosign-installer@v4.1.2
+
+      - name: Assinar pacote Windows com Sigstore
         shell: pwsh
-        env:
-          NFE_UPDATE_SIGNING_KEY_PKCS8_B64: ${{ secrets.NFE_UPDATE_SIGNING_KEY_PKCS8_B64 }}
         run: |
-          if ([string]::IsNullOrWhiteSpace($env:NFE_UPDATE_SIGNING_KEY_PKCS8_B64)) {
-            throw 'O Secret NFE_UPDATE_SIGNING_KEY_PKCS8_B64 não está configurado. A release não será publicada sem assinatura.'
-          }
+          cosign sign-blob --yes --bundle artifacts/Nfe-Agendamento-win-x64.zip.sigstore.json artifacts/Nfe-Agendamento-win-x64.zip
+          if ($LASTEXITCODE -ne 0) { throw 'Falha ao assinar pacote com Sigstore.' }
 
-          $packagePath = Join-Path $env:GITHUB_WORKSPACE 'artifacts/Nfe-Agendamento-win-x64.zip'
-          $signaturePath = "$packagePath.sig"
-          $expectedPublicKeyFingerprint = '98cba72b2874a069a8eb8553dbd5c0851e52051ceae013b7c1b00917ede9e2d4'
-          $privateKeyBytes = $null
-          $publicKeyBytes = $null
-          $signature = $null
-          $rsa = $null
-
-          try {
-            $privateKeyBytes = [Convert]::FromBase64String($env:NFE_UPDATE_SIGNING_KEY_PKCS8_B64.Trim())
-            $rsa = [System.Security.Cryptography.RSA]::Create()
-            $bytesRead = 0
-            $rsa.ImportPkcs8PrivateKey($privateKeyBytes, [ref]$bytesRead)
-            if ($bytesRead -ne $privateKeyBytes.Length) {
-              throw 'A chave privada de assinatura contém dados extras ou inválidos.'
-            }
-
-            $publicKeyBytes = $rsa.ExportSubjectPublicKeyInfo()
-            $publicHash = [System.Security.Cryptography.SHA256]::HashData($publicKeyBytes)
-            $actualFingerprint = [Convert]::ToHexString($publicHash).ToLowerInvariant()
-            [System.Security.Cryptography.CryptographicOperations]::ZeroMemory($publicHash)
-            if ($actualFingerprint -ne $expectedPublicKeyFingerprint) {
-              throw 'O Secret de assinatura não corresponde à chave pública embutida no aplicativo.'
-            }
-
-            $packageBytes = [IO.File]::ReadAllBytes($packagePath)
-            try {
-              $signature = $rsa.SignData(
-                $packageBytes,
-                [System.Security.Cryptography.HashAlgorithmName]::SHA256,
-                [System.Security.Cryptography.RSASignaturePadding]::Pss)
-            }
-            finally {
-              [System.Security.Cryptography.CryptographicOperations]::ZeroMemory($packageBytes)
-            }
-
-            [IO.File]::WriteAllText(
-              $signaturePath,
-              [Convert]::ToBase64String($signature),
-              [Text.Encoding]::ASCII)
-          }
-          finally {
-            if ($null -ne $signature) {
-              [System.Security.Cryptography.CryptographicOperations]::ZeroMemory($signature)
-            }
-            if ($null -ne $publicKeyBytes) {
-              [System.Security.Cryptography.CryptographicOperations]::ZeroMemory($publicKeyBytes)
-            }
-            if ($null -ne $privateKeyBytes) {
-              [System.Security.Cryptography.CryptographicOperations]::ZeroMemory($privateKeyBytes)
-            }
-            if ($null -ne $rsa) {
-              $rsa.Dispose()
-            }
-            Remove-Item Env:NFE_UPDATE_SIGNING_KEY_PKCS8_B64 -ErrorAction SilentlyContinue
-          }
-
-          if (-not (Test-Path -LiteralPath $signaturePath)) {
-            throw 'A assinatura destacada não foi criada.'
-          }
+      - name: Verificar assinatura Sigstore antes da publicação
+        shell: pwsh
+        run: |
+          cosign verify-blob artifacts/Nfe-Agendamento-win-x64.zip `
+            --bundle artifacts/Nfe-Agendamento-win-x64.zip.sigstore.json `
+            --certificate-identity "https://github.com/joaoldsxyzbr/Nfe-Agendamento/.github/workflows/release-bridge.yml@refs/heads/main" `
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
+          if ($LASTEXITCODE -ne 0) { throw 'A verificação Sigstore do pacote falhou.' }
 
       - name: Criar release
         env:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
-          gh release create "${{ steps.version.outputs.tag }}" artifacts/Nfe-Agendamento-win-x64.zip artifacts/Nfe-Agendamento-win-x64.zip.sig --target "${{ github.sha }}" --title "NFe Agendamento ${{ steps.version.outputs.tag }}" --notes "Pacote Windows autocontido do NFe Agendamento, protegido por SHA-256 e assinatura RSA-PSS/SHA-256."
+          gh release create "${{ steps.version.outputs.tag }}" artifacts/Nfe-Agendamento-win-x64.zip artifacts/Nfe-Agendamento-win-x64.zip.sigstore.json --target "${{ github.sha }}" --title "NFe Agendamento ${{ steps.version.outputs.tag }}" --notes "v${{ steps.version.outputs.version }}: fallback do Portal integrado ao site e atualização protegida por SHA-256 + Sigstore keyless vinculada ao workflow oficial."
