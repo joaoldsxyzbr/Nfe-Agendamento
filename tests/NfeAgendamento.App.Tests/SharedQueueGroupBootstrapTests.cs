@@ -98,6 +98,41 @@ public sealed class SharedQueueGroupBootstrapTests
     }
 
     [Fact]
+    public async Task Bootstrap_reuses_prepared_candidate_key_after_interruption_before_group_identity()
+    {
+        using var temp = new TempDirectory();
+        var share = Path.Combine(temp.Path, "share");
+        Directory.CreateDirectory(share);
+        var paths = new SharedQueuePaths(share);
+        paths.InitializeAsCentral();
+
+        var state = new CentralStateService(new CentralSettingsStore(Path.Combine(temp.Path, "central.json")));
+        state.SetConfiguredAsCentral(true);
+        var candidate = new CandidateStateStore(Path.Combine(temp.Path, "candidate.bin"));
+        var preparedKey = RandomNumberGenerator.GetBytes(32);
+        candidate.Save(preparedKey);
+
+        var service = new SharedQueueGroupBootstrapService(
+            paths,
+            state,
+            new CentralKeyStore(Path.Combine(temp.Path, "central-key.bin")),
+            new AuthorizedClientStore(Path.Combine(temp.Path, "authorized.bin")),
+            new ClientPairingStore(Path.Combine(temp.Path, "client.bin")),
+            candidate);
+
+        await service.EnsureBootstrapAsync();
+
+        var recoveredKey = candidate.Load()!;
+        Assert.Equal(preparedKey, recoveredKey);
+        var publicKey = new SharedGroupIdentityStore(paths).GetPublicKey(preparedKey);
+        Assert.NotEmpty(publicKey);
+
+        CryptographicOperations.ZeroMemory(preparedKey);
+        CryptographicOperations.ZeroMemory(recoveredKey);
+        CryptographicOperations.ZeroMemory(publicKey);
+    }
+
+    [Fact]
     public async Task Client_rejects_candidate_bundle_when_pinned_public_key_does_not_match_group()
     {
         using var temp = new TempDirectory();
