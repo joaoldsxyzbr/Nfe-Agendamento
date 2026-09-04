@@ -41,7 +41,7 @@ XML validado/cache cifrado
 resposta cifrada ao solicitante
 ```
 
-Mesmo com A1 nos PCs confiáveis, somente o líder com lock exclusivo e saudável inicia trabalho fiscal.
+Mesmo com A1 nos PCs confiáveis, somente o líder com lock exclusivo e saudável inicia trabalho fiscal automático.
 
 ## Liderança automática e fencing fiscal
 
@@ -155,13 +155,13 @@ O PFX, sua chave privada e eventual senha nunca devem entrar no repositório ou 
 
 Quando a consulta automática recebe `cStat=656`, o cooldown é mantido e o aplicativo não insiste automaticamente.
 
-**Baixar pelo Portal** é permitido somente no líder atual com lock saudável. O hCaptcha permanece manual e não é automatizado ou contornado.
+**Baixar pelo Portal** pode ser usado em qualquer PC autorizado no grupo que tenha o certificado A1 configurado localmente e o WebView2 disponível. O PC não precisa ser o líder da fila. O hCaptcha permanece manual e não é automatizado ou contornado.
 
 Fluxo:
 
-1. o site local abre o Portal em WebView2;
+1. o site local abre o Portal em WebView2 no próprio PC;
 2. a chave é preenchida automaticamente;
-3. o usuário resolve o hCaptcha e conclui o download;
+3. o usuário resolve o hCaptcha e conclui o download com o A1 local;
 4. o XML é validado;
 5. o XML válido entra no cache compartilhado;
 6. a janela do Portal fecha após importação bem-sucedida;
@@ -178,13 +178,14 @@ Esse polling não chama a SEFAZ.
 
 Proteções do Portal:
 
+- somente PCs autorizados com estado de grupo disponível podem iniciar o fallback;
 - navegação restrita ao domínio oficial esperado;
 - certificado comparado por thumbprint;
 - XML limitado a 10 MiB;
 - DTD e entidades externas proibidos;
 - `infNFe/@Id` deve corresponder à chave solicitada;
 - XML de outra chave é rejeitado;
-- apenas uma janela de contingência pode ficar aberta por vez no líder.
+- apenas uma janela de contingência pode ficar aberta por vez em cada PC.
 
 A integração WebView2 + Portal + hCaptcha + A1 continua exigindo teste físico em ambiente real.
 
@@ -364,9 +365,9 @@ Antes de considerar uma implantação operacional totalmente aceita:
 - [ ] perder acesso ao compartilhamento no líder e confirmar que nenhuma nova chamada fiscal começa;
 - [ ] restaurar o compartilhamento e validar recuperação;
 - [ ] A1 local funciona nos candidatos;
-- [ ] Portal Nacional aparece somente no líder e abre em WebView2 real;
-- [ ] hCaptcha permanece manual e o A1 funciona no fluxo real;
-- [ ] XML oficial chega ao cache e a interface carrega a NF-e automaticamente;
+- [ ] Portal Nacional abre em WebView2 real em um PC autorizado mesmo quando ele está em standby;
+- [ ] hCaptcha permanece manual e o A1 local funciona no fluxo real;
+- [ ] XML oficial chega ao cache compartilhado e a interface carrega a NF-e automaticamente;
 - [ ] atualização real conclui o health check;
 - [ ] cenário de health check inválido restaura a versão anterior.
 

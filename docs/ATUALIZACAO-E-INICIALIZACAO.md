@@ -71,12 +71,12 @@ O estado local fica protegido por DPAPI e não precisa ser recriado a cada inici
 
 O certificado é configurado localmente em cada PC confiável. Ele não é copiado pela fila e não faz parte do pacote de candidatura.
 
-Antes de depender de um PC como possível líder, confirme nele:
+Antes de depender de um PC como possível líder ou usar o fallback pelo Portal nele, confirme:
 
 1. A1 instalado no usuário correto;
 2. certificado selecionado no NFe Agendamento;
 3. UF autora configurada;
-4. consulta conhecida funcionando.
+4. acesso à pasta compartilhada e autorização do PC no grupo.
 
 ## Cache fiscal compartilhado
 
@@ -92,9 +92,11 @@ Isso permite que um PC assuma a liderança e reutilize o XML obtido pelo líder 
 
 ## Portal Nacional
 
-A contingência **Consultar pela Fazenda** só pode ser iniciada pelo líder atual com `central.lock` saudável. O front-end não oferece a ação no standby e o backend revalida o lock antes de abrir o WebView2.
+Após `cStat=656`, **Baixar pelo Portal** pode ser iniciado em qualquer PC autorizado no grupo, inclusive quando ele está em standby. O WebView2 e o certificado A1 usados são locais daquele PC; o hCaptcha continua manual.
 
-O XML oficial baixado e validado entra no mesmo cache compartilhado de 24 horas. O hCaptcha continua manual.
+O fallback manual do Portal não exige `central.lock`, mas o PC precisa ter o estado de grupo necessário para gravar o XML no cache compartilhado. As consultas automáticas à SEFAZ continuam exclusivas do líder e permanecem protegidas pelo fencing fiscal.
+
+O XML oficial baixado e validado entra no mesmo cache compartilhado de 24 horas. Assim que aparece no cache, a interface local carrega a NF-e automaticamente sem polling fiscal.
 
 ## Iniciar com o Windows
 
@@ -169,7 +171,7 @@ Quando precisar atualizar manualmente:
 8. valide uma consulta no líder e outra em standby;
 9. feche o líder e valide o failover;
 10. confirme que uma NF-e já consultada continua vindo do cache depois da troca de líder;
-11. valide DANFE/download XML e, quando necessário, Portal Nacional/WebView2.
+11. valide DANFE/download XML e, quando necessário, Portal Nacional/WebView2 em um PC autorizado, inclusive em standby.
 
 ## O que fica persistente
 
@@ -188,7 +190,7 @@ Na pasta compartilhada ficam os estados necessários à coordenação protegidos
 
 ## Recuperação de falha
 
-Se uma atualização falhar antes de instalar, a versão atual permanece. Não desative SHA-256, assinatura RSA ou outras validações para contornar o problema.
+Se uma atualização falhar antes de instalar, a versão atual permanece. Não desative SHA-256, Sigstore ou outras validações para contornar o problema.
 
 Se uma versão nova não iniciar, o atualizador tenta automaticamente restaurar o backup. Se ainda houver intervenção manual:
 
@@ -213,7 +215,7 @@ O mínimo recomendado é:
 - replay e cooldown preservados;
 - nenhuma repetição automática de consulta fiscal ambígua;
 - DANFE/XML funcionando;
-- Portal disponível somente no líder e validado fisicamente quando fizer parte da aceitação da versão;
-- atualização oficial contendo ZIP + `.sig` e passando pelo health check/rollback.
+- Portal validado fisicamente em pelo menos um PC autorizado que esteja em standby;
+- atualização oficial contendo ZIP + `.sigstore.json` e passando pelo health check/rollback.
 
 O roteiro completo está em [Validação física multi-PC](TESTE-MULTI-PC.md).

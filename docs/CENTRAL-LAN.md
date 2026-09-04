@@ -93,7 +93,7 @@ Quando o usuário consulta uma NF-e:
 - caso contrário, envia o pedido cifrado pela pasta para o líder atual;
 - o líder consulta primeiro o cache compartilhado de 24h antes de considerar uma chamada à SEFAZ.
 
-Mesmo com A1 instalado em todos os PCs, as consultas fiscais **não** rodam em paralelo entre máquinas. A fila mantém um único líder e a serialização fiscal existente.
+Mesmo com A1 instalado em todos os PCs, as consultas fiscais automáticas **não** rodam em paralelo entre máquinas. A fila mantém um único líder e a serialização fiscal existente.
 
 ## Cooldown e failover
 
@@ -107,7 +107,9 @@ O cache também é compartilhado: uma NF-e já obtida por um líder pode ser ent
 
 O A1 é uma configuração local de cada PC confiável e não depende de papel fixo de Central.
 
-O fallback pelo Portal Nacional só pode ser iniciado no **líder atual com lock saudável**. Após `cStat=656`, o site local exibe **Baixar pelo Portal**; o backend continua rejeitando a operação se o lock não estiver válido. O hCaptcha permanece manual.
+Após `cStat=656`, **qualquer PC autorizado no grupo** pode iniciar **Baixar pelo Portal**, inclusive quando estiver em standby. O WebView2 e o certificado A1 usados são os daquele próprio PC. O backend exige que a instalação possua o estado de grupo necessário para gravar o XML no cache compartilhado; o hCaptcha permanece manual.
+
+Essa exceção vale somente para o fallback manual do Portal. As chamadas automáticas à SEFAZ continuam exclusivas do líder com lock saudável.
 
 Depois que o Portal baixa o XML oficial, o aplicativo valida o arquivo, grava no cache compartilhado e fecha a janela do WebView2. O site acompanha apenas o cache local por um endpoint que **não consulta a SEFAZ**; assim que o XML aparece, a mesma NF-e é carregada automaticamente na interface sem exigir nova ação do usuário.
 
@@ -175,7 +177,7 @@ Após uma release que altere esta arquitetura:
 9. validar DANFE e download XML;
 10. executar lote pequeno;
 11. confirmar que replay e cooldown permanecem compartilhados;
-12. validar que o Portal aparece somente no líder, funciona com WebView2/A1 real e que o site carrega automaticamente o XML após o download;
+12. validar que o Portal pode ser aberto em um standby autorizado, funciona com WebView2/A1 local e que o site carrega automaticamente o XML após o download;
 13. confirmar que arquivos fora da árvore dedicada permaneceram intocados.
 
 Não provoque um `cStat=656` real apenas para testar.
