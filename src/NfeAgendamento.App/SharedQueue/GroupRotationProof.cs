@@ -54,10 +54,32 @@ public static class GroupRotationProof
             return false;
 
         var current = trustedPublicKey.ToArray();
+        var started = false;
         try
         {
             foreach (var transition in transitions)
             {
+                if (!started)
+                {
+                    byte[]? currentFingerprint = null;
+                    try
+                    {
+                        currentFingerprint = SHA256.HashData(current);
+                        if (!CryptographicOperations.FixedTimeEquals(
+                                currentFingerprint,
+                                transition.PreviousPublicKeySha256))
+                        {
+                            continue;
+                        }
+                        started = true;
+                    }
+                    finally
+                    {
+                        if (currentFingerprint is not null)
+                            CryptographicOperations.ZeroMemory(currentFingerprint);
+                    }
+                }
+
                 if (!VerifyOne(current, transition))
                     return false;
 
