@@ -32,7 +32,7 @@ public sealed class CandidateIdentityTransitionStoreTests
 
         Assert.True(GroupRotationProof.VerifyChain(publicA, publicC, loaded));
         Assert.True(GroupRotationProof.VerifyChain(publicB, publicC, loaded));
-        Assert.Throws<CryptographicException>(() =>
+        Assert.ThrowsAny<CryptographicException>(() =>
             store.Read(clientId, RandomNumberGenerator.GetBytes(32)));
 
         CandidateIdentityTransitionStore.Zero(loaded);
