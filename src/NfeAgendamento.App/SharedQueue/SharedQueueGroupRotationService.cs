@@ -14,6 +14,7 @@ public sealed class SharedQueueGroupRotationService
     private readonly ClientPairingStore _clientPairing;
     private readonly SharedAuthorizedClientStore _authorizedClients;
     private readonly CandidateBundleStore _candidateBundles;
+    private readonly CandidateIdentityTransitionStore _candidateTransitions;
     private readonly SharedQueueGroupRotationStorage _storage;
     private readonly FiscalCooldownStore _cooldown;
     private readonly EncryptedXmlCache _cache;
@@ -34,6 +35,7 @@ public sealed class SharedQueueGroupRotationService
         _clientPairing = clientPairing ?? throw new ArgumentNullException(nameof(clientPairing));
         _authorizedClients = authorizedClients ?? throw new ArgumentNullException(nameof(authorizedClients));
         _candidateBundles = candidateBundles ?? throw new ArgumentNullException(nameof(candidateBundles));
+        _candidateTransitions = new CandidateIdentityTransitionStore(paths);
         _storage = storage ?? throw new ArgumentNullException(nameof(storage));
         _cooldown = cooldown ?? throw new ArgumentNullException(nameof(cooldown));
         _cache = cache ?? throw new ArgumentNullException(nameof(cache));
@@ -89,6 +91,9 @@ public sealed class SharedQueueGroupRotationService
                         byte[]? newPrivateKey = null;
                         byte[]? newPublicKey = null;
                         byte[]? newFingerprint = null;
+                        GroupIdentityTransition? newTransition = null;
+                        GroupIdentityTransition[]? nextTransitions = null;
+                        var previousTransitions = new Dictionary<Guid, GroupIdentityTransition[]>();
                         var rotationId = Guid.NewGuid();
                         var markerWritten = false;
                         try
@@ -106,6 +111,24 @@ public sealed class SharedQueueGroupRotationService
                             }
                             newFingerprint = SHA256.HashData(newPublicKey);
 
+                            using (var oldPrivateKey = identity.OpenPrivateKey(oldGroupKey))
+                                newTransition = GroupRotationProof.Create(oldPrivateKey, oldPublicKey, newPublicKey);
+
+                            foreach (var client in remaining)
+                            {
+                                cancellationToken.ThrowIfCancellationRequested();
+                                var existing = _candidateTransitions.Read(client.ClientId, client.Secret)
+                                    .Select(CloneTransition)
+                                    .ToArray();
+                                previousTransitions[client.ClientId] = existing;
+                            }
+
+                            var leaderHistory = previousTransitions[local.ClientId];
+                            nextTransitions = leaderHistory
+                                .Select(CloneTransition)
+                                .Append(CloneTransition(newTransition))
+                                .ToArray();
+
                             foreach (var client in remaining)
                             {
                                 cancellationToken.ThrowIfCancellationRequested();
@@ -113,6 +136,11 @@ public sealed class SharedQueueGroupRotationService
                                     client.ClientId,
                                     client.Secret,
                                     new CandidateBundlePayload(newGroupKey, newFingerprint),
+                                    cancellationToken);
+                                await _candidateTransitions.WriteAsync(
+                                    client.ClientId,
+                                    client.Secret,
+                                    nextTransitions,
                                     cancellationToken);
                             }
 
@@ -137,7 +165,10 @@ public sealed class SharedQueueGroupRotationService
                         catch (OperationCanceledException)
                         {
                             if (!markerWritten)
+                            {
                                 await RestoreOldBundlesAsync(remaining, oldGroupKey, oldFingerprint, CancellationToken.None);
+                                await RestoreOldTransitionsAsync(remaining, previousTransitions, CancellationToken.None);
+                            }
                             throw;
                         }
                         catch (Exception ex) when (ex is IOException
@@ -149,6 +180,7 @@ public sealed class SharedQueueGroupRotationService
                             if (!markerWritten)
                             {
                                 await RestoreOldBundlesAsync(remaining, oldGroupKey, oldFingerprint, CancellationToken.None);
+                                await RestoreOldTransitionsAsync(remaining, previousTransitions, CancellationToken.None);
                                 _storage.CleanupPrepared(rotationId);
                             }
                             return new GroupRotationResult(false, $"Não foi possível concluir a revogação: {ex.Message}");
@@ -162,6 +194,10 @@ public sealed class SharedQueueGroupRotationService
                             if (newPrivateKey is not null) CryptographicOperations.ZeroMemory(newPrivateKey);
                             if (newPublicKey is not null) CryptographicOperations.ZeroMemory(newPublicKey);
                             if (newFingerprint is not null) CryptographicOperations.ZeroMemory(newFingerprint);
+                            if (newTransition is not null) CandidateIdentityTransitionStore.Zero([newTransition]);
+                            if (nextTransitions is not null) CandidateIdentityTransitionStore.Zero(nextTransitions);
+                            foreach (var transitions in previousTransitions.Values)
+                                CandidateIdentityTransitionStore.Zero(transitions);
                         }
                     }
                     finally
@@ -220,6 +256,7 @@ public sealed class SharedQueueGroupRotationService
         CandidateBundlePayload? bundle = null;
         byte[]? publicKey = null;
         byte[]? fingerprint = null;
+        IReadOnlyList<GroupIdentityTransition>? transitions = null;
         try
         {
             if (!File.Exists(_paths.CandidateBundlePath(local.ClientId)))
@@ -231,11 +268,16 @@ public sealed class SharedQueueGroupRotationService
             if (!CryptographicOperations.FixedTimeEquals(fingerprint, bundle.CentralPublicKeySha256))
                 return false;
 
+            transitions = _candidateTransitions.Read(local.ClientId, local.ClientSecret);
+            if (!GroupRotationProof.VerifyChain(local.CentralPublicKey, publicKey, transitions))
+                return false;
+
             _storage.Promote(marker.RotationId);
             _candidateState.Save(bundle.GroupStateKey);
             _clientPairing.UpdateCentralPublicKey(publicKey);
 
             TryDelete(_paths.CandidateBundlePath(marker.RevokedClientId));
+            _candidateTransitions.Delete(marker.RevokedClientId);
             await _cache.PurgeAllAsync(cancellationToken);
 
             // O marcador é removido antes dos arquivos preparados: uma queda depois
@@ -262,6 +304,7 @@ public sealed class SharedQueueGroupRotationService
             }
             if (publicKey is not null) CryptographicOperations.ZeroMemory(publicKey);
             if (fingerprint is not null) CryptographicOperations.ZeroMemory(fingerprint);
+            if (transitions is not null) CandidateIdentityTransitionStore.Zero(transitions);
         }
     }
 
@@ -290,8 +333,39 @@ public sealed class SharedQueueGroupRotationService
         }
     }
 
+    private async Task RestoreOldTransitionsAsync(
+        IEnumerable<AuthorizedClientSnapshot> remaining,
+        IReadOnlyDictionary<Guid, GroupIdentityTransition[]> previousTransitions,
+        CancellationToken cancellationToken)
+    {
+        foreach (var client in remaining)
+        {
+            if (!previousTransitions.TryGetValue(client.ClientId, out var transitions))
+                continue;
+
+            try
+            {
+                if (transitions.Length == 0)
+                    _candidateTransitions.Delete(client.ClientId);
+                else
+                    await _candidateTransitions.WriteAsync(client.ClientId, client.Secret, transitions, cancellationToken);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CryptographicException or InvalidDataException)
+            {
+            }
+        }
+    }
+
     private static AuthorizedClientSnapshot CloneClient(AuthorizedClientSnapshot client) =>
         client with { Secret = client.Secret.ToArray() };
+
+    private static GroupIdentityTransition CloneTransition(GroupIdentityTransition transition) =>
+        transition with
+        {
+            PreviousPublicKeySha256 = transition.PreviousPublicKeySha256.ToArray(),
+            NewPublicKey = transition.NewPublicKey.ToArray(),
+            Signature = transition.Signature.ToArray()
+        };
 
     private static void ZeroClients(IEnumerable<AuthorizedClientSnapshot> clients)
     {
