@@ -41,7 +41,8 @@ public sealed class PairingCoordinatorTests
         Assert.True(secondResult.Success, secondResult.Message);
         Assert.True(fixture.ClientCandidate.IsReady);
         Assert.Equal(1, fixture.Authorized.Count);
-        Assert.Single(Directory.EnumerateFiles(fixture.Paths.PairingDirectory, "*.pair.res", SearchOption.TopDirectoryOnly));
+        Assert.Empty(Directory.EnumerateFiles(fixture.Paths.PairingDirectory, "*.pair.req", SearchOption.TopDirectoryOnly));
+        Assert.Empty(Directory.EnumerateFiles(fixture.Paths.PairingDirectory, "*.pair.res", SearchOption.TopDirectoryOnly));
     }
 
     private sealed class PairingFixture : IDisposable
