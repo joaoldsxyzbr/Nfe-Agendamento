@@ -7,7 +7,7 @@
     <OutputType>WinExe</OutputType>
     <ApplicationIcon>nfe-agendamento.ico</ApplicationIcon>
     <InvariantGlobalization>false</InvariantGlobalization>
-    <Version>0.1.30</Version>
+    <Version>0.1.31</Version>
   </PropertyGroup>
 
   <ItemGroup>

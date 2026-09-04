@@ -4,22 +4,16 @@ Aplicativo Windows interno para consultar, visualizar e baixar NF-e. Cada PC exe
 
 ## Versão
 
-- última release publicada: **v0.1.30**;
-- `main`: **v0.1.30**.
+- última release publicada: **v0.1.31**;
+- `main`: **v0.1.31**.
 
-A v0.1.30 endurece o pareamento da arquitetura de grupo automático. O líder usa obrigatoriamente a identidade criptográfica compartilhada do grupo, o pareamento só retorna sucesso depois da importação segura do estado do grupo, estados locais incompletos são descartados, pedidos não são consumidos quando o líder perdeu o estado seguro e envios duplicados são serializados no backend e bloqueados na interface.
+A v0.1.31 conclui o hardening pós-auditoria iniciado sobre a v0.1.30: bootstrap recuperável, pareamento one-shot, revogação com rotação criptográfica recuperável, cadeia RSA assinada para candidatos offline, gerenciamento de PCs autorizados, Actions fixadas por SHA, health check de atualização vinculado à versão realmente iniciada e tratamento estreito do ciclo de vida do WebView2.
 
-### Hardening pós-auditoria em andamento na `main`
-
-A `main` contém mudanças ainda não publicadas da próxima release planejada, **v0.1.31**. Já estão implementados bootstrap recuperável, remoção do reflection legado da migração, código de pareamento one-shot, rotação/revogação criptográfica recuperável, cadeia de transições RSA assinada e gerenciamento de PCs autorizados no líder.
-
-O health check vinculado à versão está parcialmente implementado: `/api/bootstrap` já expõe `appVersion`, mas o instalador ainda precisa exigir igualdade com a versão alvo antes de considerar a atualização saudável. A v0.1.31 só será publicada depois desse gate, pinagem SHA das Actions, hardening final do Portal/documentação e CI/CodeQL completos.
-
-O checklist de implementação está em [Hardening pós-auditoria — plano](docs/superpowers/plans/2026-09-04-post-audit-hardening.md).
+O checklist técnico está em [Hardening pós-auditoria — plano](docs/superpowers/plans/2026-09-04-post-audit-hardening.md). A validação que depende de máquinas reais permanece separada em [Teste multi-PC](docs/TESTE-MULTI-PC.md).
 
 ## Arquitetura atual
 
-Cada PC executa sua própria cópia e abre:
+Cada PC executa sua própria cópia e abre somente:
 
 ```text
 http://127.0.0.1:17345
@@ -31,9 +25,15 @@ Todos usam a pasta compartilhada:
 P:\01-Nfe agendamento
 ```
 
-Os PCs confiáveis podem ser candidatos a líder desde que tenham acesso de leitura/gravação à pasta, estejam autorizados no grupo e possuam o certificado A1 aplicável instalado/configurado localmente.
+Não existe servidor HTTP exposto na LAN, mDNS nem regra automática de firewall. A comunicação entre PCs acontece pela pasta compartilhada.
 
-A pasta deve usar SMB normal, preservando locks exclusivos. Não use Offline Files/Arquivos Offline ou cache desconectado para a pasta da fila.
+Os PCs confiáveis podem ser candidatos a líder quando:
+
+- possuem acesso de leitura/gravação à pasta compartilhada;
+- estão autorizados no grupo;
+- possuem o certificado A1 aplicável instalado e configurado localmente.
+
+A pasta deve usar SMB normal, preservando locks exclusivos. **Não use Offline Files/Arquivos Offline ou cache desconectado** para a pasta da fila.
 
 ```text
 PCs autorizados
@@ -44,16 +44,16 @@ eleição por central.lock
    ↓
 pedidos cifrados pela pasta compartilhada
    ↓
-cache fiscal 24h → fila fiscal serial → revalidação da liderança → SEFAZ
+cache fiscal 24h → fila fiscal serial → fencing → SEFAZ
    ↓
 XML validado/cache cifrado
    ↓
 resposta cifrada ao solicitante
 ```
 
-Mesmo com A1 nos PCs confiáveis, somente o líder com lock exclusivo e saudável inicia trabalho fiscal automático.
+Mesmo com A1 em vários PCs, somente o líder com lock exclusivo e saudável inicia trabalho fiscal automático.
 
-## Liderança automática e identidade do grupo
+## Liderança automática
 
 O lock exclusivo fica em:
 
@@ -63,85 +63,74 @@ P:\01-Nfe agendamento\status\central.lock
 
 Somente um processo pode mantê-lo aberto com exclusividade. O líder publica heartbeat assinado e processa a fila; os demais permanecem em standby.
 
-A chave RSA usada pelo líder não pertence ao PC que venceu a eleição. Ela vem de `group-identity.bin`, protegida pela chave de estado do grupo. Assim, troca normal de líder não altera a identidade pública confiada pelos clientes.
+A identidade RSA usada pelo líder vem de `group-identity.bin`, protegida pela chave de estado do grupo. Trocar de líder normalmente não muda a identidade pública confiada pelos clientes.
 
-Antes de cada chamada fiscal, a autoridade do líder é revalidada no último boundary possível. Se a liderança foi perdida, a operação falha de forma segura e uma nova chamada fiscal não é iniciada automaticamente.
+Antes de cada chamada fiscal, a autoridade do líder é revalidada no último boundary possível. Se a liderança foi perdida, a operação falha fechado e uma nova chamada fiscal não é iniciada automaticamente.
 
 Se existir `status\rotation.json`, nenhum candidato inicia novo trabalho fiscal até concluir a recuperação da rotação pendente.
 
-A configuração legada `ConfiguredAsCentral` existe apenas para compatibilidade/migração e não controla o dispatch normal.
+A configuração legada `ConfiguredAsCentral` existe apenas para compatibilidade/migração e não controla a operação normal.
 
 ## Pareamento robusto
 
 O código temporário de autorização só pode ser gerado pelo líder atual.
 
-Fluxo normal:
+Fluxo:
 
 1. no líder, abra **Configurar**;
 2. clique em **Gerar código de autorização**;
 3. no novo PC, informe o código em **Autorizar este PC**;
 4. o cliente publica um pedido cifrado na pasta compartilhada;
-5. o líder valida o pedido usando o código ativo;
-6. o líder registra o cliente e publica seu pacote de candidatura;
-7. a resposta fixa a mesma identidade pública compartilhada do grupo;
-8. o cliente importa e valida o estado seguro do grupo;
-9. somente depois dessa validação a API responde sucesso;
-10. o PC passa a operar como cliente e futuro candidato a líder.
+5. o líder valida o código e registra o cliente;
+6. publica o pacote de candidatura;
+7. o cliente importa e valida o estado seguro do grupo;
+8. somente depois disso a API responde sucesso.
 
-Proteções da v0.1.30:
+Proteções:
 
-- o `CentralKeyStore` de produção usa `CandidateStateStore + SharedGroupIdentityStore`;
-- um líder sem estado seguro do grupo não consome nem apaga o pedido de pareamento;
-- falhas transitórias depois da leitura do pedido restauram o arquivo para nova tentativa;
-- o cliente tenta recuperar um pareamento parcial anterior antes de iniciar outro;
-- se a validação final do grupo falhar, o estado local parcial é apagado;
-- solicitações simultâneas no mesmo PC são serializadas por um coordenador único;
-- cliques ou `Enter` repetidos são bloqueados na interface;
-- `clientPaired` só fica verdadeiro quando `CandidateStateStore` está realmente pronto;
-- um `409` representa falha real de pareamento, não sucesso parcial mascarado.
+- o líder usa obrigatoriamente a identidade criptográfica compartilhada do grupo;
+- estados locais incompletos são recuperados ou descartados com segurança;
+- solicitações simultâneas no mesmo PC são serializadas;
+- clique/`Enter` duplicado é bloqueado também na interface;
+- o código é consumido somente após a autorização concluída;
+- o mesmo código não autoriza um segundo PC;
+- troca legítima de identidade só é aceita por cadeia RSA assinada a partir do pin já confiado.
 
-Hardening já presente na `main` pós-v0.1.30:
-
-- bootstrap reutiliza a chave local previamente preparada após interrupção;
-- migração deixou de acessar estado legado via reflection;
-- código de autorização é consumido depois da primeira autorização concluída;
-- um código já consumido não pode autorizar outro PC;
-- uma troca legítima de identidade do grupo só é aceita mediante cadeia RSA assinada a partir do pin já confiado.
-
-O código é temporário e ligado ao líder que o gerou. Se ocorrer troca de líder durante a autorização, gere um novo código no líder atual.
+Se ocorrer troca de líder durante o fluxo, gere um novo código no líder atual.
 
 ## Revogação e rotação de confiança
 
-Na `main` pós-v0.1.30, o líder atual pode listar PCs autorizados e revogar um PC pela aba **Configurar**.
+O líder atual pode listar PCs autorizados e revogar um PC pela aba **Configurar**. A listagem não expõe o segredo criptográfico dos clientes e o líder atual não pode se autorrevogar pela interface.
 
-A listagem não expõe o segredo criptográfico do cliente. A revogação executa uma rotação real de confiança:
+A revogação executa uma rotação real de confiança:
 
 1. nova chave de estado do grupo;
 2. nova identidade RSA;
-3. nova lista de clientes autorizados sem o PC removido;
+3. nova lista de autorizados sem o PC removido;
 4. cooldown fiscal preservado;
 5. novos bundles somente para os PCs restantes;
-6. cadeia de transições RSA assinada para candidatos que ficaram offline;
+6. cadeia de transições RSA assinada para candidatos offline;
 7. purge do cache cifrado com a chave antiga;
 8. promoção recuperável do novo estado.
 
-Um candidato offline pode validar transições como A→B→C desde que a cadeia seja criptograficamente ligada ao pin local anterior. Uma identidade arbitrária sem essa prova continua sendo rejeitada.
+Um candidato offline pode validar transições A→B→C desde que a cadeia seja criptograficamente ligada ao pin anterior. Uma identidade arbitrária sem essa prova é rejeitada.
 
-Se a máquina cair durante a promoção, `rotation.json` e os artefatos preparados permitem ao próximo candidato autorizado concluir a operação antes de qualquer novo trabalho fiscal.
+Se houver queda durante a promoção, `rotation.json` e os artefatos preparados permitem ao próximo candidato autorizado concluir a operação antes de qualquer trabalho fiscal.
 
-## Migração da arquitetura anterior
+## Bootstrap e migração
 
-Na primeira execução desta arquitetura:
+O bootstrap é recuperável. A chave local protegida por DPAPI é persistida antes da identidade compartilhada. Uma interrupção entre essas etapas reutiliza a chave preparada na próxima inicialização, evitando criar estado cifrado com uma chave perdida.
+
+A migração do estado legado não depende mais de reflection sobre campos privados.
+
+Na migração da arquitetura anterior:
 
 1. atualize todos os PCs;
 2. abra primeiro o PC que possuía o estado legado da Central;
 3. mantenha `P:\01-Nfe agendamento` acessível;
-4. identidade, autorização e replay são migrados para o estado do grupo;
-5. clientes já pareados tentam importar seus pacotes de candidatura;
-6. estados locais legados que não validarem são tratados como não autorizados;
-7. depois disso qualquer PC autorizado e saudável pode assumir a liderança.
-
-A migração é idempotente. O bootstrap pós-auditoria persiste primeiro a chave local protegida por DPAPI, tornando recuperável uma interrupção antes da criação da identidade compartilhada.
+4. deixe identidade, autorização e replay serem migrados;
+5. abra os demais PCs já autorizados;
+6. confirme exatamente um líder e os demais em standby.
 
 ## Estrutura compartilhada
 
@@ -165,19 +154,19 @@ P:\01-Nfe agendamento\
     └── rotation.json
 ```
 
-Durante uma rotação podem existir artefatos `.prepared`; não os apague manualmente enquanto `rotation.json` existir.
+Durante uma rotação podem existir artefatos `.prepared`. Não os apague manualmente enquanto `rotation.json` existir.
 
 Proteções principais:
 
 - RSA OAEP-SHA256 para encapsulamento de chave;
 - AES-GCM para dados compartilhados sensíveis;
 - HMAC nos pedidos;
-- DPAPI para material protegido localmente;
-- RSA-PSS/SHA-256 em heartbeat e provas de transição de identidade;
+- DPAPI para material local;
+- RSA-PSS/SHA-256 em heartbeat e transições de identidade;
 - replay bloqueado após troca de líder;
-- `cStat=656` persistido de forma compartilhada;
+- cooldown fiscal compartilhado;
 - cache XML compartilhado e cifrado com retenção de 24 horas;
-- nomes de cache derivados de SHA-256, sem chave NF-e em texto puro no nome;
+- nomes de cache derivados de SHA-256;
 - confinamento de caminhos e rejeição de reparse points operacionais;
 - certificado A1, chave privada e senha nunca são copiados para a pasta compartilhada.
 
@@ -206,45 +195,46 @@ O cache tem retenção de 24 horas e sobrevive à troca normal de líder. Após 
 
 ## Robustez fiscal e failover
 
-A política é conservadora por projeto:
+A política é conservadora:
 
-- HTTP `429` não é repetido automaticamente;
-- timeout fiscal não é repetido automaticamente;
+- HTTP `429` não recebe retry automático;
+- timeout fiscal não recebe retry automático;
 - `5xx`, falha de conexão ou `HttpRequestException` ambígua não geram retry automático;
 - perda de liderança antes do envio aborta sem iniciar nova consulta;
-- pedidos recuperados depois de interrupção não provocam uma segunda chamada fiscal automática;
+- pedido recuperado após interrupção não provoca uma segunda chamada fiscal automática;
 - se o líder anterior pode já ter alcançado a SEFAZ, o sucessor devolve falha segura e exige nova ação explícita;
-- `cStat=656` persiste entre líderes e também é preservado durante rotação;
+- `cStat=656` persiste entre líderes e durante rotação;
 - cache fiscal sobrevive ao failover normal.
 
-Cancelar a interface ou um lote impede trabalho ainda não iniciado e os próximos itens. Uma operação fiscal que já pode ter alcançado a SEFAZ não é forçada a cancelar e repetir automaticamente, justamente para evitar duplicidade ambígua.
+Cancelar a interface ou um lote impede trabalho ainda não iniciado e os próximos itens. Uma operação fiscal que já pode ter alcançado a SEFAZ não é forçada a cancelar e repetir automaticamente.
 
 ## Certificado A1
 
-O certificado A1 é configurado localmente em cada PC confiável. Antes de considerar um PC candidato a líder, valide nele:
+O A1 é configurado localmente em cada PC confiável. Antes de considerar um PC candidato a líder, valide nele:
 
-- certificado correto;
+- certificado correto no `CurrentUser\My`;
+- chave privada acessível ao usuário do app;
 - UF autora configurada;
 - acesso à pasta compartilhada;
 - uma consulta conhecida.
 
-O PFX, sua chave privada e eventual senha nunca devem entrar no repositório ou na pasta compartilhada.
+PFX, chave privada e senha nunca devem entrar no repositório ou na pasta compartilhada.
 
 ## Contingência pelo Portal Nacional
 
-Quando a consulta automática recebe `cStat=656`, o cooldown é mantido e o aplicativo não insiste automaticamente.
+Quando a consulta automática recebe `cStat=656`, o aplicativo mantém o cooldown e não insiste automaticamente.
 
-**Baixar pelo Portal** pode ser usado em qualquer PC autorizado no grupo que tenha o certificado A1 configurado localmente e o WebView2 disponível. O PC não precisa ser o líder da fila. O hCaptcha permanece manual e não é automatizado ou contornado.
+**Baixar pelo Portal** pode ser usado em qualquer PC autorizado com A1 local e WebView2 disponível, inclusive em standby. O hCaptcha permanece manual e não é automatizado nem contornado.
 
 Fluxo:
 
-1. o site local abre o Portal em WebView2 no próprio PC;
+1. o site local abre o Portal oficial em WebView2;
 2. a chave é preenchida automaticamente;
-3. o usuário resolve o hCaptcha e conclui o download com o A1 local;
-4. o XML é validado;
-5. o XML válido entra no cache compartilhado;
-6. a janela do Portal fecha após importação bem-sucedida;
-7. a interface acompanha somente o cache;
+3. o usuário resolve o hCaptcha;
+4. o certificado A1 local é usado quando solicitado pelo Portal;
+5. o XML baixado é validado contra a chave solicitada;
+6. o XML válido entra no cache compartilhado;
+7. a interface acompanha apenas o cache;
 8. a NF-e é carregada automaticamente quando o XML aparece.
 
 O acompanhamento usa:
@@ -257,20 +247,20 @@ Esse polling não chama a SEFAZ.
 
 Proteções do Portal:
 
-- somente PCs autorizados com estado de grupo disponível podem iniciar o fallback;
-- navegação restrita ao domínio oficial esperado;
+- somente PC autorizado com estado real do grupo pode iniciar o fallback;
+- navegação restrita ao host oficial esperado;
 - certificado comparado por thumbprint;
 - XML limitado a 10 MiB;
 - DTD e entidades externas proibidos;
 - `infNFe/@Id` deve corresponder à chave solicitada;
 - XML de outra chave é rejeitado;
-- apenas uma janela de contingência pode ficar aberta por vez em cada PC.
-
-O hardening final de lifecycle/exceções estreitas do WebView2 permanece como Task 8 antes da v0.1.31.
+- somente uma janela de contingência pode ficar aberta por PC;
+- callbacks tardios durante fechamento do WebView2 são tratados apenas para falhas conhecidas de ciclo de vida;
+- falha COM genérica, erro de XML, certificado ou I/O não é silenciosamente ocultado.
 
 ## Consulta em lote
 
-O lote reutiliza o mesmo endpoint e a mesma fila fiscal da consulta individual.
+O lote reutiliza o mesmo endpoint e a mesma fila fiscal da consulta individual:
 
 - até 50 chaves únicas;
 - duplicatas removidas;
@@ -282,7 +272,7 @@ O lote reutiliza o mesmo endpoint e a mesma fila fiscal da consulta individual.
 
 ## DANFE
 
-O DANFE é produzido localmente a partir do XML validado.
+O DANFE é produzido localmente a partir do XML validado:
 
 - visualização em popup próprio;
 - `Ctrl + scroll` aplica zoom somente ao DANFE;
@@ -328,13 +318,18 @@ O atualizador exige:
 - bundle Sigstore válido;
 - certificado Sigstore emitido pelo OIDC do GitHub Actions;
 - identidade exatamente vinculada ao workflow oficial `release-bridge.yml@refs/heads/main`;
-- transparency log e verificações exigidas pela biblioteca Sigstore.
+- transparency log e verificações da biblioteca Sigstore.
 
-Depois do download, a nova versão é preparada antes da troca. O instalador preserva backup da instalação atual, ativa a nova versão e verifica `http://127.0.0.1:17345/api/bootstrap` por até 20 segundos. Falha no health check encerra a nova versão, restaura o backup e reinicia a anterior.
+A partir da v0.1.31, o health check é vinculado à versão preparada. Depois do swap, o instalador exige simultaneamente:
 
-Na `main`, `/api/bootstrap` já publica `appVersion`. Antes da v0.1.31 o instalador ainda precisa comparar esse valor com a versão exata preparada; um HTTP 2xx de outra versão deverá provocar rollback em vez de sucesso.
+- HTTP 2xx em `http://127.0.0.1:17345/api/bootstrap`;
+- JSON válido com objeto na raiz;
+- `appVersion` como string escalar;
+- igualdade ordinal exata entre `appVersion` e a versão preparada.
 
-Não existe chave privada permanente de assinatura de release.
+Resposta malformada, campo ausente, tipo incorreto, outra versão respondendo na porta ou ausência de resposta em até 20 segundos provocam rollback para a instalação anterior.
+
+Não existe chave privada permanente de assinatura de release. O fluxo oficial usa **Sigstore keyless**.
 
 Veja [Inicialização e atualização](docs/ATUALIZACAO-E-INICIALIZACAO.md).
 
@@ -356,24 +351,26 @@ O script executa:
 - regressões JavaScript;
 - build Release.
 
-Além das regressões da v0.1.30, o hardening pós-auditoria já adicionou cobertura para:
+A cobertura automatizada inclui, entre outros:
 
-- bootstrap interrompido reutilizando a chave preparada;
-- ausência de reflection na migração;
-- código de pareamento one-shot;
+- eleição de um único líder e takeover;
+- fencing imediatamente antes da SEFAZ;
+- tratamento conservador de resultado fiscal ambíguo;
+- cache compartilhado;
+- bootstrap recuperável;
+- migração sem reflection;
+- pareamento one-shot;
 - staging e promoção recuperável da rotação;
-- purge do cache antigo;
-- revogação com nova chave e nova RSA;
-- cadeia assinada de transições para candidatos offline;
-- bloqueio de trabalho fiscal enquanto há rotação pendente;
-- composição de produção com o serviço de rotação;
-- endpoints de gerenciamento sem serializar o segredo do cliente;
-- interface de PCs autorizados e proteção contra revogar o líder atual;
-- RED do health check de versão, que permanece pendente até finalizar a Task 6.
+- revogação e cadeia RSA assinada para candidatos offline;
+- bloqueio de trabalho fiscal durante rotação pendente;
+- gerenciamento de PCs sem exposição de segredo;
+- health check de atualização com versão exata;
+- Actions fixadas por SHA;
+- tratamento estreito do ciclo de vida do WebView2.
 
 ## GitHub Actions
 
-O projeto mantém somente três workflows operacionais:
+O projeto mantém três workflows operacionais:
 
 ```text
 .github/workflows/ci.yml
@@ -381,52 +378,48 @@ O projeto mantém somente três workflows operacionais:
 .github/workflows/release-bridge.yml
 ```
 
+Todas as Actions externas usadas por esses workflows estão fixadas por commit SHA; comentários mantêm a versão humana legível. O Dependabot monitora NuGet e GitHub Actions.
+
 ### CI
 
-Executa em push para `main` e em pull request. Possui permissão somente de leitura do conteúdo, timeout explícito e artifact de build com retenção curta.
+Executa em push para `main` e em pull request. Usa `./scripts/verify.ps1 -Restore`, publica um pacote de teste Windows e mantém retenção curta do artifact.
 
 ### CodeQL
 
-Analisa C# em push/PR para `main` e também semanalmente.
+Analisa C# em push/PR para `main` e semanalmente.
 
 ### Release Bridge
 
-É o único caminho oficial de publicação.
-
-Futuras releases são solicitadas alterando:
+É o único caminho oficial de publicação. A solicitação fica em:
 
 ```text
 .github/release-request.json
 ```
 
-Exemplo atual publicado:
+Versão atual:
 
 ```json
 {
-  "version": "0.1.30"
+  "version": "0.1.31"
 }
 ```
 
-Para uma release automática:
+O Release Bridge:
 
-1. `<Version>` em `src/NfeAgendamento.App/NfeAgendamento.App.csproj` deve conter a nova versão;
-2. `.github/release-request.json` deve conter exatamente a mesma versão;
-3. a alteração do request na `main` dispara o Release Bridge;
-4. o workflow valida formato, versão do projeto, tags existentes e monotonicidade;
-5. executa `scripts/verify.ps1 -Restore`;
-6. publica o Windows x64;
-7. assina com Sigstore keyless;
-8. verifica a assinatura antes da publicação;
-9. cria tag/release apontando exatamente para o SHA testado;
-10. gera release notes a partir das mudanças reais.
+1. exige que `<Version>` do projeto e request sejam iguais;
+2. rejeita tag existente e versão não crescente;
+3. executa `./scripts/verify.ps1 -Restore`;
+4. publica Windows x64 autocontido;
+5. assina o ZIP com Sigstore keyless;
+6. verifica a assinatura antes de publicar;
+7. cria a tag/release apontando exatamente para o SHA testado;
+8. gera release notes das mudanças reais.
 
-`workflow_dispatch` continua disponível como fallback operacional e passa pelos mesmos gates.
-
-A Task 7 do hardening ainda vai substituir referências móveis como `actions/checkout@v4` por commit SHAs exatos, com regressão impedindo retorno a tags móveis.
+`workflow_dispatch` permanece disponível como fallback e passa pelos mesmos gates.
 
 ## Checklist automatizado
 
-Antes de uma release oficial, os gates cobrem:
+Antes da release oficial, os gates cobrem:
 
 - testes .NET;
 - regressões JS de produto, feedback fiscal, Portal, bootstrap, lote e release;
@@ -440,42 +433,25 @@ Antes de uma release oficial, os gates cobrem:
 - ausência de credenciais fiscais reais nos workflows;
 - ausência de certificado A1 empacotado no repositório.
 
-## Teste físico ainda necessário
+## Validação física ainda necessária
 
-Antes de considerar uma implantação operacional totalmente aceita:
+A implementação automatizada está fechada, mas a aceitação operacional completa exige máquinas reais. O roteiro está em [docs/TESTE-MULTI-PC.md](docs/TESTE-MULTI-PC.md) e cobre:
 
-- [ ] autorizar um PC novo usando código gerado no líder atual;
-- [ ] repetir o teste em um líder diferente do PC que criou originalmente o grupo;
-- [ ] confirmar que um segundo clique/Enter não cria autorização duplicada;
-- [ ] confirmar que o mesmo código já consumido não autoriza um segundo PC;
-- [ ] pelo menos dois PCs reais disputam a liderança e somente um vence;
-- [ ] ao fechar o líder, outro assume automaticamente;
-- [ ] consulta funciona pelo standby antes e depois do failover;
-- [ ] consultar uma NF-e, trocar o líder e confirmar retorno do cache sem nova ida à SEFAZ;
-- [ ] perder acesso ao compartilhamento no líder e confirmar que nenhuma nova chamada fiscal começa;
-- [ ] restaurar o compartilhamento e validar recuperação;
-- [ ] confirmar que Offline Files não está mascarando a perda do SMB;
-- [ ] A1 local funciona nos candidatos;
-- [ ] listar PCs autorizados no líder sem exposição de segredo;
-- [ ] revogar um PC de teste e confirmar rotação de chave/RSA, purge do cache e manutenção dos candidatos restantes;
-- [ ] candidato que ficou offline durante uma ou mais rotações aceita somente uma cadeia RSA válida ao retornar;
-- [ ] interromper uma rotação em ambiente controlado e confirmar recuperação antes de novo trabalho fiscal;
-- [ ] Portal Nacional abre em WebView2 real em um PC autorizado mesmo quando ele está em standby;
-- [ ] hCaptcha permanece manual e o A1 local funciona no fluxo real;
-- [ ] XML oficial chega ao cache compartilhado e a interface carrega a NF-e automaticamente;
-- [ ] atualização real conclui o health check;
-- [ ] cenário de health check inválido restaura a versão anterior;
-- [ ] na v0.1.31+, versão diferente respondendo na porta local não é aceita como atualização saudável.
+- eleição simultânea e failover em 2–3 PCs;
+- consulta pelo standby e deduplicação entre máquinas;
+- perda e recuperação do SMB sem Offline Files;
+- A1 real em cada candidato;
+- pareamento one-shot e revogação real;
+- candidato offline durante rotação;
+- recuperação de rotação interrompida;
+- Portal/WebView2/A1/hCaptcha reais;
+- atualização real, health check e rollback.
 
-Não provoque `cStat=656` real apenas para testar.
+Esses itens permanecem marcados como manuais porque não podem ser comprovados honestamente por CI. Não provoque `cStat=656` real apenas para teste.
 
 ## Release atual
 
-A última release publicada é **v0.1.30**.
-
-Ela corrige a causa estrutural do `409` observado no pareamento: líderes automáticos usam a identidade criptográfica compartilhada do grupo. O fluxo também ficou transacional do ponto de vista local, recuperável diante de falhas transitórias e protegido contra solicitações duplicadas.
-
-O hardening adicional descrito acima está na `main`, mas ainda não é uma release oficial até o fechamento e publicação da **v0.1.31**.
+A release **v0.1.31** reúne o hardening pós-auditoria e mantém a arquitetura simples: interface local em loopback, coordenação pela pasta compartilhada e exatamente um líder fiscal por vez.
 
 ## Documentação técnica
 
@@ -484,7 +460,6 @@ O hardening adicional descrito acima está na `main`, mas ainda não é uma rele
 - [Teste multi-PC](docs/TESTE-MULTI-PC.md)
 - [Hardening pós-auditoria v0.1.30 — design](docs/superpowers/specs/2026-09-04-post-audit-hardening-design.md)
 - [Hardening pós-auditoria v0.1.30 — plano](docs/superpowers/plans/2026-09-04-post-audit-hardening.md)
-- [Hardening pós-auditoria — design anterior](docs/superpowers/specs/2026-09-03-audit-hardening-design.md)
 - [Liderança automática — design](docs/superpowers/specs/2026-09-03-automatic-shared-queue-leader-design.md)
 - [Contingência pelo Portal — design](docs/superpowers/specs/2026-09-03-portal-nfe-fallback-design.md)
 - [Sigstore keyless — design](docs/superpowers/specs/2026-09-04-keyless-release-signing-design.md)
