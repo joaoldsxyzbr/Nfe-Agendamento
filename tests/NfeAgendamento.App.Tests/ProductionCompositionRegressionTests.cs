@@ -27,6 +27,20 @@ public sealed class ProductionCompositionRegressionTests
     }
 
     [Fact]
+    public void Production_registers_recoverable_group_rotation_before_central_service()
+    {
+        var program = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "Program.cs"));
+
+        var storage = program.IndexOf("builder.Services.AddSingleton<SharedQueueGroupRotationStorage>();", StringComparison.Ordinal);
+        var rotation = program.IndexOf("builder.Services.AddSingleton<SharedQueueGroupRotationService>();", StringComparison.Ordinal);
+        var central = program.IndexOf("builder.Services.AddSingleton<SharedQueueCentralService>();", StringComparison.Ordinal);
+
+        Assert.True(storage >= 0, "Produção deve registrar o armazenamento de rotação recuperável.");
+        Assert.True(rotation > storage, "O serviço de rotação deve ser registrado depois do armazenamento.");
+        Assert.True(central > rotation, "A Central deve ser composta depois do serviço de rotação para receber a dependência.");
+    }
+
+    [Fact]
     public void Browser_pairing_blocks_duplicate_submissions()
     {
         var pairing = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "pairing.js"));
