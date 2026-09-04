@@ -12,11 +12,13 @@
 
 ## Status atual
 
-Em `main`, as Tasks 1–5 já foram implementadas. O núcleo de rotação/revogação, candidatura com cadeia RSA assinada e composição de produção chegou a GREEN com 193 testes no SHA `79f922d`.
+As **Tasks 1–8 estão concluídas na `main`**. O hardening inclui bootstrap recuperável, pareamento one-shot, rotação/revogação recuperável, gerenciamento de PCs autorizados, health check vinculado à versão, GitHub Actions fixadas por SHA, documentação operacional e tratamento estreito de falhas de ciclo de vida do WebView2.
 
-A Task 6 está em andamento: `/api/bootstrap` já expõe `appVersion`, mas o instalador ainda precisa comparar essa versão com a versão alvo antes de aceitar o health check. As Tasks 7–9 permanecem pendentes.
+O ciclo TDD final do Portal foi comprovado em GitHub Actions: o commit `ef1f6d4` falhou com 1 teste novo e 196 passando; o commit `16cae2e` implementou a proteção e o `scripts/verify.ps1 -Restore` voltou a GREEN.
 
-A última release publicada continua sendo **v0.1.30**. A próxima release planejada para este hardening é **v0.1.31**, somente depois de todos os gates voltarem a GREEN.
+A **Task 9** é o único bloco de engenharia ainda aberto: executar os gates no SHA final, alinhar a versão para **v0.1.31**, alterar `release-request.json` por último e confirmar Release Bridge/Sigstore.
+
+A validação física multi-PC continua propositalmente fora do status de implementação: os checkboxes de `docs/TESTE-MULTI-PC.md` exigem máquinas Windows reais, SMB, A1 e WebView2 reais e não podem ser marcados apenas com CI.
 
 ## Global Constraints
 
@@ -41,26 +43,10 @@ A última release publicada continua sendo **v0.1.30**. A próxima release plane
 - Produces: bootstrap que reutiliza `CandidateStateStore.Load()` quando identidade ainda não existe.
 
 - [x] **Step 1: Write the failing tests**
-
-Adicionar testes que comprovem que uma chave local pré-gravada é reutilizada para criar a identidade e que `SharedQueueGroupBootstrapService` não contém `System.Reflection`/`FieldInfo`.
-
 - [x] **Step 2: Run tests to verify RED**
-
-Run: `dotnet test Nfe-Agendamento.sln -c Release --filter SharedQueueGroupBootstrapTests`
-Expected: FAIL porque o bootstrap atual gera outra chave e ainda usa reflection.
-
 - [x] **Step 3: Implement minimal recovery**
-
-Expor snapshot interno no store legado; no bootstrap carregar chave existente ou gerar/salvar antes de `SharedGroupIdentityStore.Initialize`; remover reflection.
-
 - [x] **Step 4: Run tests to verify GREEN**
-
-Run: `dotnet test Nfe-Agendamento.sln -c Release --filter SharedQueueGroupBootstrapTests`
-Expected: PASS.
-
-- [x] **Step 5: Commit**
-
-Implementado em commits do hardening da `main`, incluindo bootstrap recuperável e remoção do reflection legado.
+- [x] **Step 5: Commit** — bootstrap recuperável e remoção do reflection legado implementados na `main`.
 
 ### Task 2: Pareamento realmente one-shot
 
@@ -77,7 +63,7 @@ Implementado em commits do hardening da `main`, incluindo bootstrap recuperável
 - [x] **Step 2: Run targeted tests and verify RED.**
 - [x] **Step 3: Implement consume-after-success.**
 - [x] **Step 4: Run targeted tests and verify GREEN.**
-- [x] **Step 5: Commit** — implementado na `main`; o código é consumido após autorização concluída e não invalida um código novo gerado em paralelo.
+- [x] **Step 5: Commit** — código consumido somente após autorização concluída.
 
 ### Task 3: Estado preparado para rotação e validação real de candidatura
 
@@ -122,7 +108,7 @@ Implementado em commits do hardening da `main`, incluindo bootstrap recuperável
 - [x] **Step 3: Implement minimal rotation service** com preparação → marcador → promoção → atualização local → limpeza.
 - [x] **Step 4: Integrate recovery before fiscal leadership**; nenhum trabalho começa com rotação pendente incompleta.
 - [x] **Step 5: Verify GREEN.**
-- [x] **Step 6: Commit** — rotação/revogação recuperável e composição de produção validadas; cadeia de transições RSA assinada permite A→B→C para candidatos que ficaram offline.
+- [x] **Step 6: Commit** — rotação/revogação recuperável e cadeia RSA assinada implementadas.
 
 ### Task 5: API e interface de dispositivos autorizados
 
@@ -141,7 +127,7 @@ Implementado em commits do hardening da `main`, incluindo bootstrap recuperável
 - [x] **Step 2: Verify RED.**
 - [x] **Step 3: Implement endpoints leader-only e UI sem exposição de segredo.**
 - [x] **Step 4: Verify GREEN.**
-- [x] **Step 5: Commit** — gerenciamento de PCs implementado no líder; UI protege o líder atual contra remoção e exige confirmação para revogar outro PC.
+- [x] **Step 5: Commit** — gerenciamento de PCs implementado no líder; autorrevogação bloqueada.
 
 ### Task 6: Health check vinculado à versão
 
@@ -157,12 +143,9 @@ Implementado em commits do hardening da `main`, incluindo bootstrap recuperável
 
 - [x] **Step 1: Write failing tests** procurando validação explícita de versão no bootstrap/script.
 - [x] **Step 2: Verify RED.**
-- [ ] **Step 3: Implement version-bound health check.**
-
-Estado parcial: `/api/bootstrap` já expõe `appVersion` através de `CurrentAppVersion()`. Ainda falta o instalador comparar o JSON retornado com `PreparedUpdate.Version` e fazer rollback se outra versão responder na porta local.
-
-- [ ] **Step 4: Verify GREEN.**
-- [ ] **Step 5: Commit** `fix: validar versao no health check de atualizacao`.
+- [x] **Step 3: Implement version-bound health check.**
+- [x] **Step 4: Verify GREEN.**
+- [x] **Step 5: Commit** — concluído na `main`; o instalador exige JSON válido e `appVersion` escalar exatamente igual à versão preparada, fazendo rollback em divergência.
 
 ### Task 7: Fixar todas as GitHub Actions por SHA
 
@@ -175,11 +158,11 @@ Estado parcial: `/api/bootstrap` já expõe `appVersion` através de `CurrentApp
 **Interfaces:**
 - No runtime interface change.
 
-- [ ] **Step 1: Extend regression test** para rejeitar `uses: ...@vN`.
-- [ ] **Step 2: Run Node test and verify RED.**
-- [ ] **Step 3: Replace moving tags by exact SHAs** conhecidos dos runs atuais; manter comentários com versões legíveis.
-- [ ] **Step 4: Run Node test and verify GREEN.**
-- [ ] **Step 5: Commit** `chore: fixar actions por commit sha`.
+- [x] **Step 1: Extend regression test** para rejeitar `uses: ...@vN`.
+- [x] **Step 2: Run Node test and verify RED.**
+- [x] **Step 3: Replace moving tags by exact SHAs** e manter comentários com versões legíveis.
+- [x] **Step 4: Run Node test and verify GREEN.**
+- [x] **Step 5: Commit** — CI, CodeQL, Release Bridge, upload-artifact e cosign-installer fixados por SHA.
 
 ### Task 8: Robustez do Portal e documentação do threat model
 
@@ -194,11 +177,11 @@ Estado parcial: `/api/bootstrap` já expõe `appVersion` através de `CurrentApp
 **Interfaces:**
 - No protocol change.
 
-- [ ] **Step 1: Write failing robustness/documentation regressions** para lifecycle WebView2, loopback threat model, SMB sem Offline Files e cancelamento fiscal deliberado.
-- [ ] **Step 2: Verify RED.**
-- [ ] **Step 3: Implement catches estreitos e docs.**
-- [ ] **Step 4: Verify GREEN.**
-- [ ] **Step 5: Commit** `docs: fechar requisitos operacionais pos-auditoria`.
+- [x] **Step 1: Write failing robustness/documentation regression** para lifecycle do WebView2; requisitos de loopback, SMB sem Offline Files e cancelamento fiscal já estavam documentados na `main`.
+- [x] **Step 2: Verify RED.** — CI do commit `ef1f6d4`: 1 falha esperada, 196 testes passando.
+- [x] **Step 3: Implement catches estreitos e docs.** — somente `ObjectDisposedException`, `InvalidOperationException` e HRESULTs COM de encerramento conhecidos são classificados como lifecycle; falhas COM genéricas e I/O não são ocultadas.
+- [x] **Step 4: Verify GREEN.** — `scripts/verify.ps1 -Restore` e CI verdes no commit `16cae2e`.
+- [x] **Step 5: Commit** — documentação operacional separa cobertura automática de validação física.
 
 ### Task 9: Verificação integral e release seguinte
 
@@ -207,8 +190,8 @@ Estado parcial: `/api/bootstrap` já expõe `appVersion` através de `CurrentApp
 - Modify: `README.md`
 - Modify: `.github/release-request.json` por último.
 
-- [ ] **Step 1: Run full gate** `./scripts/verify.ps1 -Restore` e exigir zero falhas.
+- [ ] **Step 1: Run full gate** `./scripts/verify.ps1 -Restore` no SHA candidato final e exigir zero falhas.
 - [ ] **Step 2: Confirm CI and CodeQL green on main.**
-- [ ] **Step 3: Bump semantic version and align README.**
+- [ ] **Step 3: Bump semantic version to 0.1.31 and align README.**
 - [ ] **Step 4: Change release request last.**
 - [ ] **Step 5: Confirm Release Bridge green, Sigstore verified and release points to tested SHA.**
