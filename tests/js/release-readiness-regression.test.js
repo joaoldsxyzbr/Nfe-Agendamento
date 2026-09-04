@@ -41,7 +41,7 @@ assert.ok(fs.existsSync(path.join(root, requestPath)), '.github/release-request.
 const verify = read(verifyPath);
 const request = JSON.parse(read(requestPath));
 
-assert.ok(ci.includes('permissions:\n  contents: read'), 'CI deve declarar contents: read.');
+assert.ok(/permissions:\r?\n\s*contents:\s*read/.test(ci), 'CI deve declarar contents: read.');
 assert.ok(ci.includes('timeout-minutes: 30'), 'CI deve ter timeout explícito.');
 assert.ok(ci.includes('./scripts/verify.ps1 -Restore'), 'CI deve usar verify.ps1.');
 assert.ok(ci.includes('retention-days: 7'), 'Artifact de CI deve expirar em 7 dias.');
