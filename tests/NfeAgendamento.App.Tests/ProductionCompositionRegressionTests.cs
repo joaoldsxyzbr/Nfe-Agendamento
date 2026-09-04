@@ -61,6 +61,16 @@ public sealed class ProductionCompositionRegressionTests
     }
 
     [Fact]
+    public void Bootstrap_exposes_exact_running_app_version_for_update_health_check()
+    {
+        var program = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "Program.cs"));
+
+        Assert.Contains("appVersion = CurrentAppVersion(),", program, StringComparison.Ordinal);
+        Assert.Contains("private static string CurrentAppVersion()", program, StringComparison.Ordinal);
+        Assert.Contains("GetName().Version?.ToString(3)", program, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Browser_pairing_blocks_duplicate_submissions()
     {
         var pairing = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "pairing.js"));
