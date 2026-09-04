@@ -80,7 +80,7 @@ internal static class Program
             SharedQueueClient queueClient) =>
         {
             var clientStatus = queueClient.GetStatus();
-            var portalFallbackAvailable = group.IsCandidateReady || state.IsConfiguredAsCentral;
+            var portalFallbackAvailable = group.IsCandidateReady;
             return Results.Ok(new
             {
                 csrfToken = csrf.CurrentToken,
@@ -211,14 +211,13 @@ internal static class Program
 
         app.MapPost("/api/nfe/portal-fallback", (
             LookupRequest? request,
-            CentralStateService state,
             SharedQueueGroupBootstrapService group,
             PortalNfeFallbackLauncher launcher) =>
         {
             if (request is null || !AccessKeyValidator.IsValid(request.AccessKey))
                 return Results.BadRequest(new { status = "invalid_key", message = "Informe uma chave NF-e válida com 44 dígitos." });
 
-            if (!group.IsCandidateReady && !state.IsConfiguredAsCentral)
+            if (!group.IsCandidateReady)
             {
                 return Results.Json(
                     new { status = "portal_not_authorized", message = "Este PC ainda não está autorizado para usar o Portal da NF-e. Autorize-o no grupo e configure o certificado A1 localmente." },
