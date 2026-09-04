@@ -84,10 +84,10 @@ public sealed class CertificateService
         var state = ReadPersistedSelection()
             ?? throw new InvalidOperationException("Nenhum certificado foi configurado.");
 
-        var certificate = GetByThumbprint(state.Value.Thumbprint);
+        var certificate = GetByThumbprint(state.Thumbprint);
         try
         {
-            _ = CertificateIdentityReader.Read(certificate, state.Value.UfAutor);
+            _ = CertificateIdentityReader.Read(certificate, state.UfAutor);
             return (new X509Certificate2(certificate), ToSelection(certificate));
         }
         finally
