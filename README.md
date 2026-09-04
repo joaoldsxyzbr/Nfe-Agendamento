@@ -4,10 +4,10 @@ Aplicativo Windows interno para consultar, visualizar e baixar NF-e. Cada PC exe
 
 ## Versão
 
-- última release publicada: **v0.1.27**;
-- `main`: **v0.1.27**.
+- última release publicada: **v0.1.28**;
+- `main`: **v0.1.28**.
 
-A v0.1.27 consolida o hardening pós-auditoria: limpeza física do cache expirado, headers defensivos com CSP, persistência atômica de certificado + UF, build sem warnings e pin do Cosign por SHA. Ela mantém o fallback do Portal Nacional pela interface local e a assinatura de atualização por **Sigstore keyless**, vinculada ao workflow oficial do GitHub Actions.
+A v0.1.28 libera o fallback manual do Portal Nacional em qualquer PC autorizado com estado real do grupo, inclusive em standby, mantendo as consultas automáticas à SEFAZ exclusivas do líder. O hCaptcha continua manual, o XML validado entra no cache compartilhado e a atualização permanece protegida por **Sigstore keyless**.
 
 ## Arquitetura atual
 
@@ -317,7 +317,7 @@ Exemplo:
 
 ```json
 {
-  "version": "0.1.27"
+  "version": "0.1.28"
 }
 ```
 
@@ -375,9 +375,9 @@ Não provoque `cStat=656` real apenas para testar.
 
 ## Release atual
 
-A última release publicada é **v0.1.27**.
+A última release publicada é **v0.1.28**.
 
-Ela contém o hardening final pós-auditoria, mantendo o fallback do Portal integrado ao site local e a atualização protegida por SHA-256 + Sigstore keyless vinculada ao workflow oficial.
+Ela libera o fallback manual do Portal em qualquer PC autorizado com estado real do grupo, inclusive em standby, sem retirar a exclusividade do líder para consultas automáticas à SEFAZ. A atualização continua protegida por SHA-256 + Sigstore keyless vinculada ao workflow oficial.
 
 ## Documentação técnica
 
