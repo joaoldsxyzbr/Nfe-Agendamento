@@ -16,6 +16,7 @@ public sealed class SharedQueueGroupBootstrapService
     private readonly ClientPairingStore _clientPairingStore;
     private readonly CandidateStateStore _candidateState;
     private readonly CandidateBundleStore _candidateBundles;
+    private readonly CandidateIdentityTransitionStore _candidateTransitions;
     private readonly SharedGroupIdentityStore _groupIdentity;
     private readonly SharedQueueGroupRotationStorage _rotationStorage;
 
@@ -37,6 +38,7 @@ public sealed class SharedQueueGroupBootstrapService
         _clientPairingStore = clientPairingStore ?? throw new ArgumentNullException(nameof(clientPairingStore));
         _candidateState = candidateState ?? throw new ArgumentNullException(nameof(candidateState));
         _candidateBundles = new CandidateBundleStore(paths);
+        _candidateTransitions = new CandidateIdentityTransitionStore(paths);
         _groupIdentity = new SharedGroupIdentityStore(paths);
         _rotationStorage = new SharedQueueGroupRotationStorage(paths);
     }
@@ -129,6 +131,7 @@ public sealed class SharedQueueGroupBootstrapService
         CandidateBundlePayload? bundle = null;
         byte[]? actualPublicKey = null;
         byte[]? actualFingerprint = null;
+        IReadOnlyList<GroupIdentityTransition>? transitions = null;
         try
         {
             if (!File.Exists(_paths.CandidateBundlePath(paired.ClientId)))
@@ -149,6 +152,10 @@ public sealed class SharedQueueGroupBootstrapService
 
             actualFingerprint = SHA256.HashData(actualPublicKey);
             if (!CryptographicOperations.FixedTimeEquals(actualFingerprint, bundle.CentralPublicKeySha256))
+                return false;
+
+            transitions = _candidateTransitions.Read(paired.ClientId, paired.ClientSecret);
+            if (!GroupRotationProof.VerifyChain(paired.CentralPublicKey, actualPublicKey, transitions))
                 return false;
 
             _candidateState.Save(bundle.GroupStateKey);
@@ -173,6 +180,7 @@ public sealed class SharedQueueGroupBootstrapService
             }
             if (actualPublicKey is not null) CryptographicOperations.ZeroMemory(actualPublicKey);
             if (actualFingerprint is not null) CryptographicOperations.ZeroMemory(actualFingerprint);
+            if (transitions is not null) CandidateIdentityTransitionStore.Zero(transitions);
         }
     }
 
