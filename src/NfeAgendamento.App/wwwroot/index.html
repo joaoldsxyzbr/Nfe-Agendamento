@@ -129,6 +129,18 @@
               <span id="centralPairingExpiry" class="muted"></span>
             </div>
             <p id="centralPairingStatus" class="muted pairing-status" aria-live="polite"></p>
+
+            <div id="authorizedClientsPanel" class="authorized-clients-panel" hidden>
+              <div class="authorized-clients-heading">
+                <div>
+                  <strong>PCs autorizados</strong>
+                  <p class="muted">Somente o líder atual pode remover um computador. A remoção rotaciona as chaves do grupo.</p>
+                </div>
+                <button id="refreshAuthorizedClients" class="secondary compact-button" type="button">Atualizar</button>
+              </div>
+              <div id="authorizedClientsList" class="authorized-clients-list"></div>
+              <p id="authorizedClientsStatus" class="muted pairing-status" aria-live="polite"></p>
+            </div>
           </div>
         </section>
 
