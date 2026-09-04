@@ -124,6 +124,9 @@ public sealed class UpdateServiceTests
         Assert.Contains("NfeAgendamento.App.exe", script, StringComparison.Ordinal);
         Assert.Contains("AddSeconds(20)", script, StringComparison.Ordinal);
         Assert.Contains("http://127.0.0.1:17345/api/bootstrap", script, StringComparison.Ordinal);
+        Assert.Contains("$expectedVersion = '1.2.0'", script, StringComparison.Ordinal);
+        Assert.Contains("ConvertFrom-Json", script, StringComparison.Ordinal);
+        Assert.Contains("$bootstrap.appVersion -eq $expectedVersion", script, StringComparison.Ordinal);
         Assert.Contains("Move-Item -LiteralPath $install -Destination $backup", script, StringComparison.Ordinal);
         Assert.Contains("Move-Item -LiteralPath $backup -Destination $install", script, StringComparison.Ordinal);
         Assert.DoesNotContain("Copy-Item -LiteralPath $_.FullName", script, StringComparison.Ordinal);
