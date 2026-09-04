@@ -5,8 +5,10 @@ const vm = require('vm');
 
 const scriptPath = path.resolve(__dirname, '../../src/NfeAgendamento.App/wwwroot/pairing.js');
 const programPath = path.resolve(__dirname, '../../src/NfeAgendamento.App/Program.cs');
+const htmlPath = path.resolve(__dirname, '../../src/NfeAgendamento.App/wwwroot/index.html');
 const source = fs.readFileSync(scriptPath, 'utf8');
 const program = fs.readFileSync(programPath, 'utf8');
+const html = fs.readFileSync(htmlPath, 'utf8');
 
 function makeElement(initial = {}) {
   const listeners = new Map();
@@ -16,6 +18,7 @@ function makeElement(initial = {}) {
     textContent: '',
     className: '',
     value: '',
+    innerHTML: '',
     ...initial,
     addEventListener(type, listener) {
       listeners.set(type, listener);
@@ -48,7 +51,11 @@ function makeResponse(status, payload) {
     pairClient: makeElement(),
     centralPairingResult: makeElement({ hidden: true }),
     centralPairingCode: makeElement(),
-    centralPairingExpiry: makeElement()
+    centralPairingExpiry: makeElement(),
+    authorizedClientsPanel: makeElement({ hidden: true }),
+    authorizedClientsList: makeElement(),
+    authorizedClientsStatus: makeElement(),
+    refreshAuthorizedClients: makeElement()
   };
 
   const context = {
@@ -57,7 +64,8 @@ function makeResponse(status, payload) {
     Map,
     Date,
     document: {
-      getElementById(id) { return elements[id] || null; }
+      getElementById(id) { return elements[id] || null; },
+      createElement() { return makeElement(); }
     },
     async fetch(url) {
       if (url !== '/api/bootstrap') throw new Error(`URL inesperada: ${url}`);
@@ -105,9 +113,15 @@ function makeResponse(status, payload) {
     'O navegador deve bloquear envios duplicados do mesmo pareamento.'
   );
 
+  assert.ok(html.includes('id="authorizedClientsPanel"'), 'A configuração deve ter painel de PCs autorizados.');
+  assert.ok(html.includes('id="authorizedClientsList"'), 'A configuração deve ter lista de PCs autorizados.');
+  assert.ok(source.includes("fetch('/api/pairing/clients'"), 'O líder deve carregar os PCs autorizados pela API local.');
+  assert.ok(source.includes("fetch('/api/pairing/revoke'"), 'A interface deve permitir revogar um PC pela API local.');
+  assert.ok(source.includes('client.isCurrent'), 'A interface deve identificar o PC líder e impedir sua remoção acidental.');
+
   assert.doesNotThrow(() => new vm.Script(source, { filename: scriptPath }), 'pairing.js deve ser sintaticamente válido.');
 
-  console.log('OK: pareamento exige estado real do grupo, coordenação atômica e bloqueio de duplicidade.');
+  console.log('OK: pareamento exige estado real do grupo, coordenação atômica e gerenciamento seguro de PCs.');
 })().catch(error => {
   console.error(error);
   process.exitCode = 1;
