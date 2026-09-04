@@ -52,6 +52,7 @@ internal static class Program
         builder.Services.AddSingleton<SharedQueueGroupBootstrapService>();
         builder.Services.AddSingleton<PairingCodeService>();
         builder.Services.AddSingleton<SharedQueuePairingClient>();
+        builder.Services.AddSingleton<SharedQueuePairingCoordinator>();
         builder.Services.AddSingleton<SharedQueueGroupPairingProcessor>();
         builder.Services.AddSingleton<SharedQueueClient>();
         builder.Services.AddSingleton<SharedQueueCentralService>();
@@ -116,25 +117,13 @@ internal static class Program
 
         app.MapPost("/api/pairing/client", async (
             PairClientRequest? request,
-            SharedQueuePairingClient pairingClient,
-            SharedQueueGroupBootstrapService group,
+            SharedQueuePairingCoordinator pairing,
             CancellationToken cancellationToken) =>
         {
             if (request is null || string.IsNullOrWhiteSpace(request.Code))
                 return Results.BadRequest(new { status = "invalid_pairing_code", message = "Informe o código exibido pelo PC que está processando a fila." });
 
-            var result = await pairingClient.PairAsync(request.Code, cancellationToken);
-            if (result.Success && !group.TryImportCandidateBundle())
-            {
-                return Results.Json(
-                    new
-                    {
-                        status = "group_import_failed",
-                        message = "A autorização foi recebida, mas o estado seguro do grupo não pôde ser importado. Gere um novo código no líder atual e tente novamente."
-                    },
-                    statusCode: StatusCodes.Status409Conflict);
-            }
-
+            var result = await pairing.PairAsync(request.Code, cancellationToken);
             return result.Success
                 ? Results.Ok(new { status = "paired", message = result.Message })
                 : Results.Json(new { status = "pairing_failed", message = result.Message }, statusCode: StatusCodes.Status409Conflict);
