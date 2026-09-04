@@ -34,7 +34,7 @@ function makeResponse(status, payload = null, text = '') {
   };
 }
 
-async function createHarness({ centralActive, configuredAsCentral = false, cacheResponses = [] }) {
+async function createHarness({ centralActive = false, portalFallbackAvailable, cacheResponses = [] }) {
   const elements = {
     portalFallbackPanel: makeElement({ hidden: true }),
     portalFallback: makeElement({ textContent: 'Baixar pelo Portal' }),
@@ -70,7 +70,7 @@ async function createHarness({ centralActive, configuredAsCentral = false, cache
       if (url === '/api/bootstrap') {
         return makeResponse(200, {
           centralActive,
-          configuredAsCentral,
+          portalFallbackAvailable,
           csrfToken: 'csrf-test'
         });
       }
@@ -98,59 +98,63 @@ async function createHarness({ centralActive, configuredAsCentral = false, cache
 }
 
 (async () => {
-  const leader = await createHarness({
-    centralActive: true,
-    configuredAsCentral: false,
+  const authorizedStandby = await createHarness({
+    centralActive: false,
+    portalFallbackAvailable: true,
     cacheResponses: [
       makeResponse(404, { status: 'cache_miss' }),
       makeResponse(200, { status: 'cache_hit' })
     ]
   });
-  const leaderMessage = leader.context.NfeLookupFeedback.buildLookupErrorMessage({
+  const allowedMessage = authorizedStandby.context.NfeLookupFeedback.buildLookupErrorMessage({
     statusCode: 429,
     error: { status: 'consumo_indevido', cStat: '656' }
   });
 
-  assert.strictEqual(leaderMessage, 'Bloqueado pela SEFAZ.');
-  assert.strictEqual(leader.elements.portalFallbackPanel.hidden, false, 'Líder ativo deve oferecer o fallback após 656.');
+  assert.strictEqual(allowedMessage, 'Bloqueado pela SEFAZ.');
+  assert.strictEqual(
+    authorizedStandby.elements.portalFallbackPanel.hidden,
+    false,
+    'PC autorizado deve oferecer o fallback após 656 mesmo quando não é o líder.'
+  );
 
-  const click = leader.elements.portalFallback.listener('click');
+  const click = authorizedStandby.elements.portalFallback.listener('click');
   assert.ok(click, 'Botão da contingência deve registrar ação de clique.');
   await click();
   await new Promise(resolve => setImmediate(resolve));
   await new Promise(resolve => setImmediate(resolve));
 
   assert.ok(
-    leader.requests.some(request => request.url === '/api/nfe/portal-fallback'),
-    'Líder deve abrir o endpoint local da contingência.'
+    authorizedStandby.requests.some(request => request.url === '/api/nfe/portal-fallback'),
+    'PC autorizado deve abrir o endpoint local da contingência.'
   );
   assert.ok(
-    leader.requests.some(request => request.url === `/api/nfe/cache/${accessKey}`),
+    authorizedStandby.requests.some(request => request.url === `/api/nfe/cache/${accessKey}`),
     'O site deve acompanhar somente o cache enquanto o Portal está aberto.'
   );
   assert.ok(
-    !leader.requests.some(request => request.url === '/api/nfe/lookup'),
+    !authorizedStandby.requests.some(request => request.url === '/api/nfe/lookup'),
     'O acompanhamento do Portal não deve repetir consChNFe pelo endpoint de lookup.'
   );
   assert.strictEqual(
-    leader.lookupCalls(),
+    authorizedStandby.lookupCalls(),
     1,
     'Ao XML aparecer no cache, o site deve recarregar a NF-e automaticamente uma única vez.'
   );
-  assert.strictEqual(leader.elements.portalFallbackPanel.hidden, true, 'Fallback deve sumir após o XML chegar ao cache.');
+  assert.strictEqual(authorizedStandby.elements.portalFallbackPanel.hidden, true, 'Fallback deve sumir após o XML chegar ao cache.');
 
-  const legacyCentralInStandby = await createHarness({ centralActive: false, configuredAsCentral: true });
-  const standbyMessage = legacyCentralInStandby.context.NfeLookupFeedback.buildLookupErrorMessage({
+  const unauthorizedPc = await createHarness({ centralActive: false, portalFallbackAvailable: false });
+  const unauthorizedMessage = unauthorizedPc.context.NfeLookupFeedback.buildLookupErrorMessage({
     statusCode: 429,
     error: { status: 'consumo_indevido', cStat: '656' }
   });
 
-  assert.strictEqual(legacyCentralInStandby.elements.portalFallbackPanel.hidden, true, 'Standby não deve exibir o fallback mesmo se era a Central antiga.');
-  assert.ok(standbyMessage.includes('líder da fila'), standbyMessage);
+  assert.strictEqual(unauthorizedPc.elements.portalFallbackPanel.hidden, true, 'PC não autorizado não deve exibir o fallback.');
+  assert.ok(unauthorizedMessage.toLowerCase().includes('autoriz'), unauthorizedMessage);
 
   assert.doesNotThrow(() => new vm.Script(source, { filename: scriptPath }), 'portal-fallback.js deve ser sintaticamente válido.');
 
-  console.log('OK: contingência 656 fica no líder e retorna o XML ao site sem polling fiscal.');
+  console.log('OK: contingência 656 pode ser aberta em qualquer PC autorizado e retorna o XML ao site sem polling fiscal.');
 })().catch(error => {
   console.error(error);
   process.exitCode = 1;

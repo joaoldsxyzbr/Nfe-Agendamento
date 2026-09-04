@@ -7,7 +7,7 @@ public sealed class PortalFallbackStaticAssetsTests
     private static string Fixture(string name) => File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", name));
 
     [Fact]
-    public void Consumo_indevido_offers_portal_fallback_only_on_active_leader()
+    public void Consumo_indevido_offers_portal_fallback_on_any_authorized_pc()
     {
         var html = Fixture("index.html");
         var script = Fixture("portal-fallback.js");
@@ -17,13 +17,14 @@ public sealed class PortalFallbackStaticAssetsTests
         Assert.Contains("/portal-fallback.js", html, StringComparison.Ordinal);
         Assert.Contains("Baixar pelo Portal", html, StringComparison.Ordinal);
         Assert.Contains("/api/nfe/portal-fallback", script, StringComparison.Ordinal);
-        Assert.Contains("centralActive", script, StringComparison.Ordinal);
-        Assert.DoesNotContain("configuredAsCentral", script, StringComparison.Ordinal);
+        Assert.Contains("portalFallbackAvailable", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("centralActive", script, StringComparison.Ordinal);
         Assert.Contains("consumo_indevido", script, StringComparison.Ordinal);
         Assert.Contains("PortalNfeFallbackLauncher", program, StringComparison.Ordinal);
-        Assert.Contains("SharedQueueCentralService central", program, StringComparison.Ordinal);
-        Assert.Contains("central.CanProcessWork()", program, StringComparison.Ordinal);
-        Assert.Contains("leader_inactive", program, StringComparison.Ordinal);
+        Assert.Contains("portalFallbackAvailable", program, StringComparison.Ordinal);
+        Assert.Contains("group.IsCandidateReady", program, StringComparison.Ordinal);
+        Assert.DoesNotContain("central.CanProcessWork()", program, StringComparison.Ordinal);
+        Assert.Contains("portal_not_authorized", program, StringComparison.Ordinal);
     }
 
     [Fact]
