@@ -109,8 +109,8 @@ assert.ok(codeql.includes('languages: csharp'), 'CodeQL deve analisar C#.');
 assert.ok(codeql.includes('github/codeql-action/analyze@v3'), 'CodeQL deve executar análise.');
 assert.ok(codeql.includes('cron:'), 'CodeQL deve manter análise agendada.');
 
-assert.ok(readme.includes('última release publicada: **v0.1.26**'), 'README deve refletir v0.1.26 publicada.');
-assert.ok(readme.includes('`main`: **v0.1.26**'), 'README deve refletir a versão atual da main.');
+assert.ok(readme.includes(`última release publicada: **v${projectVersion}**`), 'README deve refletir a release publicada da versão atual.');
+assert.ok(readme.includes(``main`: **v${projectVersion}**``), 'README deve refletir a versão atual da main.');
 assert.ok(/Sigstore keyless/i.test(readme), 'README deve documentar Sigstore keyless.');
 assert.ok(readme.includes('.github/release-request.json'), 'README deve documentar o request de release.');
 assert.ok(
