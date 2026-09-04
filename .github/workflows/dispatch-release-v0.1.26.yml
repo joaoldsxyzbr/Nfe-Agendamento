@@ -1,4 +1,4 @@
-name: Dispatch Release v0.1.26
+name: Probe Actions Secret Permission
 
 on:
   push:
@@ -12,10 +12,10 @@ permissions:
   contents: read
 
 jobs:
-  dispatch:
+  probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Disparar Release Bridge
+      - name: Testar escrita de Secret com GITHUB_TOKEN
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh workflow run release-bridge.yml --repo joaoldsxyzbr/Nfe-Agendamento --ref main -f version=v0.1.26
+        run: gh secret set NFE_RELEASE_SIGNING_PROBE --repo joaoldsxyzbr/Nfe-Agendamento --body 'permission-probe'
