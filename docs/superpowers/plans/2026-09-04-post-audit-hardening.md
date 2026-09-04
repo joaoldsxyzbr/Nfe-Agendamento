@@ -10,6 +10,14 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-04-post-audit-hardening-design.md`
 
+## Status atual
+
+Em `main`, as Tasks 1–5 já foram implementadas. O núcleo de rotação/revogação, candidatura com cadeia RSA assinada e composição de produção chegou a GREEN com 193 testes no SHA `79f922d`.
+
+A Task 6 está em andamento: `/api/bootstrap` já expõe `appVersion`, mas o instalador ainda precisa comparar essa versão com a versão alvo antes de aceitar o health check. As Tasks 7–9 permanecem pendentes.
+
+A última release publicada continua sendo **v0.1.30**. A próxima release planejada para este hardening é **v0.1.31**, somente depois de todos os gates voltarem a GREEN.
+
 ## Global Constraints
 
 - Alterações diretamente na `main`, conforme regra do projeto.
@@ -32,27 +40,27 @@
 - Produces: `AuthorizedClientStore.SnapshotForMigration()` retornando cópias validadas.
 - Produces: bootstrap que reutiliza `CandidateStateStore.Load()` quando identidade ainda não existe.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Adicionar testes que comprovem que uma chave local pré-gravada é reutilizada para criar a identidade e que `SharedQueueGroupBootstrapService` não contém `System.Reflection`/`FieldInfo`.
 
-- [ ] **Step 2: Run tests to verify RED**
+- [x] **Step 2: Run tests to verify RED**
 
 Run: `dotnet test Nfe-Agendamento.sln -c Release --filter SharedQueueGroupBootstrapTests`
 Expected: FAIL porque o bootstrap atual gera outra chave e ainda usa reflection.
 
-- [ ] **Step 3: Implement minimal recovery**
+- [x] **Step 3: Implement minimal recovery**
 
 Expor snapshot interno no store legado; no bootstrap carregar chave existente ou gerar/salvar antes de `SharedGroupIdentityStore.Initialize`; remover reflection.
 
-- [ ] **Step 4: Run tests to verify GREEN**
+- [x] **Step 4: Run tests to verify GREEN**
 
 Run: `dotnet test Nfe-Agendamento.sln -c Release --filter SharedQueueGroupBootstrapTests`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
-Commit: `fix: tornar bootstrap do grupo recuperavel`
+Implementado em commits do hardening da `main`, incluindo bootstrap recuperável e remoção do reflection legado.
 
 ### Task 2: Pareamento realmente one-shot
 
@@ -65,11 +73,11 @@ Commit: `fix: tornar bootstrap do grupo recuperavel`
 **Interfaces:**
 - Produces: `PairingCodeService.TryConsume(byte[] expectedKey)`; consumo atômico só do código ainda ativo correspondente.
 
-- [ ] **Step 1: Write failing tests** para código funcionar uma vez e continuar válido após falha antes da resposta.
-- [ ] **Step 2: Run targeted tests and verify RED.**
-- [ ] **Step 3: Implement consume-after-success.**
-- [ ] **Step 4: Run targeted tests and verify GREEN.**
-- [ ] **Step 5: Commit** `fix: consumir codigo de pareamento apos sucesso`.
+- [x] **Step 1: Write failing tests** para código funcionar uma vez e continuar válido após falha antes da resposta.
+- [x] **Step 2: Run targeted tests and verify RED.**
+- [x] **Step 3: Implement consume-after-success.**
+- [x] **Step 4: Run targeted tests and verify GREEN.**
+- [x] **Step 5: Commit** — implementado na `main`; o código é consumido após autorização concluída e não invalida um código novo gerado em paralelo.
 
 ### Task 3: Estado preparado para rotação e validação real de candidatura
 
@@ -88,11 +96,11 @@ Commit: `fix: tornar bootstrap do grupo recuperavel`
 - Produces: preparação e promoção de identidade/lista/cooldown com chave fornecida.
 - Produces: purge explícito do cache compartilhado.
 
-- [ ] **Step 1: Write failing storage tests** cobrindo preparação sem sobrescrever ativo e promoção atômica de cada arquivo.
-- [ ] **Step 2: Verify RED.**
-- [ ] **Step 3: Implement staging APIs** usando `WriteAtomicAsync`, limites atuais e rejeição de reparse points.
-- [ ] **Step 4: Verify GREEN.**
-- [ ] **Step 5: Commit** `feat: preparar rotacao recuperavel do grupo`.
+- [x] **Step 1: Write failing storage tests** cobrindo preparação sem sobrescrever ativo e promoção atômica de cada arquivo.
+- [x] **Step 2: Verify RED.**
+- [x] **Step 3: Implement staging APIs** usando `WriteAtomicAsync`, limites atuais e rejeição de reparse points.
+- [x] **Step 4: Verify GREEN.**
+- [x] **Step 5: Commit** — staging recuperável e purge do cache implementados na `main`.
 
 ### Task 4: Serviço de revogação + rotação recuperável
 
@@ -109,12 +117,12 @@ Commit: `fix: tornar bootstrap do grupo recuperavel`
 - Produces: `Task<bool> CompletePendingAsync(CancellationToken)`.
 - Produces: candidate bundle com nova chave e nova identidade pública; import atualiza pin mantendo ClientId/secret/sequence.
 
-- [ ] **Step 1: Write failing tests** para revogação, nova chave/RSA, preservação dos restantes, ausência de bundle do revogado, cooldown preservado e recuperação com marcador.
-- [ ] **Step 2: Verify RED.**
-- [ ] **Step 3: Implement minimal rotation service** com preparação → marcador → promoção → atualização local → limpeza.
-- [ ] **Step 4: Integrate recovery before fiscal leadership**; nenhum trabalho começa com rotação pendente incompleta.
-- [ ] **Step 5: Verify GREEN.**
-- [ ] **Step 6: Commit** `feat: adicionar revogacao criptografica de PCs`.
+- [x] **Step 1: Write failing tests** para revogação, nova chave/RSA, preservação dos restantes, ausência de bundle do revogado, cooldown preservado e recuperação com marcador.
+- [x] **Step 2: Verify RED.**
+- [x] **Step 3: Implement minimal rotation service** com preparação → marcador → promoção → atualização local → limpeza.
+- [x] **Step 4: Integrate recovery before fiscal leadership**; nenhum trabalho começa com rotação pendente incompleta.
+- [x] **Step 5: Verify GREEN.**
+- [x] **Step 6: Commit** — rotação/revogação recuperável e composição de produção validadas; cadeia de transições RSA assinada permite A→B→C para candidatos que ficaram offline.
 
 ### Task 5: API e interface de dispositivos autorizados
 
@@ -129,11 +137,11 @@ Commit: `fix: tornar bootstrap do grupo recuperavel`
 **Interfaces:**
 - Produces: `GET /api/pairing/clients` e `POST /api/pairing/revoke`.
 
-- [ ] **Step 1: Write failing API/static regression tests.**
-- [ ] **Step 2: Verify RED.**
-- [ ] **Step 3: Implement endpoints leader-only e UI sem exposição de segredo.**
-- [ ] **Step 4: Verify GREEN.**
-- [ ] **Step 5: Commit** `feat: gerenciar PCs autorizados no lider`.
+- [x] **Step 1: Write failing API/static regression tests.**
+- [x] **Step 2: Verify RED.**
+- [x] **Step 3: Implement endpoints leader-only e UI sem exposição de segredo.**
+- [x] **Step 4: Verify GREEN.**
+- [x] **Step 5: Commit** — gerenciamento de PCs implementado no líder; UI protege o líder atual contra remoção e exige confirmação para revogar outro PC.
 
 ### Task 6: Health check vinculado à versão
 
@@ -147,9 +155,12 @@ Commit: `fix: tornar bootstrap do grupo recuperavel`
 - Produces: `appVersion` em `/api/bootstrap`.
 - Installer script compara `appVersion` com `PreparedUpdate.Version`.
 
-- [ ] **Step 1: Write failing tests** procurando validação explícita de versão no bootstrap/script.
-- [ ] **Step 2: Verify RED.**
+- [x] **Step 1: Write failing tests** procurando validação explícita de versão no bootstrap/script.
+- [x] **Step 2: Verify RED.**
 - [ ] **Step 3: Implement version-bound health check.**
+
+Estado parcial: `/api/bootstrap` já expõe `appVersion` através de `CurrentAppVersion()`. Ainda falta o instalador comparar o JSON retornado com `PreparedUpdate.Version` e fazer rollback se outra versão responder na porta local.
+
 - [ ] **Step 4: Verify GREEN.**
 - [ ] **Step 5: Commit** `fix: validar versao no health check de atualizacao`.
 
