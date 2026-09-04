@@ -36,7 +36,7 @@ public sealed class PortalNfeFallbackLauncher
         {
             return new PortalFallbackLaunchResult(
                 PortalFallbackLaunchStatus.Busy,
-                "Já existe uma consulta alternativa aberta neste PC líder.");
+                "Já existe uma consulta alternativa aberta neste PC.");
         }
 
         try
@@ -63,7 +63,7 @@ public sealed class PortalNfeFallbackLauncher
 
             return new PortalFallbackLaunchResult(
                 PortalFallbackLaunchStatus.Started,
-                "A consulta alternativa foi aberta neste PC líder.");
+                "A consulta alternativa foi aberta neste PC.");
         }
         catch (WebView2RuntimeNotFoundException)
         {

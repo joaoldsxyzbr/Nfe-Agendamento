@@ -80,6 +80,7 @@ internal static class Program
             SharedQueueClient queueClient) =>
         {
             var clientStatus = queueClient.GetStatus();
+            var portalFallbackAvailable = group.IsCandidateReady || state.IsConfiguredAsCentral;
             return Results.Ok(new
             {
                 csrfToken = csrf.CurrentToken,
@@ -88,6 +89,7 @@ internal static class Program
                 leaderStatus = central.Status.ToString().ToLowerInvariant(),
                 candidateReady = group.IsCandidateReady,
                 clientPaired = group.IsCandidateReady || clientStatus.IsPaired || state.IsConfiguredAsCentral,
+                portalFallbackAvailable,
                 centralOnline = central.IsActive || clientStatus.CentralOnline,
                 shareAvailable = central.ShareAvailable || clientStatus.ShareAvailable,
                 centralId = central.IsActive ? Environment.MachineName : clientStatus.CentralId,
@@ -209,16 +211,17 @@ internal static class Program
 
         app.MapPost("/api/nfe/portal-fallback", (
             LookupRequest? request,
-            SharedQueueCentralService central,
+            CentralStateService state,
+            SharedQueueGroupBootstrapService group,
             PortalNfeFallbackLauncher launcher) =>
         {
             if (request is null || !AccessKeyValidator.IsValid(request.AccessKey))
                 return Results.BadRequest(new { status = "invalid_key", message = "Informe uma chave NF-e válida com 44 dígitos." });
 
-            if (!central.CanProcessWork())
+            if (!group.IsCandidateReady && !state.IsConfiguredAsCentral)
             {
                 return Results.Json(
-                    new { status = "leader_inactive", message = "A consulta alternativa deve ser aberta no PC que está processando a fila neste momento." },
+                    new { status = "portal_not_authorized", message = "Este PC ainda não está autorizado para usar o Portal da NF-e. Autorize-o no grupo e configure o certificado A1 localmente." },
                     statusCode: StatusCodes.Status409Conflict);
             }
 

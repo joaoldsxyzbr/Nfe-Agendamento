@@ -1,6 +1,6 @@
 (function () {
-  let centralActive = false;
-  let roleKnown = false;
+  let portalFallbackAvailable = false;
+  let availabilityKnown = false;
   let opening = false;
   let watchingAccessKey = '';
 
@@ -24,13 +24,13 @@
     return new Promise(resolve => setTimeout(resolve, milliseconds));
   }
 
-  async function loadRole() {
+  async function loadAvailability() {
     try {
       const response = await fetch('/api/bootstrap', { cache: 'no-store' });
       if (!response.ok) return;
       const bootstrap = await response.json();
-      centralActive = Boolean(bootstrap.centralActive);
-      roleKnown = true;
+      portalFallbackAvailable = Boolean(bootstrap.portalFallbackAvailable);
+      availabilityKnown = true;
     } catch {
     }
   }
@@ -45,10 +45,10 @@
       const consumoIndevido = args?.statusCode === 429 && args?.error?.status === 'consumo_indevido';
       if (!consumoIndevido) return message;
 
-      if (roleKnown && centralActive) {
+      if (availabilityKnown && portalFallbackAvailable) {
         showFallback();
-      } else if (roleKnown) {
-        message += ' A consulta alternativa pelo Portal da NF-e deve ser feita no líder da fila.';
+      } else if (availabilityKnown) {
+        message += ' Autorize este PC no NFe Agendamento e configure o certificado A1 localmente para usar o Portal da NF-e.';
       }
 
       return message;
@@ -117,12 +117,12 @@
       const bootstrapResponse = await fetch('/api/bootstrap', { cache: 'no-store' });
       if (!bootstrapResponse.ok) throw new Error('Não foi possível confirmar o estado deste PC.');
       const bootstrap = await bootstrapResponse.json();
-      centralActive = Boolean(bootstrap.centralActive);
-      roleKnown = true;
+      portalFallbackAvailable = Boolean(bootstrap.portalFallbackAvailable);
+      availabilityKnown = true;
 
-      if (!centralActive) {
+      if (!portalFallbackAvailable) {
         hideFallback();
-        throw new Error('A consulta alternativa pelo Portal da NF-e só pode ser aberta no líder da fila.');
+        throw new Error('Este PC ainda não está autorizado para usar o Portal da NF-e. Autorize-o no grupo e configure o certificado A1 localmente.');
       }
 
       const response = await fetch('/api/nfe/portal-fallback', {
@@ -139,7 +139,7 @@
       if (response.status !== 202) throw new Error(payload.message || 'Não foi possível abrir o Portal da NF-e.');
 
       if (status) {
-        status.textContent = 'Portal da NF-e aberto. Resolva o hCaptcha e baixe o XML; esta tela será atualizada automaticamente.';
+        status.textContent = 'Portal da NF-e aberto neste PC. Resolva o hCaptcha e baixe o XML; esta tela será atualizada automaticamente.';
         status.className = 'status';
       }
       void watchPortalImport(accessKey);
@@ -164,5 +164,5 @@
   button?.addEventListener('click', openPortalFallback);
 
   installLookupFeedbackHook();
-  loadRole();
+  loadAvailability();
 })();
