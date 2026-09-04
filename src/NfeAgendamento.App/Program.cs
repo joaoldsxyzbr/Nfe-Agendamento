@@ -90,6 +90,7 @@ internal static class Program
             return Results.Ok(new
             {
                 csrfToken = csrf.CurrentToken,
+                appVersion = CurrentAppVersion(),
                 configuredAsCentral = state.IsConfiguredAsCentral,
                 centralActive = central.IsActive,
                 leaderStatus = central.Status.ToString().ToLowerInvariant(),
@@ -332,6 +333,9 @@ internal static class Program
             statusCode: StatusCodes.Status429TooManyRequests);
         return new RetryAfterResult(response);
     }
+
+    private static string CurrentAppVersion() =>
+        typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
 
     private static void ZeroAuthorizedClients(IEnumerable<AuthorizedClientSnapshot> clients)
     {
