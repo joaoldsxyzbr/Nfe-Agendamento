@@ -386,10 +386,17 @@ try {
         try {
             $response = Invoke-WebRequest -Uri 'http://127.0.0.1:17345/api/bootstrap' -UseBasicParsing -TimeoutSec 2
             if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 300) {
-                $bootstrap = $response.Content | ConvertFrom-Json -ErrorAction Stop
-                if ($bootstrap.appVersion -eq $expectedVersion) {
-                    $healthy = $true
-                    break
+                if ($response.Content -is [string]) {
+                    $json = $response.Content.Trim()
+                    if ($json.StartsWith('{', [StringComparison]::Ordinal) -and $json.EndsWith('}', [StringComparison]::Ordinal)) {
+                        $bootstrap = $response.Content | ConvertFrom-Json -ErrorAction Stop
+                        if (($bootstrap -is [pscustomobject]) -and
+                            ($bootstrap.appVersion -is [string]) -and
+                            [string]::Equals($bootstrap.appVersion, $expectedVersion, [StringComparison]::Ordinal)) {
+                            $healthy = $true
+                            break
+                        }
+                    }
                 }
             }
         } catch { }

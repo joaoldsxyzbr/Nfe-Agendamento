@@ -138,8 +138,16 @@ assert.ok(
   'Instalador deve rejeitar resposta malformada no health check.'
 );
 assert.ok(
-  updateService.includes('$bootstrap.appVersion -eq $expectedVersion'),
-  'Instalador deve rejeitar bootstrap com versão ausente ou diferente.'
+  updateService.includes("$json.StartsWith('{', [StringComparison]::Ordinal)"),
+  'Instalador deve exigir um objeto JSON na raiz do bootstrap.'
+);
+assert.ok(
+  updateService.includes('($bootstrap.appVersion -is [string])'),
+  'Instalador deve exigir appVersion string escalar.'
+);
+assert.ok(
+  updateService.includes('[string]::Equals($bootstrap.appVersion, $expectedVersion, [StringComparison]::Ordinal)'),
+  'Instalador deve comparar appVersion exatamente, sem coerção de coleções.'
 );
 
 assert.doesNotThrow(() => new vm.Script(read(tabsPath), { filename: tabsPath }), 'tabs.js deve permanecer sintaticamente válido.');

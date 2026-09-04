@@ -126,11 +126,47 @@ public sealed class UpdateServiceTests
         Assert.Contains("http://127.0.0.1:17345/api/bootstrap", script, StringComparison.Ordinal);
         Assert.Contains("$expectedVersion = '1.2.0'", script, StringComparison.Ordinal);
         Assert.Contains("$bootstrap = $response.Content | ConvertFrom-Json -ErrorAction Stop", script, StringComparison.Ordinal);
-        Assert.Contains("$bootstrap.appVersion -eq $expectedVersion", script, StringComparison.Ordinal);
+        Assert.Contains("$json.StartsWith('{', [StringComparison]::Ordinal)", script, StringComparison.Ordinal);
+        Assert.Contains("($bootstrap.appVersion -is [string])", script, StringComparison.Ordinal);
+        Assert.Contains("[string]::Equals($bootstrap.appVersion, $expectedVersion, [StringComparison]::Ordinal)", script, StringComparison.Ordinal);
         Assert.Contains("$response.StatusCode -ge 200 -and $response.StatusCode -lt 300", script, StringComparison.Ordinal);
         Assert.Contains("Move-Item -LiteralPath $install -Destination $backup", script, StringComparison.Ordinal);
         Assert.Contains("Move-Item -LiteralPath $backup -Destination $install", script, StringComparison.Ordinal);
         Assert.DoesNotContain("Copy-Item -LiteralPath $_.FullName", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Installer_health_check_accepts_only_2xx_object_with_exact_scalar_string_version()
+    {
+        using var temp = new TemporaryDirectory();
+        var zip = BuildPackage();
+        var digest = Convert.ToHexString(SHA256.HashData(zip)).ToLowerInvariant();
+        using var client = VerifiedPackageClient(zip, "{}");
+        using var service = new UpdateService(client, new Version(1, 0, 0), new RecordingSignatureVerifier());
+        var prepared = await service.PrepareUpdateAsync(SignedUpdate(zip.Length, digest), temp.Path, processId: 4321);
+        var installer = await File.ReadAllTextAsync(prepared.ScriptPath);
+        var healthCheck = ExtractHealthCheckAttempt(installer);
+
+        var cases = new[]
+        {
+            (Name: "correct", StatusCode: 200, Content: "{\"appVersion\":\"1.2.0\"}", Expected: true),
+            (Name: "wrong", StatusCode: 200, Content: "{\"appVersion\":\"1.2.1\"}", Expected: false),
+            (Name: "missing", StatusCode: 200, Content: "{}", Expected: false),
+            (Name: "null", StatusCode: 200, Content: "{\"appVersion\":null}", Expected: false),
+            (Name: "number", StatusCode: 200, Content: "{\"appVersion\":1.2}", Expected: false),
+            (Name: "property array", StatusCode: 200, Content: "{\"appVersion\":[\"1.2.0\"]}", Expected: false),
+            (Name: "root array", StatusCode: 200, Content: "[{\"appVersion\":\"1.2.0\"}]", Expected: false),
+            (Name: "malformed", StatusCode: 200, Content: "{\"appVersion\":", Expected: false),
+            (Name: "non-2xx", StatusCode: 500, Content: "{\"appVersion\":\"1.2.0\"}", Expected: false)
+        };
+
+        foreach (var testCase in cases)
+        {
+            var actual = await RunHealthCheckAttemptAsync(healthCheck, testCase.StatusCode, testCase.Content, temp.Path);
+            Assert.True(
+                actual == testCase.Expected,
+                $"Caso '{testCase.Name}': esperado {testCase.Expected}, obtido {actual}.");
+        }
     }
 
     [Fact]
@@ -216,6 +252,69 @@ public sealed class UpdateServiceTests
             writer.Write("executável de teste");
         }
         return buffer.ToArray();
+    }
+
+    private static string ExtractHealthCheckAttempt(string installer)
+    {
+        const string startMarker = "        try {\n            $response = Invoke-WebRequest";
+        const string endMarker = "\n\n        Start-Sleep -Milliseconds 500";
+        var normalized = installer.Replace("\r\n", "\n", StringComparison.Ordinal);
+        var start = normalized.IndexOf(startMarker, StringComparison.Ordinal);
+        Assert.True(start >= 0, "Início do bloco real da tentativa de health check não foi localizado no instalador.");
+        var end = normalized.IndexOf(endMarker, start, StringComparison.Ordinal);
+        Assert.True(end > start, "Fim do bloco real da tentativa de health check não foi localizado no instalador.");
+        return normalized[start..end];
+    }
+
+    private static async Task<bool> RunHealthCheckAttemptAsync(
+        string healthCheck,
+        int statusCode,
+        string content,
+        string directory)
+    {
+        var encodedContent = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(content));
+        var harnessPath = Path.Combine(directory, $"health-check-{Guid.NewGuid():N}.ps1");
+        var harness = $$"""
+$ErrorActionPreference = 'Stop'
+function Invoke-WebRequest {
+    param([string]$Uri, [switch]$UseBasicParsing, [int]$TimeoutSec)
+    [pscustomobject]@{
+        StatusCode = {{statusCode}}
+        Content = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{{encodedContent}}'))
+    }
+}
+$expectedVersion = '1.2.0'
+$healthy = $false
+do {
+{{healthCheck}}
+} while ($false)
+if ($healthy) { Write-Output 'healthy' } else { Write-Output 'unhealthy' }
+""";
+        await File.WriteAllTextAsync(harnessPath, harness, new System.Text.UTF8Encoding(false));
+
+        var startInfo = new System.Diagnostics.ProcessStartInfo("powershell.exe")
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
+        };
+        startInfo.ArgumentList.Add("-NoProfile");
+        startInfo.ArgumentList.Add("-NonInteractive");
+        startInfo.ArgumentList.Add("-ExecutionPolicy");
+        startInfo.ArgumentList.Add("Bypass");
+        startInfo.ArgumentList.Add("-File");
+        startInfo.ArgumentList.Add(harnessPath);
+
+        using var process = System.Diagnostics.Process.Start(startInfo)
+            ?? throw new InvalidOperationException("Não foi possível iniciar o PowerShell de teste.");
+        var outputTask = process.StandardOutput.ReadToEndAsync();
+        var errorTask = process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+        var output = await outputTask;
+        var error = await errorTask;
+        Assert.True(process.ExitCode == 0, $"PowerShell encerrou com {process.ExitCode}: {error}");
+        return string.Equals(output.Trim(), "healthy", StringComparison.Ordinal);
     }
 
     private sealed class RecordingSignatureVerifier(Exception? exception = null) : IUpdateSignatureVerifier
