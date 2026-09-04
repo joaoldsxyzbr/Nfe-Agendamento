@@ -41,6 +41,26 @@ public sealed class ProductionCompositionRegressionTests
     }
 
     [Fact]
+    public void Authorized_client_management_is_leader_only_and_never_serializes_client_secrets()
+    {
+        var program = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "Program.cs"));
+
+        var listStart = program.IndexOf("app.MapGet(\"/api/pairing/clients\"", StringComparison.Ordinal);
+        var revokeStart = program.IndexOf("app.MapPost(\"/api/pairing/revoke\"", StringComparison.Ordinal);
+        var certificatesStart = program.IndexOf("app.MapGet(\"/api/certificates\"", StringComparison.Ordinal);
+
+        Assert.True(listStart >= 0, "A API deve listar os PCs autorizados.");
+        Assert.True(revokeStart > listStart, "A API deve permitir revogação pelo líder.");
+        Assert.True(certificatesStart > revokeStart, "Os endpoints de dispositivos devem ficar no bloco de pareamento.");
+
+        var managementBlock = program[listStart..certificatesStart];
+        Assert.Contains("if (!central.IsActive)", managementBlock, StringComparison.Ordinal);
+        Assert.Contains("SharedQueueGroupRotationService rotation", managementBlock, StringComparison.Ordinal);
+        Assert.Contains("await rotation.RevokeAsync(request.ClientId, cancellationToken)", managementBlock, StringComparison.Ordinal);
+        Assert.DoesNotContain(".Secret", managementBlock, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Browser_pairing_blocks_duplicate_submissions()
     {
         var pairing = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "pairing.js"));
