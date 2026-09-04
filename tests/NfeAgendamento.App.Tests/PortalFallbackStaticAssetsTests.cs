@@ -21,8 +21,10 @@ public sealed class PortalFallbackStaticAssetsTests
         Assert.DoesNotContain("centralActive", script, StringComparison.Ordinal);
         Assert.Contains("consumo_indevido", script, StringComparison.Ordinal);
         Assert.Contains("PortalNfeFallbackLauncher", program, StringComparison.Ordinal);
-        Assert.Contains("portalFallbackAvailable", program, StringComparison.Ordinal);
-        Assert.Contains("group.IsCandidateReady", program, StringComparison.Ordinal);
+        Assert.Contains("var portalFallbackAvailable = group.IsCandidateReady;", program, StringComparison.Ordinal);
+        Assert.Contains("if (!group.IsCandidateReady)", program, StringComparison.Ordinal);
+        Assert.DoesNotContain("group.IsCandidateReady || state.IsConfiguredAsCentral", program, StringComparison.Ordinal);
+        Assert.DoesNotContain("!group.IsCandidateReady && !state.IsConfiguredAsCentral", program, StringComparison.Ordinal);
         Assert.DoesNotContain("central.CanProcessWork()", program, StringComparison.Ordinal);
         Assert.Contains("portal_not_authorized", program, StringComparison.Ordinal);
     }
