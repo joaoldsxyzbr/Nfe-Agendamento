@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -12,47 +15,15 @@ concurrency:
 jobs:
   test:
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
-      - run: dotnet restore Nfe-Agendamento.sln
-      - name: Auditar dependências NuGet
+      - name: Verificar projeto
         shell: pwsh
-        run: |
-          $reportPath = Join-Path $env:RUNNER_TEMP 'nuget-vulnerabilities.json'
-          dotnet list Nfe-Agendamento.sln package --vulnerable --include-transitive --format json | Out-File -FilePath $reportPath -Encoding utf8
-          if ($LASTEXITCODE -ne 0) { throw 'Falha ao executar a auditoria de dependências NuGet.' }
-          $report = Get-Content -LiteralPath $reportPath -Raw | ConvertFrom-Json
-          $findings = @()
-          foreach ($project in @($report.projects)) {
-            foreach ($framework in @($project.frameworks)) {
-              foreach ($package in @($framework.topLevelPackages) + @($framework.transitivePackages)) {
-                if ($null -ne $package -and @($package.vulnerabilities).Count -gt 0) {
-                  $findings += "$($project.path): $($package.id) $($package.resolvedVersion)"
-                }
-              }
-            }
-          }
-          if ($findings.Count -gt 0) {
-            $findings | ForEach-Object { Write-Error $_ }
-            throw 'Dependências NuGet vulneráveis encontradas.'
-          }
-      - run: dotnet test Nfe-Agendamento.sln -c Release --no-restore
-      - name: Testar regressão de produtos Fernando Klein
-        run: node tests/js/product-mapping-regression.test.js
-      - name: Testar feedback de erros fiscais
-        run: node tests/js/lookup-feedback-regression.test.js
-      - name: Testar contingência pelo Portal NF-e
-        run: node tests/js/portal-fallback-regression.test.js
-      - name: Testar botão de consulta durante bootstrap
-        run: node tests/js/pairing-lookup-regression.test.js
-      - name: Testar consulta em lote
-        run: node tests/js/batch-lookup-regression.test.js
-      - name: Testar prontidão dos workflows de release
-        run: node tests/js/release-readiness-regression.test.js
-      - run: dotnet build Nfe-Agendamento.sln -c Release --no-restore
+        run: ./scripts/verify.ps1 -Restore
       - name: Publicar pacote de teste Windows
         run: dotnet publish src/NfeAgendamento.App/NfeAgendamento.App.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o artifacts/nfe-agendamento
       - name: Compactar pacote
@@ -64,3 +35,4 @@ jobs:
           name: Nfe-Agendamento-win-x64
           path: artifacts/Nfe-Agendamento-win-x64.zip
           if-no-files-found: error
+          retention-days: 7
