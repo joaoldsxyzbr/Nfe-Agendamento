@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using NfeAgendamento.App.Certificates;
 using NfeAgendamento.App.Fiscal;
 using NfeAgendamento.App.Portal;
@@ -129,6 +130,60 @@ internal static class Program
             return result.Success
                 ? Results.Ok(new { status = "paired", message = result.Message })
                 : Results.Json(new { status = "pairing_failed", message = result.Message }, statusCode: StatusCodes.Status409Conflict);
+        });
+
+        app.MapGet("/api/pairing/clients", (
+            SharedQueueCentralService central,
+            SharedAuthorizedClientStore clients) =>
+        {
+            if (!central.IsActive)
+            {
+                return Results.Json(
+                    new { status = "leader_inactive", message = "Gerencie os PCs autorizados somente no líder atual da fila." },
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+
+            var snapshot = clients.Snapshot();
+            try
+            {
+                var safeClients = snapshot
+                    .Select(item => new
+                    {
+                        clientId = item.ClientId,
+                        clientName = item.ClientName,
+                        lastSequence = item.LastSequence,
+                        isCurrent = string.Equals(item.ClientName, Environment.MachineName, StringComparison.OrdinalIgnoreCase)
+                    })
+                    .OrderByDescending(item => item.isCurrent)
+                    .ThenBy(item => item.clientName, StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+                return Results.Ok(new { clients = safeClients });
+            }
+            finally
+            {
+                ZeroAuthorizedClients(snapshot);
+            }
+        });
+
+        app.MapPost("/api/pairing/revoke", async (
+            RevokeClientRequest? request,
+            SharedQueueCentralService central,
+            SharedQueueGroupRotationService rotation,
+            CancellationToken cancellationToken) =>
+        {
+            if (!central.IsActive)
+            {
+                return Results.Json(
+                    new { status = "leader_inactive", message = "Remova PCs autorizados somente no líder atual da fila." },
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+            if (request is null || request.ClientId == Guid.Empty)
+                return Results.BadRequest(new { status = "invalid_client", message = "Selecione um PC autorizado válido." });
+
+            var result = await rotation.RevokeAsync(request.ClientId, cancellationToken);
+            return result.Success
+                ? Results.Ok(new { status = "revoked", message = result.Message })
+                : Results.Json(new { status = "revoke_failed", message = result.Message }, statusCode: StatusCodes.Status409Conflict);
         });
 
         app.MapGet("/api/certificates", (CertificateService certificates) =>
@@ -278,6 +333,13 @@ internal static class Program
         return new RetryAfterResult(response);
     }
 
+    private static void ZeroAuthorizedClients(IEnumerable<AuthorizedClientSnapshot> clients)
+    {
+        foreach (var client in clients)
+            if (client.Secret is not null)
+                CryptographicOperations.ZeroMemory(client.Secret);
+    }
+
     private sealed class HeaderResult(IResult inner, DateTimeOffset? blockedUntilUtc) : IResult
     {
         public async Task ExecuteAsync(HttpContext httpContext)
@@ -304,3 +366,4 @@ internal static class Program
 internal sealed record CertificateSelectRequest(string Thumbprint, string UfAutor);
 internal sealed record LookupRequest(string AccessKey);
 internal sealed record PairClientRequest(string Code);
+internal sealed record RevokeClientRequest(Guid ClientId);
