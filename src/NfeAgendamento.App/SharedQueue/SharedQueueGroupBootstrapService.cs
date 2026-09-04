@@ -72,7 +72,13 @@ public sealed class SharedQueueGroupBootstrapService
         if (!_legacyCentralState.IsConfiguredAsCentral)
             return;
 
-        var groupKey = RandomNumberGenerator.GetBytes(32);
+        var groupKey = _candidateState.Load();
+        if (groupKey is null)
+        {
+            groupKey = RandomNumberGenerator.GetBytes(32);
+            _candidateState.Save(groupKey);
+        }
+
         var privateKey = _legacyCentralKeyStore.ExportPrivateKeyPkcs8();
         var publicKey = _legacyCentralKeyStore.GetOrCreatePublicKey();
         var fingerprint = SHA256.HashData(publicKey);
@@ -80,7 +86,6 @@ public sealed class SharedQueueGroupBootstrapService
         try
         {
             _groupIdentity.Initialize(groupKey, privateKey);
-            _candidateState.Save(groupKey);
 
             legacyClients = ReadLegacyAuthorizedClients();
             var sharedAuthorized = new SharedAuthorizedClientStore(_paths, _candidateState);
