@@ -19,7 +19,8 @@ public sealed class SharedQueueGroupBootstrapTests
         centralState.SetConfiguredAsCentral(true);
         var centralKeys = new CentralKeyStore(Path.Combine(temp.Path, "central-key.bin"));
         var expectedPublic = centralKeys.GetOrCreatePublicKey();
-        var legacyAuthorized = new AuthorizedClientStore(Path.Combine(temp.Path, "authorized.bin"));
+        var legacyAuthorizedPath = Path.Combine(temp.Path, "authorized.bin");
+        var legacyAuthorized = new AuthorizedClientStore(legacyAuthorizedPath);
         var clientId = Guid.NewGuid();
         var clientSecret = RandomNumberGenerator.GetBytes(32);
         legacyAuthorized.Authorize(clientId, "PC-02", clientSecret);
@@ -32,7 +33,8 @@ public sealed class SharedQueueGroupBootstrapTests
             centralKeys,
             legacyAuthorized,
             centralPairing,
-            centralCandidate);
+            centralCandidate,
+            legacyAuthorizedPath);
 
         await bootstrap.EnsureBootstrapAsync();
         Assert.True(centralCandidate.IsReady);
@@ -74,13 +76,15 @@ public sealed class SharedQueueGroupBootstrapTests
         state.SetConfiguredAsCentral(true);
         var keys = new CentralKeyStore(Path.Combine(temp.Path, "central-key.bin"));
         var candidate = new CandidateStateStore(Path.Combine(temp.Path, "candidate.bin"));
+        var legacyAuthorizedPath = Path.Combine(temp.Path, "authorized.bin");
         var service = new SharedQueueGroupBootstrapService(
             paths,
             state,
             keys,
-            new AuthorizedClientStore(Path.Combine(temp.Path, "authorized.bin")),
+            new AuthorizedClientStore(legacyAuthorizedPath),
             new ClientPairingStore(Path.Combine(temp.Path, "client.bin")),
-            candidate);
+            candidate,
+            legacyAuthorizedPath);
 
         await service.EnsureBootstrapAsync();
         var firstKey = candidate.Load()!;
@@ -111,14 +115,16 @@ public sealed class SharedQueueGroupBootstrapTests
         var candidate = new CandidateStateStore(Path.Combine(temp.Path, "candidate.bin"));
         var preparedKey = RandomNumberGenerator.GetBytes(32);
         candidate.Save(preparedKey);
+        var legacyAuthorizedPath = Path.Combine(temp.Path, "authorized.bin");
 
         var service = new SharedQueueGroupBootstrapService(
             paths,
             state,
             new CentralKeyStore(Path.Combine(temp.Path, "central-key.bin")),
-            new AuthorizedClientStore(Path.Combine(temp.Path, "authorized.bin")),
+            new AuthorizedClientStore(legacyAuthorizedPath),
             new ClientPairingStore(Path.Combine(temp.Path, "client.bin")),
-            candidate);
+            candidate,
+            legacyAuthorizedPath);
 
         await service.EnsureBootstrapAsync();
 
@@ -143,7 +149,8 @@ public sealed class SharedQueueGroupBootstrapTests
         var centralState = new CentralStateService(new CentralSettingsStore(Path.Combine(temp.Path, "central.json")));
         centralState.SetConfiguredAsCentral(true);
         var centralKeys = new CentralKeyStore(Path.Combine(temp.Path, "central-key.bin"));
-        var legacyAuthorized = new AuthorizedClientStore(Path.Combine(temp.Path, "authorized.bin"));
+        var legacyAuthorizedPath = Path.Combine(temp.Path, "authorized.bin");
+        var legacyAuthorized = new AuthorizedClientStore(legacyAuthorizedPath);
         var clientId = Guid.NewGuid();
         var clientSecret = RandomNumberGenerator.GetBytes(32);
         legacyAuthorized.Authorize(clientId, "PC-02", clientSecret);
@@ -153,7 +160,8 @@ public sealed class SharedQueueGroupBootstrapTests
             centralKeys,
             legacyAuthorized,
             new ClientPairingStore(Path.Combine(temp.Path, "central-client.bin")),
-            new CandidateStateStore(Path.Combine(temp.Path, "central-candidate.bin")));
+            new CandidateStateStore(Path.Combine(temp.Path, "central-candidate.bin")),
+            legacyAuthorizedPath);
         await centralBootstrap.EnsureBootstrapAsync();
 
         using var otherRsa = RSA.Create(2048);

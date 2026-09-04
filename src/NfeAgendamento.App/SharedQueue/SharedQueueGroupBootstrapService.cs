@@ -1,4 +1,3 @@
-using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -8,15 +7,12 @@ namespace NfeAgendamento.App.SharedQueue;
 public sealed class SharedQueueGroupBootstrapService
 {
     private static readonly byte[] LegacyAuthorizedEntropy = Encoding.UTF8.GetBytes("NfeAgendamento.SharedQueue.AuthorizedClients.v1");
-    private static readonly FieldInfo LegacyAuthorizedPathField = typeof(AuthorizedClientStore)
-        .GetField("_path", BindingFlags.Instance | BindingFlags.NonPublic)
-        ?? throw new MissingFieldException(typeof(AuthorizedClientStore).FullName, "_path");
 
     private readonly object _sync = new();
     private readonly SharedQueuePaths _paths;
     private readonly CentralStateService _legacyCentralState;
     private readonly CentralKeyStore _legacyCentralKeyStore;
-    private readonly AuthorizedClientStore _legacyAuthorizedClients;
+    private readonly string _legacyAuthorizedPath;
     private readonly ClientPairingStore _clientPairingStore;
     private readonly CandidateStateStore _candidateState;
     private readonly CandidateBundleStore _candidateBundles;
@@ -28,12 +24,15 @@ public sealed class SharedQueueGroupBootstrapService
         CentralKeyStore legacyCentralKeyStore,
         AuthorizedClientStore legacyAuthorizedClients,
         ClientPairingStore clientPairingStore,
-        CandidateStateStore candidateState)
+        CandidateStateStore candidateState,
+        string? legacyAuthorizedPath = null)
     {
         _paths = paths ?? throw new ArgumentNullException(nameof(paths));
         _legacyCentralState = legacyCentralState ?? throw new ArgumentNullException(nameof(legacyCentralState));
         _legacyCentralKeyStore = legacyCentralKeyStore ?? throw new ArgumentNullException(nameof(legacyCentralKeyStore));
-        _legacyAuthorizedClients = legacyAuthorizedClients ?? throw new ArgumentNullException(nameof(legacyAuthorizedClients));
+        _ = legacyAuthorizedClients ?? throw new ArgumentNullException(nameof(legacyAuthorizedClients));
+        _legacyAuthorizedPath = Path.GetFullPath(
+            legacyAuthorizedPath ?? Path.Combine(AppPaths.StateRoot, "shared-queue", "authorized-clients.bin"));
         _clientPairingStore = clientPairingStore ?? throw new ArgumentNullException(nameof(clientPairingStore));
         _candidateState = candidateState ?? throw new ArgumentNullException(nameof(candidateState));
         _candidateBundles = new CandidateBundleStore(paths);
@@ -196,11 +195,10 @@ public sealed class SharedQueueGroupBootstrapService
 
     private List<AuthorizedClientSnapshot> ReadLegacyAuthorizedClients()
     {
-        var path = LegacyAuthorizedPathField.GetValue(_legacyAuthorizedClients) as string;
-        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        if (!File.Exists(_legacyAuthorizedPath))
             return [];
 
-        var protectedBytes = File.ReadAllBytes(path);
+        var protectedBytes = File.ReadAllBytes(_legacyAuthorizedPath);
         byte[]? plain = null;
         try
         {

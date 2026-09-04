@@ -6,12 +6,14 @@ namespace NfeAgendamento.App.SharedQueue;
 public sealed class SharedQueueGroupPairingProcessor
 {
     private static readonly TimeSpan MaxRequestAge = TimeSpan.FromMinutes(2);
+    private readonly object _codeSync = new();
     private readonly SharedQueuePaths _paths;
     private readonly PairingCodeService _codes;
     private readonly SharedAuthorizedClientStore _authorizedClients;
     private readonly CentralKeyStore _centralKeyStore;
     private readonly CandidateStateStore _candidateState;
     private readonly CandidateBundleStore _candidateBundles;
+    private byte[]? _consumedPairingKey;
 
     public SharedQueueGroupPairingProcessor(
         SharedQueuePaths paths,
@@ -33,6 +35,12 @@ public sealed class SharedQueueGroupPairingProcessor
     {
         if (!_paths.ValidateForClient() || !_codes.TryGetActiveKey(out var pairingKey))
             return false;
+
+        if (IsConsumedPairingKey(pairingKey))
+        {
+            CryptographicOperations.ZeroMemory(pairingKey);
+            return false;
+        }
 
         var groupKey = _candidateState.Load();
         if (groupKey is null)
@@ -135,6 +143,7 @@ public sealed class SharedQueueGroupPairingProcessor
                     CryptographicOperations.ZeroMemory(responseBytes);
                 }
 
+                MarkPairingKeyConsumed(pairingKey);
                 TryDelete(processing);
                 return true;
             }
@@ -171,6 +180,25 @@ public sealed class SharedQueueGroupPairingProcessor
         {
             CryptographicOperations.ZeroMemory(groupKey);
             CryptographicOperations.ZeroMemory(pairingKey);
+        }
+    }
+
+    private bool IsConsumedPairingKey(byte[] pairingKey)
+    {
+        lock (_codeSync)
+        {
+            return _consumedPairingKey is { Length: 32 }
+                && CryptographicOperations.FixedTimeEquals(_consumedPairingKey, pairingKey);
+        }
+    }
+
+    private void MarkPairingKeyConsumed(byte[] pairingKey)
+    {
+        lock (_codeSync)
+        {
+            if (_consumedPairingKey is not null)
+                CryptographicOperations.ZeroMemory(_consumedPairingKey);
+            _consumedPairingKey = pairingKey.ToArray();
         }
     }
 
