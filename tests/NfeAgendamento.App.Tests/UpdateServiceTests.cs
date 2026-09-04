@@ -30,7 +30,7 @@ public sealed class UpdateServiceTests
                     {
                         name = "Nfe-Agendamento-win-x64.zip",
                         size = 1234,
-                        digest = $"sha256:{publishedDigest}",
+                        digest = (string?)$"sha256:{publishedDigest}",
                         browser_download_url = PackageUri.ToString()
                     },
                     new

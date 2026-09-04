@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using NfeAgendamento.App.Fiscal;
+using NfeAgendamento.App.Storage;
 
 namespace NfeAgendamento.App.SharedQueue;
 
@@ -274,15 +275,18 @@ public sealed class AutomaticSharedQueueProcessingHostedService : BackgroundServ
     private readonly SharedQueueCentralService _central;
     private readonly SharedQueueGroupPairingProcessor _pairing;
     private readonly SharedQueueGroupProcessor _processor;
+    private readonly EncryptedXmlCache _cache;
 
     public AutomaticSharedQueueProcessingHostedService(
         SharedQueueCentralService central,
         SharedQueueGroupPairingProcessor pairing,
-        SharedQueueGroupProcessor processor)
+        SharedQueueGroupProcessor processor,
+        EncryptedXmlCache cache)
     {
         _central = central;
         _pairing = pairing;
         _processor = processor;
+        _cache = cache;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -301,6 +305,7 @@ public sealed class AutomaticSharedQueueProcessingHostedService : BackgroundServ
                 if (DateTimeOffset.UtcNow >= nextMaintenance)
                 {
                     await _processor.MaintainAsync(stoppingToken);
+                    await _cache.PurgeExpiredAsync(stoppingToken);
                     nextMaintenance = DateTimeOffset.UtcNow.AddSeconds(30);
                 }
 

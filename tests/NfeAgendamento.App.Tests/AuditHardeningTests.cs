@@ -57,7 +57,7 @@ public sealed class AuditHardeningTests
         Assert.Equal("DENY", context.Response.Headers.XFrameOptions.ToString());
         Assert.Equal("no-referrer", context.Response.Headers["Referrer-Policy"].ToString());
         Assert.Equal(
-            "default-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
             context.Response.Headers.ContentSecurityPolicy.ToString());
     }
 

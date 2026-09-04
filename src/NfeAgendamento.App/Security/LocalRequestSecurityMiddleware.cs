@@ -5,6 +5,9 @@ namespace NfeAgendamento.App.Security;
 
 public sealed class LocalRequestSecurityMiddleware
 {
+    private const string ContentSecurityPolicy =
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'";
+
     private static readonly HashSet<string> AllowedHosts = new(StringComparer.OrdinalIgnoreCase)
     {
         "127.0.0.1:17345",
@@ -28,6 +31,11 @@ public sealed class LocalRequestSecurityMiddleware
 
     public async Task InvokeAsync(HttpContext context)
     {
+        context.Response.Headers["Content-Security-Policy"] = ContentSecurityPolicy;
+        context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+        context.Response.Headers["X-Frame-Options"] = "DENY";
+        context.Response.Headers["Referrer-Policy"] = "no-referrer";
+
         var remoteIp = context.Connection.RemoteIpAddress;
         if (remoteIp is null || !IPAddress.IsLoopback(remoteIp))
         {
@@ -35,7 +43,8 @@ public sealed class LocalRequestSecurityMiddleware
             return;
         }
 
-        if (!AllowedHosts.Contains(context.Request.Host.Value))
+        var host = context.Request.Host.Value;
+        if (string.IsNullOrWhiteSpace(host) || !AllowedHosts.Contains(host))
         {
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
             return;

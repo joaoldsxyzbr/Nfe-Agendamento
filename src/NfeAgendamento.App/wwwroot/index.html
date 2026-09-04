@@ -153,21 +153,7 @@
 
     <section id="danfe" class="danfe" role="dialog" aria-modal="true" aria-label="Visualização do DANFE" hidden></section>
   </main>
-  <script>
-    function resetLookup() {
-      const accessKey = document.getElementById('accessKey');
-      const status = document.getElementById('status');
-      const actions = document.getElementById('actions');
-      const portalFallbackPanel = document.getElementById('portalFallbackPanel');
-      accessKey.value = '';
-      status.textContent = '';
-      status.className = 'status';
-      actions.hidden = true;
-      portalFallbackPanel.hidden = true;
-      accessKey.focus();
-    }
-    document.getElementById('newLookup').addEventListener('click', resetLookup);
-  </script>
+  <script src="/reset-lookup.js" defer></script>
   <script src="/lookup-feedback.js" defer></script>
   <script src="/portal-fallback.js" defer></script>
   <script src="/app.js" defer></script>

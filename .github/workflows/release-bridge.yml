@@ -114,7 +114,7 @@ jobs:
           Compress-Archive -Path artifacts/nfe-agendamento/* -DestinationPath artifacts/Nfe-Agendamento-win-x64.zip
 
       - name: Instalar Cosign
-        uses: sigstore/cosign-installer@v4.1.2
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # sigstore/cosign-installer@v4.1.2
 
       - name: Assinar pacote Windows com Sigstore
         shell: pwsh

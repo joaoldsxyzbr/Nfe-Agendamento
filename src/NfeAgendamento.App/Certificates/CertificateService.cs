@@ -1,4 +1,5 @@
 using System.Security.Cryptography.X509Certificates;
+using System.Text;
 
 namespace NfeAgendamento.App.Certificates;
 
@@ -55,51 +56,38 @@ public sealed class CertificateService
 
         _ = CertificateIdentityReader.Read(certificate, normalizedUf);
 
-        var directory = Path.GetDirectoryName(_selectionPath)
-            ?? throw new InvalidOperationException("Caminho de estado local inválido.");
-        Directory.CreateDirectory(directory);
-
-        var temporary = _selectionPath + ".tmp";
-        await File.WriteAllTextAsync(temporary, normalized, cancellationToken);
-        File.Move(temporary, _selectionPath, overwrite: true);
-        await File.WriteAllTextAsync(_authorityStatePath + ".tmp", normalizedUf, cancellationToken);
-        File.Move(_authorityStatePath + ".tmp", _authorityStatePath, overwrite: true);
+        var persisted = $"{normalized}|{normalizedUf}";
+        await WriteAtomicTextAsync(_selectionPath, persisted, cancellationToken);
+        TryDelete(_authorityStatePath);
     }
 
-    public async Task<CertificateSelection?> GetCurrentAsync(CancellationToken cancellationToken = default)
+    public Task<CertificateSelection?> GetCurrentAsync(CancellationToken cancellationToken = default)
     {
-        if (!File.Exists(_selectionPath))
-            return null;
-
-        var thumbprint = (await File.ReadAllTextAsync(_selectionPath, cancellationToken)).Trim();
-        if (thumbprint.Length == 0)
-            return null;
+        cancellationToken.ThrowIfCancellationRequested();
+        var state = ReadPersistedSelection();
+        if (state is null)
+            return Task.FromResult<CertificateSelection?>(null);
 
         try
         {
-            using var certificate = GetByThumbprint(thumbprint);
-            return ToSelection(certificate);
+            using var certificate = GetByThumbprint(state.Value.Thumbprint);
+            return Task.FromResult<CertificateSelection?>(ToSelection(certificate));
         }
         catch (InvalidOperationException)
         {
-            return null;
+            return Task.FromResult<CertificateSelection?>(null);
         }
     }
 
     public (X509Certificate2 Certificate, CertificateSelection Selection) GetCurrentSelectionWithCertificate()
     {
-        if (!File.Exists(_selectionPath))
-            throw new InvalidOperationException("Nenhum certificado foi configurado.");
+        var state = ReadPersistedSelection()
+            ?? throw new InvalidOperationException("Nenhum certificado foi configurado.");
 
-        var thumbprint = File.ReadAllText(_selectionPath).Trim();
-        if (thumbprint.Length == 0)
-            throw new InvalidOperationException("Nenhum certificado foi configurado.");
-
-        var certificate = GetByThumbprint(thumbprint);
+        var certificate = GetByThumbprint(state.Value.Thumbprint);
         try
         {
-            var ufAutor = GetCurrentAuthorityState();
-            _ = CertificateIdentityReader.Read(certificate, ufAutor);
+            _ = CertificateIdentityReader.Read(certificate, state.Value.UfAutor);
             return (new X509Certificate2(certificate), ToSelection(certificate));
         }
         finally
@@ -108,8 +96,95 @@ public sealed class CertificateService
         }
     }
 
-    public string? GetCurrentAuthorityState() =>
-        File.Exists(_authorityStatePath) ? File.ReadAllText(_authorityStatePath).Trim() : null;
+    public string? GetCurrentAuthorityState()
+    {
+        try
+        {
+            return ReadPersistedSelection()?.UfAutor;
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
+    private PersistedSelection? ReadPersistedSelection()
+    {
+        if (!File.Exists(_selectionPath))
+            return null;
+
+        var raw = File.ReadAllText(_selectionPath).Trim();
+        if (raw.Length == 0)
+            return null;
+
+        var separator = raw.IndexOf('|');
+        if (separator >= 0)
+        {
+            var thumbprint = raw[..separator].Trim();
+            var ufAutor = raw[(separator + 1)..].Trim();
+            try
+            {
+                return new PersistedSelection(
+                    NormalizeThumbprint(thumbprint),
+                    NormalizeAuthorityState(ufAutor));
+            }
+            catch (ArgumentException ex)
+            {
+                throw new InvalidOperationException("O estado salvo do certificado é inválido.", ex);
+            }
+        }
+
+        var legacyUf = File.Exists(_authorityStatePath)
+            ? File.ReadAllText(_authorityStatePath).Trim()
+            : null;
+        return new PersistedSelection(NormalizeThumbprint(raw), legacyUf);
+    }
+
+    private static async Task WriteAtomicTextAsync(
+        string path,
+        string value,
+        CancellationToken cancellationToken)
+    {
+        var directory = Path.GetDirectoryName(path)
+            ?? throw new InvalidOperationException("Caminho de estado local inválido.");
+        Directory.CreateDirectory(directory);
+
+        var temporary = path + $".{Guid.NewGuid():N}.tmp";
+        var bytes = Encoding.UTF8.GetBytes(value);
+        try
+        {
+            await using (var stream = new FileStream(
+                temporary,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.None,
+                bufferSize: 4096,
+                FileOptions.Asynchronous | FileOptions.WriteThrough))
+            {
+                await stream.WriteAsync(bytes, cancellationToken);
+                await stream.FlushAsync(cancellationToken);
+                stream.Flush(flushToDisk: true);
+            }
+
+            File.Move(temporary, path, overwrite: true);
+        }
+        finally
+        {
+            TryDelete(temporary);
+        }
+    }
+
+    private static void TryDelete(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+        }
+    }
 
     private static string NormalizeAuthorityState(string ufAutor)
     {
@@ -149,4 +224,6 @@ public sealed class CertificateService
 
         return string.Concat(thumbprint.Where(character => !char.IsWhiteSpace(character))).ToUpperInvariant();
     }
+
+    private readonly record struct PersistedSelection(string Thumbprint, string? UfAutor);
 }

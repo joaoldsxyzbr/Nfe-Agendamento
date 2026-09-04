@@ -157,6 +157,67 @@ public sealed class EncryptedXmlCache
         }
     }
 
+    public async Task PurgeExpiredAsync(CancellationToken cancellationToken = default)
+    {
+        if (!Directory.Exists(_root))
+            return;
+
+        string[] files;
+        try
+        {
+            SharedQueueFileIO.EnsureNotReparsePoint(_root);
+            files = Directory.EnumerateFiles(_root, "*.bin", SearchOption.TopDirectoryOnly).ToArray();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or DirectoryNotFoundException or InvalidDataException)
+        {
+            return;
+        }
+
+        byte[]? groupKey = null;
+        try
+        {
+            if (_sharedMode)
+            {
+                try
+                {
+                    groupKey = LoadGroupKey();
+                }
+                catch (InvalidOperationException)
+                {
+                    return;
+                }
+            }
+
+            foreach (var path in files)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                try
+                {
+                    var entry = _sharedMode
+                        ? ReadSharedEntryForMaintenance(path, groupKey!)
+                        : await ReadLocalEntryForMaintenanceAsync(path, cancellationToken);
+
+                    if (IsExpired(entry))
+                        TryDelete(path);
+                }
+                catch (Exception ex) when (ex is IOException
+                    or UnauthorizedAccessException
+                    or CryptographicException
+                    or JsonException
+                    or InvalidDataException
+                    or ArgumentOutOfRangeException)
+                {
+                    TryDelete(path);
+                }
+            }
+        }
+        finally
+        {
+            if (groupKey is not null)
+                CryptographicOperations.ZeroMemory(groupKey);
+        }
+    }
+
     private Task<CacheEntry?> TryGetSharedAsync(
         string accessKey,
         string path,
@@ -203,15 +264,57 @@ public sealed class EncryptedXmlCache
         }
     }
 
+    private CacheEntry ReadSharedEntryForMaintenance(string path, byte[] groupKey)
+    {
+        byte[]? bytes = null;
+        byte[]? plainBytes = null;
+        try
+        {
+            SharedQueueFileIO.EnsureNotReparsePoint(path);
+            bytes = SharedQueueFileIO.ReadAllBytes(path, MaxSharedBytes);
+            var envelope = JsonSerializer.Deserialize<ProtectedGroupEnvelope>(bytes)
+                ?? throw new CryptographicException("Entrada de cache compartilhado inválida.");
+            plainBytes = CandidateBundleStore.Unprotect(groupKey, envelope, SharedAssociatedData);
+            return DeserializeEntry(plainBytes);
+        }
+        finally
+        {
+            if (bytes is not null) CryptographicOperations.ZeroMemory(bytes);
+            if (plainBytes is not null) CryptographicOperations.ZeroMemory(plainBytes);
+        }
+    }
+
+    private async Task<CacheEntry> ReadLocalEntryForMaintenanceAsync(
+        string path,
+        CancellationToken cancellationToken)
+    {
+        SharedQueueFileIO.EnsureNotReparsePoint(path);
+        var info = new FileInfo(path);
+        if (info.Length <= 0 || info.Length > MaxSharedBytes)
+            throw new InvalidDataException("Entrada de cache local excede o limite permitido.");
+
+        var protectedBytes = await File.ReadAllBytesAsync(path, cancellationToken);
+        byte[]? plainBytes = null;
+        try
+        {
+            plainBytes = ProtectedData.Unprotect(protectedBytes, Entropy, DataProtectionScope.CurrentUser);
+            return DeserializeEntry(plainBytes);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(protectedBytes);
+            if (plainBytes is not null) CryptographicOperations.ZeroMemory(plainBytes);
+        }
+    }
+
     private CacheEntry? ValidateEntry(string accessKey, string path, byte[] plainBytes)
     {
-        var entry = JsonSerializer.Deserialize<CacheEntry>(plainBytes)
-            ?? throw new InvalidDataException("Entrada de cache inválida.");
+        var entry = DeserializeEntry(plainBytes);
 
         if (!string.Equals(entry.AccessKey, accessKey, StringComparison.Ordinal))
             throw new InvalidDataException("A entrada de cache não corresponde à chave solicitada.");
 
-        if (_timeProvider.GetUtcNow() >= entry.StoredAtUtc.Add(_retention))
+        if (IsExpired(entry))
         {
             TryDelete(path);
             return null;
@@ -219,6 +322,13 @@ public sealed class EncryptedXmlCache
 
         return entry;
     }
+
+    private static CacheEntry DeserializeEntry(byte[] plainBytes) =>
+        JsonSerializer.Deserialize<CacheEntry>(plainBytes)
+        ?? throw new InvalidDataException("Entrada de cache inválida.");
+
+    private bool IsExpired(CacheEntry entry) =>
+        _timeProvider.GetUtcNow() >= entry.StoredAtUtc.Add(_retention);
 
     private byte[] LoadGroupKey() =>
         _candidateState!.Load()

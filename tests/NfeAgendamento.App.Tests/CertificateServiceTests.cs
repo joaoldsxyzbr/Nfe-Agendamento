@@ -78,12 +78,12 @@ public sealed class CertificateServiceTests
 
         if (keepPrivateKey)
         {
-            return new X509Certificate2(
+            return X509CertificateLoader.LoadPkcs12(
                 generated.Export(X509ContentType.Pfx),
-                (string?)null,
-                X509KeyStorageFlags.Exportable | X509KeyStorageFlags.EphemeralKeySet);
+                password: null,
+                keyStorageFlags: X509KeyStorageFlags.Exportable | X509KeyStorageFlags.EphemeralKeySet);
         }
 
-        return new X509Certificate2(generated.Export(X509ContentType.Cert));
+        return X509CertificateLoader.LoadCertificate(generated.Export(X509ContentType.Cert));
     }
 }
