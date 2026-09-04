@@ -32,10 +32,9 @@ jobs:
       - name: Corrigir strings do teste gerado
         run: python .github/scripts/fix-migration-generated-tests.py
 
-      - name: Remover automação temporária da árvore final
+      - name: Remover scripts temporários da árvore final
         shell: pwsh
         run: |
-          Remove-Item -LiteralPath '.github/workflows/migrate-release-sigstore-v0.1.26.yml' -Force
           Remove-Item -LiteralPath '.github/scripts/migrate-release-sigstore-v0.1.26.py' -Force
           Remove-Item -LiteralPath '.github/scripts/fix-migration-generated-tests.py' -Force
 
