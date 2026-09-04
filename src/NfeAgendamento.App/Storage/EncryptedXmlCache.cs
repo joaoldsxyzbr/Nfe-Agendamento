@@ -157,6 +157,23 @@ public sealed class EncryptedXmlCache
         }
     }
 
+    public Task PurgeAllAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!Directory.Exists(_root))
+            return Task.CompletedTask;
+
+        SharedQueueFileIO.EnsureNotReparsePoint(_root);
+        foreach (var path in Directory.EnumerateFiles(_root, "*.bin", SearchOption.TopDirectoryOnly))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            SharedQueueFileIO.EnsureNotReparsePoint(path);
+            TryDelete(path);
+        }
+
+        return Task.CompletedTask;
+    }
+
     public async Task PurgeExpiredAsync(CancellationToken cancellationToken = default)
     {
         if (!Directory.Exists(_root))

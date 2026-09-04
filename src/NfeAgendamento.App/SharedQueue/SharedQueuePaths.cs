@@ -13,7 +13,8 @@ public sealed class SharedQueuePaths
         "heartbeat.json",
         "group-identity.bin",
         "authorized-clients.bin",
-        "fiscal-cooldown.bin"
+        "fiscal-cooldown.bin",
+        "rotation.json"
     };
 
     private readonly string _rootWithSeparator;
@@ -41,6 +42,7 @@ public sealed class SharedQueuePaths
     public string MarkerPath => EnsureInsideRoot(Path.Combine(Root, ".nfe-agendamento"));
     public string GroupIdentityPath => StatusPath("group-identity.bin");
     public string AuthorizedClientsPath => StatusPath("authorized-clients.bin");
+    public string RotationMarkerPath => StatusPath("rotation.json");
 
     public string RequestPath(Guid requestId) =>
         EnsureInsideRoot(Path.Combine(QueueDirectory, $"{ValidateId(requestId):N}.req"));
@@ -86,6 +88,18 @@ public sealed class SharedQueuePaths
 
     public string AuthorizedClientsTemporaryPath(Guid writeId) =>
         EnsureInsideRoot(Path.Combine(StatusDirectory, $"authorized-clients.{ValidateId(writeId):N}.tmp"));
+
+    public string RotationMarkerTemporaryPath(Guid writeId) =>
+        EnsureInsideRoot(Path.Combine(StatusDirectory, $"rotation.{ValidateId(writeId):N}.tmp"));
+
+    public string RotationIdentityPreparedPath(Guid rotationId) =>
+        EnsureInsideRoot(Path.Combine(StatusDirectory, $"group-identity.{ValidateId(rotationId):N}.prepared"));
+
+    public string RotationAuthorizedPreparedPath(Guid rotationId) =>
+        EnsureInsideRoot(Path.Combine(StatusDirectory, $"authorized-clients.{ValidateId(rotationId):N}.prepared"));
+
+    public string RotationCooldownPreparedPath(Guid rotationId) =>
+        EnsureInsideRoot(Path.Combine(StatusDirectory, $"fiscal-cooldown.{ValidateId(rotationId):N}.prepared"));
 
     public string StatusPath(string fileName)
     {
