@@ -1,0 +1,22 @@
+name: Dispatch Release v0.1.26
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/dispatch-release-v0.1.26.yml'
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    if: github.event.head_commit.message == 'chore: dispatch release v0.1.26'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Disparar Release Bridge
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run release-bridge.yml --ref main -f version=v0.1.26
