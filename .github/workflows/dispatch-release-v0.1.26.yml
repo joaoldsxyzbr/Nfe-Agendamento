@@ -18,4 +18,4 @@ jobs:
       - name: Disparar Release Bridge
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh workflow run release-bridge.yml --ref main -f version=v0.1.26
+        run: gh workflow run release-bridge.yml --repo joaoldsxyzbr/Nfe-Agendamento --ref main -f version=v0.1.26
