@@ -34,6 +34,13 @@ public sealed class SharedQueueGroupPairingProcessor
         if (!_paths.ValidateForClient() || !_codes.TryGetActiveKey(out var pairingKey))
             return false;
 
+        var groupKey = _candidateState.Load();
+        if (groupKey is null)
+        {
+            CryptographicOperations.ZeroMemory(pairingKey);
+            return false;
+        }
+
         try
         {
             var candidate = FindNextValidCandidate(out var requestId);
@@ -41,80 +48,115 @@ public sealed class SharedQueueGroupPairingProcessor
                 return false;
 
             var processing = _paths.PairingProcessingPath(requestId);
-            try { File.Move(candidate, processing, overwrite: false); }
-            catch (IOException) { return false; }
-
             try
             {
-                var bytes = await SharedQueueFileIO.ReadAllBytesAsync(processing, SharedQueueFileIO.MaxPairingBytes, cancellationToken);
+                File.Move(candidate, processing, overwrite: false);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                return false;
+            }
+
+            QueuePairingRequestPayload request;
+            try
+            {
+                var bytes = await SharedQueueFileIO.ReadAllBytesAsync(
+                    processing,
+                    SharedQueueFileIO.MaxPairingBytes,
+                    cancellationToken);
                 var envelope = JsonSerializer.Deserialize<QueuePairingRequestEnvelope>(bytes)
                     ?? throw new InvalidDataException("Pedido de pareamento vazio.");
                 if (envelope.RequestId != requestId)
                     throw new InvalidDataException("Identificador do pareamento inválido.");
+
                 var now = DateTimeOffset.UtcNow;
                 if (envelope.CreatedUtc > now.AddMinutes(1) || now - envelope.CreatedUtc > MaxRequestAge)
                     throw new InvalidDataException("Pedido de pareamento expirado.");
 
-                var request = SharedQueuePairingCrypto.OpenRequest(envelope, pairingKey);
+                request = SharedQueuePairingCrypto.OpenRequest(envelope, pairingKey);
                 if (request.ClientId == Guid.Empty || string.IsNullOrWhiteSpace(request.ClientName))
                     throw new InvalidDataException("Identidade do cliente inválida.");
+            }
+            catch (OperationCanceledException)
+            {
+                RestoreForRetry(processing, requestId);
+                throw;
+            }
+            catch (Exception ex) when (ex is CryptographicException or JsonException or InvalidDataException)
+            {
+                TryDelete(processing);
+                return true;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                RestoreForRetry(processing, requestId);
+                return false;
+            }
 
-                var groupKey = _candidateState.Load()
-                    ?? throw new InvalidOperationException("O líder ainda não possui o estado seguro do grupo.");
-                var clientSecret = RandomNumberGenerator.GetBytes(32);
-                var publicKey = _centralKeyStore.GetOrCreatePublicKey();
-                var fingerprint = SHA256.HashData(publicKey);
+            var clientSecret = RandomNumberGenerator.GetBytes(32);
+            byte[]? publicKey = null;
+            byte[]? fingerprint = null;
+            try
+            {
+                publicKey = _centralKeyStore.GetOrCreatePublicKey();
+                fingerprint = SHA256.HashData(publicKey);
+
+                _authorizedClients.Authorize(request.ClientId, request.ClientName, clientSecret);
+                await _candidateBundles.WriteAsync(
+                    request.ClientId,
+                    clientSecret,
+                    new CandidateBundlePayload(groupKey, fingerprint),
+                    cancellationToken);
+
+                var response = SharedQueuePairingCrypto.CreateResponse(
+                    requestId,
+                    new QueuePairingResponsePayload(
+                        request.ClientId,
+                        request.ClientName,
+                        clientSecret,
+                        Environment.MachineName,
+                        publicKey),
+                    pairingKey);
+                var responseBytes = JsonSerializer.SerializeToUtf8Bytes(response);
+                var responseTemp = _paths.PairingResponseTemporaryPath(requestId);
                 try
                 {
-                    _authorizedClients.Authorize(request.ClientId, request.ClientName, clientSecret);
-                    await _candidateBundles.WriteAsync(
-                        request.ClientId,
-                        clientSecret,
-                        new CandidateBundlePayload(groupKey, fingerprint),
+                    await SharedQueueFileIO.WriteAtomicAsync(
+                        responseTemp,
+                        _paths.PairingResponsePath(requestId),
+                        responseBytes,
+                        SharedQueueFileIO.MaxPairingBytes,
+                        overwrite: true,
                         cancellationToken);
-
-                    var response = SharedQueuePairingCrypto.CreateResponse(
-                        requestId,
-                        new QueuePairingResponsePayload(
-                            request.ClientId,
-                            request.ClientName,
-                            clientSecret,
-                            Environment.MachineName,
-                            publicKey),
-                        pairingKey);
-                    var responseBytes = JsonSerializer.SerializeToUtf8Bytes(response);
-                    var responseTemp = _paths.PairingResponseTemporaryPath(requestId);
-                    try
-                    {
-                        await SharedQueueFileIO.WriteAtomicAsync(
-                            responseTemp,
-                            _paths.PairingResponsePath(requestId),
-                            responseBytes,
-                            SharedQueueFileIO.MaxPairingBytes,
-                            overwrite: true,
-                            cancellationToken);
-                    }
-                    finally
-                    {
-                        TryDelete(responseTemp);
-                        CryptographicOperations.ZeroMemory(responseBytes);
-                    }
                 }
                 finally
                 {
-                    CryptographicOperations.ZeroMemory(groupKey);
-                    CryptographicOperations.ZeroMemory(clientSecret);
-                    CryptographicOperations.ZeroMemory(publicKey);
-                    CryptographicOperations.ZeroMemory(fingerprint);
+                    TryDelete(responseTemp);
+                    CryptographicOperations.ZeroMemory(responseBytes);
                 }
 
                 TryDelete(processing);
                 return true;
             }
-            catch (Exception ex) when (ex is CryptographicException or JsonException or InvalidDataException or InvalidOperationException)
+            catch (OperationCanceledException)
             {
-                TryDelete(processing);
-                return true;
+                RestoreForRetry(processing, requestId);
+                throw;
+            }
+            catch (Exception ex) when (ex is IOException
+                or UnauthorizedAccessException
+                or CryptographicException
+                or InvalidDataException
+                or InvalidOperationException)
+            {
+                RestoreForRetry(processing, requestId);
+                return false;
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(clientSecret);
+                if (publicKey is not null) CryptographicOperations.ZeroMemory(publicKey);
+                if (fingerprint is not null) CryptographicOperations.ZeroMemory(fingerprint);
             }
         }
         catch (OperationCanceledException)
@@ -127,6 +169,7 @@ public sealed class SharedQueueGroupPairingProcessor
         }
         finally
         {
+            CryptographicOperations.ZeroMemory(groupKey);
             CryptographicOperations.ZeroMemory(pairingKey);
         }
     }
@@ -176,6 +219,28 @@ public sealed class SharedQueueGroupPairingProcessor
         }
 
         return null;
+    }
+
+    private void RestoreForRetry(string processingPath, Guid requestId)
+    {
+        try
+        {
+            if (!File.Exists(processingPath))
+                return;
+
+            if (File.Exists(_paths.PairingResponsePath(requestId)))
+            {
+                TryDelete(processingPath);
+                return;
+            }
+
+            var requestPath = _paths.PairingRequestPath(requestId);
+            if (!File.Exists(requestPath))
+                File.Move(processingPath, requestPath, overwrite: false);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+        }
     }
 
     private static void TryDelete(string path)
