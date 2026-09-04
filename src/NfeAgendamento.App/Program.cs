@@ -42,7 +42,9 @@ internal static class Program
         builder.Services.AddSingleton<FiscalAuditLog>();
         builder.Services.AddSingleton<SharedGroupIdentityStore>();
         builder.Services.AddSingleton<CandidateBundleStore>();
-        builder.Services.AddSingleton<CentralKeyStore>();
+        builder.Services.AddSingleton<CentralKeyStore>(sp => new CentralKeyStore(
+            sp.GetRequiredService<CandidateStateStore>(),
+            sp.GetRequiredService<SharedGroupIdentityStore>()));
         builder.Services.AddSingleton<PendingRequestSecretStore>();
         builder.Services.AddSingleton<ClientPairingStore>();
         builder.Services.AddSingleton<AuthorizedClientStore>();
