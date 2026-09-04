@@ -49,6 +49,8 @@ internal static class Program
         builder.Services.AddSingleton<ClientPairingStore>();
         builder.Services.AddSingleton<AuthorizedClientStore>();
         builder.Services.AddSingleton<SharedAuthorizedClientStore>();
+        builder.Services.AddSingleton<SharedQueueGroupRotationStorage>();
+        builder.Services.AddSingleton<SharedQueueGroupRotationService>();
         builder.Services.AddSingleton<SharedQueueGroupBootstrapService>();
         builder.Services.AddSingleton<PairingCodeService>();
         builder.Services.AddSingleton<SharedQueuePairingClient>();
