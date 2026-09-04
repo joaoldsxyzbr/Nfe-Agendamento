@@ -8,6 +8,7 @@ const read = (relativePath) => fs.readFileSync(path.join(root, relativePath), 'u
 const bridge = read('.github/workflows/release-bridge.yml');
 const project = read('src/NfeAgendamento.App/NfeAgendamento.App.csproj');
 const index = read('src/NfeAgendamento.App/wwwroot/index.html');
+const bootstrap = read('src/NfeAgendamento.App/SharedQueue/SharedQueueGroupBootstrapService.cs');
 const cosignInstallerSha = '6f9f17788090df1f26f669e9d70d6ae9567deba6';
 
 assert.ok(
@@ -22,5 +23,9 @@ assert.ok(
   !/<script(?![^>]*\bsrc=)[^>]*>[\s\S]*?<\/script>/i.test(index),
   'index.html não deve conter script inline para permitir CSP estrita.'
 );
+assert.ok(
+  !bootstrap.includes('System.Reflection') && !bootstrap.includes('FieldInfo') && !bootstrap.includes('GetField('),
+  'Migração do grupo não deve depender de reflection sobre campos privados do store legado.'
+);
 
-console.log('OK: hardening de supply chain, dependências e CSP permanece aplicado.');
+console.log('OK: hardening de supply chain, dependências, CSP e migração sem reflection permanece aplicado.');
