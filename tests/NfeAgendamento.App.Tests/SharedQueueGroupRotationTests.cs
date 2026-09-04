@@ -23,6 +23,7 @@ public sealed class SharedQueueGroupRotationTests
 
         Assert.True(result.Success, result.Message);
         Assert.False(File.Exists(setup.Paths.CandidateBundlePath(setup.TargetId)));
+        Assert.False(File.Exists(setup.Paths.CandidateTransitionPath(setup.TargetId)));
         Assert.False(new SharedQueueGroupRotationStorage(setup.Paths).HasPending);
 
         var newKey = setup.Candidate.Load()!;
@@ -39,6 +40,10 @@ public sealed class SharedQueueGroupRotationTests
         Assert.Equal(newKey, otherBundle.GroupStateKey);
         Assert.Equal(SHA256.HashData(newPublic), otherBundle.CentralPublicKeySha256);
 
+        var transitions = new CandidateIdentityTransitionStore(setup.Paths)
+            .Read(setup.OtherId, setup.OtherSecret);
+        Assert.True(GroupRotationProof.VerifyChain(oldPublic, newPublic, transitions));
+
         var newCooldown = await setup.Cooldown.ReadAsync();
         Assert.Equal(oldCooldown.BlockedUntilUtc, newCooldown.BlockedUntilUtc);
 
@@ -48,6 +53,7 @@ public sealed class SharedQueueGroupRotationTests
         Assert.Equal(oldSequence, updatedPairing.NextSequence);
         Assert.Equal(newPublic, updatedPairing.CentralPublicKey);
 
+        CandidateIdentityTransitionStore.Zero(transitions);
         CryptographicOperations.ZeroMemory(oldKey);
         CryptographicOperations.ZeroMemory(newKey);
         CryptographicOperations.ZeroMemory(oldPublic);
@@ -86,6 +92,7 @@ public sealed class SharedQueueGroupRotationTests
         var setup = await CreateGroupAsync(temp.Path, includeThirdClient: false);
         var storage = new SharedQueueGroupRotationStorage(setup.Paths);
         var oldCooldown = await setup.Cooldown.ReadAsync();
+        var oldKey = setup.Candidate.Load()!;
         var remaining = setup.Authorized.Snapshot()
             .Where(item => item.ClientId != setup.TargetId)
             .ToArray();
@@ -101,6 +108,7 @@ public sealed class SharedQueueGroupRotationTests
             setup.LeaderId,
             setup.LeaderSecret,
             new CandidateBundlePayload(newKey, fingerprint));
+        await WriteSingleTransitionAsync(setup, oldKey, newPublic);
         await storage.PrepareAsync(rotationId, newKey, newPrivate, remaining, oldCooldown);
         await storage.WriteMarkerAsync(new GroupRotationMarker(1, rotationId, setup.TargetId, DateTimeOffset.UtcNow));
 
@@ -111,6 +119,7 @@ public sealed class SharedQueueGroupRotationTests
         Assert.True(completed);
         Assert.False(storage.HasPending);
         Assert.False(File.Exists(setup.Paths.CandidateBundlePath(setup.TargetId)));
+        Assert.False(File.Exists(setup.Paths.CandidateTransitionPath(setup.TargetId)));
         var localKey = setup.Candidate.Load()!;
         Assert.Equal(newKey, localKey);
         Assert.Equal(newPublic, setup.Identity.GetPublicKey(localKey));
@@ -118,6 +127,7 @@ public sealed class SharedQueueGroupRotationTests
         Assert.Single(setup.Authorized.Snapshot());
         Assert.Equal(oldCooldown.BlockedUntilUtc, (await setup.Cooldown.ReadAsync()).BlockedUntilUtc);
 
+        CryptographicOperations.ZeroMemory(oldKey);
         CryptographicOperations.ZeroMemory(newKey);
         CryptographicOperations.ZeroMemory(localKey);
         CryptographicOperations.ZeroMemory(newPrivate);
@@ -127,7 +137,7 @@ public sealed class SharedQueueGroupRotationTests
     }
 
     [Fact]
-    public async Task Stale_candidate_is_not_ready_until_rotated_bundle_updates_key_and_pin()
+    public async Task Stale_candidate_is_not_ready_until_signed_rotated_bundle_updates_key_and_pin()
     {
         using var temp = new TempDirectory();
         var setup = await CreateGroupAsync(temp.Path, includeThirdClient: false);
@@ -146,6 +156,7 @@ public sealed class SharedQueueGroupRotationTests
         var publicKey = rsa.ExportSubjectPublicKeyInfo();
         var fingerprint = SHA256.HashData(publicKey);
         await setup.Bundles.WriteAsync(setup.LeaderId, setup.LeaderSecret, new CandidateBundlePayload(newKey, fingerprint));
+        await WriteSingleTransitionAsync(setup, oldKey, publicKey);
         await storage.PrepareAsync(rotationId, newKey, privateKey, remaining, await setup.Cooldown.ReadAsync());
         storage.Promote(rotationId);
 
@@ -167,6 +178,23 @@ public sealed class SharedQueueGroupRotationTests
         ZeroPairing(oldPairing);
         ZeroPairing(updated);
         ZeroClients(remaining);
+    }
+
+    private static async Task WriteSingleTransitionAsync(GroupSetup setup, byte[] oldKey, byte[] newPublicKey)
+    {
+        var oldPublicKey = setup.Identity.GetPublicKey(oldKey);
+        using var oldPrivateKey = setup.Identity.OpenPrivateKey(oldKey);
+        var transition = GroupRotationProof.Create(oldPrivateKey, oldPublicKey, newPublicKey);
+        try
+        {
+            await new CandidateIdentityTransitionStore(setup.Paths)
+                .WriteAsync(setup.LeaderId, setup.LeaderSecret, [transition]);
+        }
+        finally
+        {
+            CandidateIdentityTransitionStore.Zero([transition]);
+            CryptographicOperations.ZeroMemory(oldPublicKey);
+        }
     }
 
     private static async Task<GroupSetup> CreateGroupAsync(string root, bool includeThirdClient)
