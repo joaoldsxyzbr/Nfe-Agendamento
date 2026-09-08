@@ -48,7 +48,7 @@
       if (availabilityKnown && portalFallbackAvailable) {
         showFallback();
       } else if (availabilityKnown) {
-        message += ' Autorize este PC no NFe Agendamento e configure o certificado A1 localmente para usar o Portal da NF-e.';
+        message += ' Configure o certificado A1 neste PC para usar o Portal da NF-e.';
       }
 
       return message;
@@ -122,7 +122,7 @@
 
       if (!portalFallbackAvailable) {
         hideFallback();
-        throw new Error('Este PC ainda não está autorizado para usar o Portal da NF-e. Autorize-o no grupo e configure o certificado A1 localmente.');
+        throw new Error('Configure o certificado A1 neste PC para usar o Portal da NF-e.');
       }
 
       const response = await fetch('/api/nfe/portal-fallback', {
