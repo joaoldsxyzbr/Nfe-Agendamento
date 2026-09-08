@@ -31,7 +31,7 @@ public sealed class ReleaseReadinessBehaviorTests
     }
 
     [Fact]
-    public void Bootstrap_exposes_only_operational_shared_queue_fields()
+    public void Bootstrap_exposes_only_operational_shared_lock_fields()
     {
         var source = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "Program.cs"));
         var start = source.IndexOf("app.MapGet(\"/api/bootstrap\"", StringComparison.Ordinal);
@@ -41,16 +41,20 @@ public sealed class ReleaseReadinessBehaviorTests
         var bootstrap = source[start..end];
 
         Assert.Contains("csrfToken", bootstrap, StringComparison.Ordinal);
-        Assert.Contains("configuredAsCentral", bootstrap, StringComparison.Ordinal);
-        Assert.Contains("centralActive", bootstrap, StringComparison.Ordinal);
-        Assert.Contains("centralOnline", bootstrap, StringComparison.Ordinal);
+        Assert.Contains("mode = \"shared_lock\"", bootstrap, StringComparison.Ordinal);
+        Assert.Contains("pairingRequired = false", bootstrap, StringComparison.Ordinal);
         Assert.Contains("shareAvailable", bootstrap, StringComparison.Ordinal);
         Assert.Contains("sharedFolder", bootstrap, StringComparison.Ordinal);
+        Assert.Contains("computerName", bootstrap, StringComparison.Ordinal);
+        Assert.Contains("portalFallbackAvailable", bootstrap, StringComparison.Ordinal);
+        Assert.DoesNotContain("configuredAsCentral", bootstrap, StringComparison.Ordinal);
+        Assert.DoesNotContain("centralActive", bootstrap, StringComparison.Ordinal);
+        Assert.DoesNotContain("centralOnline", bootstrap, StringComparison.Ordinal);
+        Assert.DoesNotContain("leaderStatus", bootstrap, StringComparison.Ordinal);
         Assert.DoesNotContain("lanMode", bootstrap, StringComparison.Ordinal);
         Assert.DoesNotContain("accessUrl", bootstrap, StringComparison.Ordinal);
         Assert.DoesNotContain("Thumbprint", bootstrap, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Subject", bootstrap, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Certificate", bootstrap, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Xml", bootstrap, StringComparison.OrdinalIgnoreCase);
     }
 
