@@ -1,4 +1,5 @@
 using NfeAgendamento.App.Fiscal;
+using NfeAgendamento.App.SharedQueue;
 using Xunit;
 
 namespace NfeAgendamento.App.Tests;
@@ -33,5 +34,37 @@ public sealed class FiscalOperationGateTests
         Assert.Equal(0, gate.PendingOperations);
         using var next = await gate.EnterAsync();
         Assert.Equal(1, gate.PendingOperations);
+    }
+
+    [Fact]
+    public async Task Shared_gate_serializes_different_process_coordinators_using_same_folder()
+    {
+        using var temp = new TemporaryDirectory();
+        Directory.CreateDirectory(temp.Path);
+        var paths = new SharedQueuePaths(temp.Path);
+        paths.InitializeAsCentral();
+
+        var firstGate = new FiscalOperationGate(paths);
+        var secondGate = new FiscalOperationGate(paths);
+        var firstLease = await firstGate.EnterAsync();
+        var secondTask = secondGate.EnterAsync();
+
+        await Task.Delay(150);
+        Assert.False(secondTask.IsCompleted);
+
+        firstLease.Dispose();
+        using var secondLease = await secondTask.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Equal(1, secondGate.PendingOperations);
+    }
+
+    [Fact]
+    public async Task Shared_gate_fails_safe_when_shared_folder_is_unavailable()
+    {
+        using var temp = new TemporaryDirectory();
+        var unavailableRoot = Path.Combine(temp.Path, "missing-share");
+        var gate = new FiscalOperationGate(new SharedQueuePaths(unavailableRoot));
+
+        await Assert.ThrowsAsync<FiscalQueueUnavailableException>(() => gate.EnterAsync());
+        Assert.Equal(0, gate.PendingOperations);
     }
 }
