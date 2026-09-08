@@ -1,4 +1,5 @@
 using NfeAgendamento.App.Fiscal;
+using NfeAgendamento.App.SharedQueue;
 using Xunit;
 
 namespace NfeAgendamento.App.Tests;
@@ -46,6 +47,24 @@ public sealed class FiscalCooldownStoreTests
 
         var state = await store.ReadAsync();
         Assert.Equal(now.AddMinutes(80), state.BlockedUntilUtc);
+    }
+
+    [Fact]
+    public async Task Shared_store_is_visible_to_another_pc_without_group_pairing_state()
+    {
+        using var temp = new TemporaryDirectory();
+        Directory.CreateDirectory(temp.Path);
+        var paths = new SharedQueuePaths(temp.Path);
+        paths.InitializeAsCentral();
+        var now = DateTimeOffset.Parse("2026-09-08T10:00:00Z");
+
+        var firstPc = new FiscalCooldownStore(paths);
+        await firstPc.BlockFor656Async(now);
+
+        var secondPc = new FiscalCooldownStore(new SharedQueuePaths(temp.Path));
+        var state = await secondPc.ReadAsync();
+
+        Assert.Equal(now.AddHours(1), state.BlockedUntilUtc);
     }
 
     private static string TempFile()
