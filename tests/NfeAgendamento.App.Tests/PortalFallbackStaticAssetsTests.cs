@@ -7,7 +7,7 @@ public sealed class PortalFallbackStaticAssetsTests
     private static string Fixture(string name) => File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", name));
 
     [Fact]
-    public void Consumo_indevido_offers_portal_fallback_on_any_authorized_pc()
+    public void Consumo_indevido_offers_portal_fallback_when_local_certificate_is_configured()
     {
         var html = Fixture("index.html");
         var script = Fixture("portal-fallback.js");
@@ -18,15 +18,14 @@ public sealed class PortalFallbackStaticAssetsTests
         Assert.Contains("Baixar pelo Portal", html, StringComparison.Ordinal);
         Assert.Contains("/api/nfe/portal-fallback", script, StringComparison.Ordinal);
         Assert.Contains("portalFallbackAvailable", script, StringComparison.Ordinal);
-        Assert.DoesNotContain("centralActive", script, StringComparison.Ordinal);
         Assert.Contains("consumo_indevido", script, StringComparison.Ordinal);
         Assert.Contains("PortalNfeFallbackLauncher", program, StringComparison.Ordinal);
-        Assert.Contains("var portalFallbackAvailable = group.IsCandidateReady;", program, StringComparison.Ordinal);
-        Assert.Contains("if (!group.IsCandidateReady)", program, StringComparison.Ordinal);
-        Assert.DoesNotContain("group.IsCandidateReady || state.IsConfiguredAsCentral", program, StringComparison.Ordinal);
-        Assert.DoesNotContain("!group.IsCandidateReady && !state.IsConfiguredAsCentral", program, StringComparison.Ordinal);
+        Assert.Contains("portalFallbackAvailable = currentCertificate is not null", program, StringComparison.Ordinal);
+        Assert.DoesNotContain("IsCandidateReady", program, StringComparison.Ordinal);
+        Assert.DoesNotContain("portal_not_authorized", program, StringComparison.Ordinal);
         Assert.DoesNotContain("central.CanProcessWork()", program, StringComparison.Ordinal);
-        Assert.Contains("portal_not_authorized", program, StringComparison.Ordinal);
+        Assert.DoesNotContain("autorize este PC", script, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("certificado A1 neste PC", script, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
