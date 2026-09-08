@@ -53,9 +53,8 @@ public sealed class FiscalCooldownStoreTests
     public async Task Shared_store_is_visible_to_another_pc_without_group_pairing_state()
     {
         using var temp = new TemporaryDirectory();
-        Directory.CreateDirectory(temp.Path);
         var paths = new SharedQueuePaths(temp.Path);
-        paths.InitializeAsCentral();
+        paths.InitializeForSharedUse();
         var now = DateTimeOffset.Parse("2026-09-08T10:00:00Z");
 
         var firstPc = new FiscalCooldownStore(paths);
@@ -71,5 +70,24 @@ public sealed class FiscalCooldownStoreTests
     {
         var directory = Path.Combine(Path.GetTempPath(), "NfeAgendamento.Tests", Guid.NewGuid().ToString("N"));
         return Path.Combine(directory, "cooldown.bin");
+    }
+
+    private sealed class TemporaryDirectory : IDisposable
+    {
+        public TemporaryDirectory()
+        {
+            Path = System.IO.Path.Combine(
+                System.IO.Path.GetTempPath(),
+                "nfe-fiscal-cooldown-tests",
+                Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(Path);
+        }
+
+        public string Path { get; }
+
+        public void Dispose()
+        {
+            try { Directory.Delete(Path, recursive: true); } catch { }
+        }
     }
 }
