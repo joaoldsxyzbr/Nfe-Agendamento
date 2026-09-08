@@ -10,6 +10,7 @@ public sealed class SharedQueuePaths
     private static readonly HashSet<string> AllowedStatusFiles = new(StringComparer.OrdinalIgnoreCase)
     {
         "central.lock",
+        "fiscal.lock",
         "heartbeat.json",
         "group-identity.bin",
         "authorized-clients.bin",
@@ -43,6 +44,7 @@ public sealed class SharedQueuePaths
     public string GroupIdentityPath => StatusPath("group-identity.bin");
     public string AuthorizedClientsPath => StatusPath("authorized-clients.bin");
     public string RotationMarkerPath => StatusPath("rotation.json");
+    public string FiscalLockPath => StatusPath("fiscal.lock");
 
     public string RequestPath(Guid requestId) =>
         EnsureInsideRoot(Path.Combine(QueueDirectory, $"{ValidateId(requestId):N}.req"));
@@ -119,7 +121,7 @@ public sealed class SharedQueuePaths
         return EnsureInsideRoot(Path.Combine(StatusDirectory, fileName));
     }
 
-    public void InitializeAsCentral()
+    public void InitializeForSharedUse()
     {
         if (!Directory.Exists(Root))
             throw new DirectoryNotFoundException($"A pasta compartilhada '{Root}' não está disponível.");
@@ -160,6 +162,8 @@ public sealed class SharedQueuePaths
         }
     }
 
+    public void InitializeAsCentral() => InitializeForSharedUse();
+
     public bool ValidateForClient()
     {
         try
@@ -169,8 +173,7 @@ public sealed class SharedQueuePaths
                 || !Directory.Exists(QueueDirectory)
                 || !Directory.Exists(ProcessingDirectory)
                 || !Directory.Exists(ResponsesDirectory)
-                || !Directory.Exists(StatusDirectory)
-                || !Directory.Exists(PairingDirectory))
+                || !Directory.Exists(StatusDirectory))
             {
                 return false;
             }
@@ -180,7 +183,8 @@ public sealed class SharedQueuePaths
             SharedQueueFileIO.EnsureNotReparsePoint(ProcessingDirectory);
             SharedQueueFileIO.EnsureNotReparsePoint(ResponsesDirectory);
             SharedQueueFileIO.EnsureNotReparsePoint(StatusDirectory);
-            SharedQueueFileIO.EnsureNotReparsePoint(PairingDirectory);
+            if (Directory.Exists(PairingDirectory))
+                SharedQueueFileIO.EnsureNotReparsePoint(PairingDirectory);
             if (Directory.Exists(CandidatesDirectory))
                 SharedQueueFileIO.EnsureNotReparsePoint(CandidatesDirectory);
             if (Directory.Exists(CacheDirectory))
