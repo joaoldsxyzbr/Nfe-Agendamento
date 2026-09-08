@@ -17,7 +17,8 @@ public sealed class FiscalCooldownStore
     private static readonly byte[] SharedAssociatedData = Encoding.UTF8.GetBytes("nfe-agendamento:fiscal-cooldown:v1");
     private readonly string _path;
     private readonly CandidateStateStore? _candidateState;
-    private readonly bool _sharedMode;
+    private readonly bool _encryptedSharedMode;
+    private readonly bool _plainSharedMode;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private DateTimeOffset? _volatileBlockedUntilUtc;
 
@@ -33,12 +34,19 @@ public sealed class FiscalCooldownStore
         _path = path;
     }
 
+    public FiscalCooldownStore(SharedQueuePaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        _path = paths.StatusPath("fiscal-cooldown.bin");
+        _plainSharedMode = true;
+    }
+
     public FiscalCooldownStore(SharedQueuePaths paths, CandidateStateStore candidateState)
     {
         ArgumentNullException.ThrowIfNull(paths);
         _candidateState = candidateState ?? throw new ArgumentNullException(nameof(candidateState));
-        _path = Path.Combine(paths.StatusDirectory, "fiscal-cooldown.bin");
-        _sharedMode = true;
+        _path = paths.StatusPath("fiscal-cooldown.bin");
+        _encryptedSharedMode = true;
     }
 
     public async Task<FiscalCooldownState> ReadAsync(CancellationToken cancellationToken = default)
@@ -126,7 +134,32 @@ public sealed class FiscalCooldownStore
         if (!File.Exists(_path))
             return FiscalCooldownState.Empty;
 
-        if (_sharedMode)
+        if (_plainSharedMode)
+        {
+            byte[]? bytes = null;
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                SharedQueueFileIO.EnsureNotReparsePoint(_path);
+                bytes = SharedQueueFileIO.ReadAllBytes(_path, MaxSharedBytes);
+                var state = JsonSerializer.Deserialize<FiscalCooldownState>(bytes)
+                    ?? throw new InvalidDataException("Estado fiscal compartilhado inválido.");
+                return state.BlockedUntilUtc is { } blockedUntil
+                    ? new FiscalCooldownState(blockedUntil.ToUniversalTime())
+                    : FiscalCooldownState.Empty;
+            }
+            catch (JsonException ex)
+            {
+                throw new InvalidDataException("O estado fiscal compartilhado não pôde ser validado.", ex);
+            }
+            finally
+            {
+                if (bytes is not null)
+                    CryptographicOperations.ZeroMemory(bytes);
+            }
+        }
+
+        if (_encryptedSharedMode)
         {
             var groupKey = _candidateState!.Load()
                 ?? throw new InvalidOperationException("Este PC não possui o estado seguro do grupo para validar o cooldown fiscal.");
@@ -182,7 +215,29 @@ public sealed class FiscalCooldownStore
             ?? throw new InvalidOperationException("Caminho do estado fiscal inválido.");
         Directory.CreateDirectory(directory);
 
-        if (_sharedMode)
+        if (_plainSharedMode)
+        {
+            var bytes = JsonSerializer.SerializeToUtf8Bytes(state);
+            var temporary = _path + $".{Guid.NewGuid():N}.tmp";
+            try
+            {
+                await SharedQueueFileIO.WriteAtomicAsync(
+                    temporary,
+                    _path,
+                    bytes,
+                    MaxSharedBytes,
+                    overwrite: true,
+                    cancellationToken);
+            }
+            finally
+            {
+                TryDelete(temporary);
+                CryptographicOperations.ZeroMemory(bytes);
+            }
+            return;
+        }
+
+        if (_encryptedSharedMode)
         {
             var groupKey = _candidateState!.Load()
                 ?? throw new InvalidOperationException("Este PC não possui o estado seguro do grupo para persistir o cooldown fiscal.");
