@@ -1,178 +1,141 @@
 # NFe Agendamento
 
-Aplicativo Windows interno para consultar, visualizar e baixar NF-e. Cada PC executa sua própria interface local e a coordenação multi-PC acontece por uma fila segura em pasta compartilhada.
+Aplicativo Windows interno para consultar, visualizar e baixar NF-e. Cada computador executa sua própria interface local, usa seu próprio certificado A1 e coordena as operações fiscais diretamente pela pasta compartilhada.
 
-## Versão
+## Estado da versão
 
 - última release publicada: **v0.1.31**;
-- `main`: **v0.1.31**.
+- `main`: arquitetura **sem Central e sem pareamento**, em preparação para a próxima release.
 
-A v0.1.31 conclui o hardening pós-auditoria iniciado sobre a v0.1.30: bootstrap recuperável, pareamento one-shot, revogação com rotação criptográfica recuperável, cadeia RSA assinada para candidatos offline, gerenciamento de PCs autorizados, Actions fixadas por SHA, health check de atualização vinculado à versão realmente iniciada e tratamento estreito do ciclo de vida do WebView2.
-
-O checklist técnico está em [Hardening pós-auditoria — plano](docs/superpowers/plans/2026-09-04-post-audit-hardening.md). A validação que depende de máquinas reais permanece separada em [Teste multi-PC](docs/TESTE-MULTI-PC.md).
+A decisão arquitetural desta mudança está documentada em [Arquitetura sem central e sem pareamento](docs/superpowers/specs/2026-09-08-no-central-shared-lock-design.md).
 
 ## Arquitetura atual
 
-Cada PC executa sua própria cópia e abre somente:
+Cada PC executa o aplicativo localmente e abre somente:
 
 ```text
 http://127.0.0.1:17345
 ```
 
-Todos usam a pasta compartilhada:
+Todos os PCs usam a mesma pasta compartilhada:
 
 ```text
 P:\01-Nfe agendamento
 ```
 
-Não existe servidor HTTP exposto na LAN, mDNS nem regra automática de firewall. A comunicação entre PCs acontece pela pasta compartilhada.
+Não existe:
 
-Os PCs confiáveis podem ser candidatos a líder quando:
+- PC Central;
+- líder eleito;
+- código de pareamento;
+- lista de PCs autorizados;
+- servidor HTTP exposto na LAN;
+- mDNS;
+- regra automática de firewall;
+- encaminhamento de consulta de um PC para outro.
 
-- possuem acesso de leitura/gravação à pasta compartilhada;
-- estão autorizados no grupo;
-- possuem o certificado A1 aplicável instalado e configurado localmente.
-
-A pasta deve usar SMB normal, preservando locks exclusivos. **Não use Offline Files/Arquivos Offline ou cache desconectado** para a pasta da fila.
-
-```text
-PCs autorizados
-   ↓
-eleição por central.lock
-   ↓
-1 líder ativo + demais em standby
-   ↓
-pedidos cifrados pela pasta compartilhada
-   ↓
-cache fiscal 24h → fila fiscal serial → fencing → SEFAZ
-   ↓
-XML validado/cache cifrado
-   ↓
-resposta cifrada ao solicitante
-```
-
-Mesmo com A1 em vários PCs, somente o líder com lock exclusivo e saudável inicia trabalho fiscal automático.
-
-## Liderança automática
-
-O lock exclusivo fica em:
+Cada computador faz sua própria consulta à SEFAZ usando o certificado A1 configurado naquele Windows.
 
 ```text
-P:\01-Nfe agendamento\status\central.lock
+PC local
+   ↓
+cache XML local (DPAPI, 24h)
+   ↓
+deduplicação local
+   ↓
+lock fiscal exclusivo na pasta compartilhada
+   ↓
+cooldown 656 compartilhado
+   ↓
+SEFAZ
+   ↓
+validação do XML
+   ↓
+cache XML local criptografado
 ```
 
-Somente um processo pode mantê-lo aberto com exclusividade. O líder publica heartbeat assinado e processa a fila; os demais permanecem em standby.
+## Por que ainda existe a pasta compartilhada
 
-A identidade RSA usada pelo líder vem de `group-identity.bin`, protegida pela chave de estado do grupo. Trocar de líder normalmente não muda a identidade pública confiada pelos clientes.
+A pasta compartilhada não transporta mais pedidos ou XML entre computadores. Ela serve somente para coordenação operacional.
 
-Antes de cada chamada fiscal, a autoridade do líder é revalidada no último boundary possível. Se a liderança foi perdida, a operação falha fechado e uma nova chamada fiscal não é iniciada automaticamente.
+O lock fiscal fica em:
 
-Se existir `status\rotation.json`, nenhum candidato inicia novo trabalho fiscal até concluir a recuperação da rotação pendente.
+```text
+P:\01-Nfe agendamento\status\fiscal.lock
+```
 
-A configuração legada `ConfiguredAsCentral` existe apenas para compatibilidade/migração e não controla a operação normal.
+Antes de chamar a SEFAZ, o processo abre esse arquivo com exclusividade (`FileShare.None`). Em um compartilhamento SMB normal, somente um PC consegue manter esse handle exclusivo por vez.
 
-## Pareamento robusto
+Quando a consulta termina, o handle é liberado. Se o processo for encerrado inesperadamente, o sistema operacional libera o handle automaticamente.
 
-O código temporário de autorização só pode ser gerado pelo líder atual.
+Se a pasta compartilhada estiver indisponível, o aplicativo **não inicia uma nova chamada fiscal**. Esse comportamento é intencional e fail-safe.
 
-Fluxo:
+> Não use Offline Files/Arquivos Offline ou cache desconectado do Windows na pasta compartilhada. O projeto depende dos locks normais do SMB.
 
-1. no líder, abra **Configurar**;
-2. clique em **Gerar código de autorização**;
-3. no novo PC, informe o código em **Autorizar este PC**;
-4. o cliente publica um pedido cifrado na pasta compartilhada;
-5. o líder valida o código e registra o cliente;
-6. publica o pacote de candidatura;
-7. o cliente importa e valida o estado seguro do grupo;
-8. somente depois disso a API responde sucesso.
+## Cooldown fiscal compartilhado
+
+O bloqueio provocado por `cStat=656` continua compartilhado entre todos os computadores.
+
+Estado:
+
+```text
+P:\01-Nfe agendamento\status\fiscal-cooldown.bin
+```
+
+Esse arquivo contém apenas o instante até o qual novas consultas devem permanecer bloqueadas. Ele não contém XML, certificado, senha ou chave privada.
+
+Ao receber `656`, o PC grava o bloqueio de uma hora. Os demais PCs consultam o mesmo estado antes de chegar à SEFAZ.
+
+## Cache XML local
+
+O XML não é mais colocado na pasta compartilhada.
+
+Cada PC mantém seu próprio cache em:
+
+```text
+%LOCALAPPDATA%\NfeAgendamento\cache
+```
 
 Proteções:
 
-- o líder usa obrigatoriamente a identidade criptográfica compartilhada do grupo;
-- estados locais incompletos são recuperados ou descartados com segurança;
-- solicitações simultâneas no mesmo PC são serializadas;
-- clique/`Enter` duplicado é bloqueado também na interface;
-- o código é consumido somente após a autorização concluída;
-- o mesmo código não autoriza um segundo PC;
-- troca legítima de identidade só é aceita por cadeia RSA assinada a partir do pin já confiado.
+- DPAPI `CurrentUser`;
+- retenção padrão de 24 horas;
+- nome dos arquivos derivado da chave por hash;
+- XML validado antes do uso;
+- nenhum segredo compartilhado entre computadores.
 
-Se ocorrer troca de líder durante o fluxo, gere um novo código no líder atual.
+Uma NF-e presente no cache local pode ser aberta sem disputar o lock fiscal porque nenhuma chamada à SEFAZ é feita nesse caso.
 
-## Revogação e rotação de confiança
+## Certificado A1
 
-O líder atual pode listar PCs autorizados e revogar um PC pela aba **Configurar**. A listagem não expõe o segredo criptográfico dos clientes e o líder atual não pode se autorrevogar pela interface.
+**Todos os PCs que farão consultas precisam ter o certificado A1 instalado e configurado localmente.**
 
-A revogação executa uma rotação real de confiança:
+Em cada computador valide:
 
-1. nova chave de estado do grupo;
-2. nova identidade RSA;
-3. nova lista de autorizados sem o PC removido;
-4. cooldown fiscal preservado;
-5. novos bundles somente para os PCs restantes;
-6. cadeia de transições RSA assinada para candidatos offline;
-7. purge do cache cifrado com a chave antiga;
-8. promoção recuperável do novo estado.
+- certificado correto em `CurrentUser\My`;
+- certificado dentro da validade;
+- chave privada acessível ao usuário que executa o app;
+- UF autora configurada;
+- acesso de leitura/gravação à pasta compartilhada;
+- uma consulta conhecida de teste.
 
-Um candidato offline pode validar transições A→B→C desde que a cadeia seja criptograficamente ligada ao pin anterior. Uma identidade arbitrária sem essa prova é rejeitada.
+PFX, senha e chave privada nunca devem entrar no repositório ou na pasta compartilhada.
 
-Se houver queda durante a promoção, `rotation.json` e os artefatos preparados permitem ao próximo candidato autorizado concluir a operação antes de qualquer trabalho fiscal.
+## Primeira configuração de um PC
 
-## Bootstrap e migração
+1. copie/execute o NFe Agendamento naquele PC;
+2. confirme acesso a `P:\01-Nfe agendamento`;
+3. instale o certificado A1 no usuário do Windows que utilizará o app;
+4. abra **Configurar**;
+5. selecione o certificado e a UF autora;
+6. confirme que **Pasta compartilhada** aparece como disponível;
+7. faça uma consulta conhecida.
 
-O bootstrap é recuperável. A chave local protegida por DPAPI é persistida antes da identidade compartilhada. Uma interrupção entre essas etapas reutiliza a chave preparada na próxima inicialização, evitando criar estado cifrado com uma chave perdida.
+Não há qualquer etapa de pareamento.
 
-A migração do estado legado não depende mais de reflection sobre campos privados.
+## Consulta individual
 
-Na migração da arquitetura anterior:
-
-1. atualize todos os PCs;
-2. abra primeiro o PC que possuía o estado legado da Central;
-3. mantenha `P:\01-Nfe agendamento` acessível;
-4. deixe identidade, autorização e replay serem migrados;
-5. abra os demais PCs já autorizados;
-6. confirme exatamente um líder e os demais em standby.
-
-## Estrutura compartilhada
-
-```text
-P:\01-Nfe agendamento\
-├── .nfe-agendamento
-├── cache\
-├── candidatos\
-│   ├── <clientId>.candidate
-│   └── <clientId>.transitions
-├── fila\
-├── pareamento\
-├── processando\
-├── respostas\
-└── status\
-    ├── central.lock
-    ├── heartbeat.json
-    ├── group-identity.bin
-    ├── authorized-clients.bin
-    ├── fiscal-cooldown.bin
-    └── rotation.json
-```
-
-Durante uma rotação podem existir artefatos `.prepared`. Não os apague manualmente enquanto `rotation.json` existir.
-
-Proteções principais:
-
-- RSA OAEP-SHA256 para encapsulamento de chave;
-- AES-GCM para dados compartilhados sensíveis;
-- HMAC nos pedidos;
-- DPAPI para material local;
-- RSA-PSS/SHA-256 em heartbeat e transições de identidade;
-- replay bloqueado após troca de líder;
-- cooldown fiscal compartilhado;
-- cache XML compartilhado e cifrado com retenção de 24 horas;
-- nomes de cache derivados de SHA-256;
-- confinamento de caminhos e rejeição de reparse points operacionais;
-- certificado A1, chave privada e senha nunca são copiados para a pasta compartilhada.
-
-## Consulta e cache
-
-A consulta individual usa:
+Endpoint local:
 
 ```text
 POST /api/nfe/lookup
@@ -181,93 +144,58 @@ POST /api/nfe/lookup
 Fluxo:
 
 1. validar a chave de 44 dígitos;
-2. consultar o cache compartilhado;
-3. deduplicar a mesma chave;
-4. entrar na fila fiscal serializada;
-5. respeitar o cooldown compartilhado;
-6. revalidar a liderança imediatamente antes da chamada externa;
+2. verificar o cache local;
+3. deduplicar consultas simultâneas da mesma chave neste PC;
+4. entrar na fila fiscal local;
+5. adquirir `status\fiscal.lock` na pasta compartilhada;
+6. verificar o cooldown compartilhado;
 7. consultar a distribuição de DF-e;
-8. validar o XML retornado;
-9. gravar o cache cifrado;
-10. devolver o resultado ao solicitante.
+8. validar a resposta/XML;
+9. persistir o XML no cache local criptografado;
+10. liberar o lock compartilhado.
 
-O cache tem retenção de 24 horas e sobrevive à troca normal de líder. Após revogação/rotação da chave do grupo, o cache antigo é purgado deliberadamente.
+## Política contra consumo indevido e duplicação
 
-## Robustez fiscal e failover
+A política permanece conservadora:
 
-A política é conservadora:
-
+- `cStat=656` bloqueia novas consultas por uma hora;
 - HTTP `429` não recebe retry automático;
 - timeout fiscal não recebe retry automático;
-- `5xx`, falha de conexão ou `HttpRequestException` ambígua não geram retry automático;
-- perda de liderança antes do envio aborta sem iniciar nova consulta;
-- pedido recuperado após interrupção não provoca uma segunda chamada fiscal automática;
-- se o líder anterior pode já ter alcançado a SEFAZ, o sucessor devolve falha segura e exige nova ação explícita;
-- `cStat=656` persiste entre líderes e durante rotação;
-- cache fiscal sobrevive ao failover normal.
-
-Cancelar a interface ou um lote impede trabalho ainda não iniciado e os próximos itens. Uma operação fiscal que já pode ter alcançado a SEFAZ não é forçada a cancelar e repetir automaticamente.
-
-## Certificado A1
-
-O A1 é configurado localmente em cada PC confiável. Antes de considerar um PC candidato a líder, valide nele:
-
-- certificado correto no `CurrentUser\My`;
-- chave privada acessível ao usuário do app;
-- UF autora configurada;
-- acesso à pasta compartilhada;
-- uma consulta conhecida.
-
-PFX, chave privada e senha nunca devem entrar no repositório ou na pasta compartilhada.
+- `5xx`, falha de conexão e `HttpRequestException` ambígua não geram retry fiscal automático;
+- o cancelamento da interface impede trabalho ainda não iniciado;
+- uma operação que pode já ter alcançado a SEFAZ não é repetida automaticamente;
+- somente um PC por vez chega ao trecho fiscal quando todos usam a mesma pasta compartilhada.
 
 ## Contingência pelo Portal Nacional
 
-Quando a consulta automática recebe `cStat=656`, o aplicativo mantém o cooldown e não insiste automaticamente.
+Quando a consulta automática recebe `cStat=656`, o botão **Baixar pelo Portal** permanece disponível no PC que possui certificado A1 local e WebView2.
 
-**Baixar pelo Portal** pode ser usado em qualquer PC autorizado com A1 local e WebView2 disponível, inclusive em standby. O hCaptcha permanece manual e não é automatizado nem contornado.
+O hCaptcha continua manual e não é automatizado nem contornado.
 
 Fluxo:
 
-1. o site local abre o Portal oficial em WebView2;
-2. a chave é preenchida automaticamente;
+1. o app abre o Portal oficial em WebView2;
+2. preenche a chave de acesso;
 3. o usuário resolve o hCaptcha;
-4. o certificado A1 local é usado quando solicitado pelo Portal;
+4. o Portal usa o certificado A1 local quando necessário;
 5. o XML baixado é validado contra a chave solicitada;
-6. o XML válido entra no cache compartilhado;
-7. a interface acompanha apenas o cache;
-8. a NF-e é carregada automaticamente quando o XML aparece.
+6. o XML válido entra no cache local criptografado;
+7. a tela acompanha o cache por `GET /api/nfe/cache/{accessKey}`;
+8. a NF-e é carregada quando o XML aparece.
 
-O acompanhamento usa:
-
-```text
-GET /api/nfe/cache/{accessKey}
-```
-
-Esse polling não chama a SEFAZ.
-
-Proteções do Portal:
-
-- somente PC autorizado com estado real do grupo pode iniciar o fallback;
-- navegação restrita ao host oficial esperado;
-- certificado comparado por thumbprint;
-- XML limitado a 10 MiB;
-- DTD e entidades externas proibidos;
-- `infNFe/@Id` deve corresponder à chave solicitada;
-- XML de outra chave é rejeitado;
-- somente uma janela de contingência pode ficar aberta por PC;
-- callbacks tardios durante fechamento do WebView2 são tratados apenas para falhas conhecidas de ciclo de vida;
-- falha COM genérica, erro de XML, certificado ou I/O não é silenciosamente ocultado.
+O polling do cache não consulta a SEFAZ.
 
 ## Consulta em lote
 
-O lote reutiliza o mesmo endpoint e a mesma fila fiscal da consulta individual:
+O lote reutiliza o mesmo endpoint e o mesmo gate fiscal:
 
 - até 50 chaves únicas;
 - duplicatas removidas;
-- uma consulta por vez por instalação;
-- líder serializa a parte fiscal;
-- cache, deduplicação e cooldown são compartilhados;
-- `cStat=656` interrompe o restante do lote;
+- uma operação fiscal por vez neste PC;
+- o lock compartilhado garante uma operação fiscal por vez entre os PCs;
+- cache e deduplicação são locais;
+- cooldown `656` é compartilhado;
+- `656` interrompe o restante do lote;
 - cancelar impede o início dos próximos itens.
 
 ## DANFE
@@ -281,55 +209,90 @@ O DANFE é produzido localmente a partir do XML validado:
 
 ## Mapeamento Fernando Klein
 
-O mapeamento interno altera somente a apresentação interna de código/descrição quando aplicável. O XML e o `cProd` fiscal original permanecem intactos.
+O mapeamento interno altera somente a apresentação de código/descrição quando aplicável. O XML e o `cProd` fiscal original permanecem intactos.
 
 ## Dados locais
 
-Dados locais ficam em:
+Os dados locais ficam em:
 
 ```text
 %LOCALAPPDATA%\NfeAgendamento
 ```
 
-Podem incluir auditoria, seleção de certificado, pareamento, chave de candidato protegida por DPAPI, solicitações pendentes, perfil WebView2 e dados de migração.
+Principais itens:
 
-O cache fiscal operacional fica na pasta compartilhada e cifrado com a chave do grupo.
+```text
+cache\                 XML criptografado por DPAPI
+state\                 seleção de certificado e estados locais
+logs\fiscal-audit.jsonl auditoria sem XML/chave completa
+```
 
-## Segurança de rede e modelo de ameaça local
+Arquivos antigos de pareamento/grupo deixados por versões anteriores podem existir localmente ou no compartilhamento, mas não participam da composição de produção atual.
 
-- HTTP somente em loopback;
+## Estrutura compartilhada ativa
+
+A estrutura mínima usada pelo fluxo atual é:
+
+```text
+P:\01-Nfe agendamento\
+├── .nfe-agendamento
+└── status\
+    ├── fiscal.lock
+    └── fiscal-cooldown.bin
+```
+
+Diretórios antigos como `fila`, `processando`, `respostas`, `pareamento`, `candidatos` e `cache` podem continuar existindo para compatibilidade de atualização. O fluxo atual não depende deles para enviar consultas ou armazenar XML.
+
+## Segurança de rede
+
+- HTTP somente em `127.0.0.1:17345`;
 - Host e Origin validados;
 - operações mutáveis protegidas por CSRF;
 - nenhuma porta LAN adicional;
 - nenhuma regra de firewall criada;
 - nenhum mDNS necessário.
 
-Loopback protege contra exposição direta à LAN, mas não isola processos ou usuários do mesmo Windows. O projeto assume PCs corporativos confiáveis; malware ou outro processo local malicioso deve ser tratado como comprometimento local.
+Loopback impede exposição direta da interface à rede, mas não isola processos do mesmo Windows. O projeto assume PCs corporativos confiáveis.
+
+## Segurança do compartilhamento
+
+O fluxo atual reduz bastante o material sensível na rede:
+
+- certificado A1 permanece local;
+- chave privada permanece local;
+- senha/PFX permanecem locais;
+- XML permanece local e criptografado por DPAPI;
+- a pasta compartilhada guarda somente marcador, lock e cooldown operacional;
+- caminhos operacionais rejeitam reparse points;
+- se a pasta não puder ser validada, a consulta fiscal falha fechada.
+
+Permita leitura/gravação na pasta somente para os usuários/PCs corporativos que realmente usam o sistema.
+
+## Interface de status
+
+A janela da bandeja mostra:
+
+- modo **Coordenação por pasta compartilhada**;
+- nome do PC local;
+- caminho compartilhado;
+- disponibilidade da pasta;
+- estado do lock fiscal.
+
+Não existem mais estados de líder, standby ou heartbeat.
 
 ## Atualização
 
 Na bandeja use **Verificar atualização**.
 
-O atualizador exige:
+O atualizador continua exigindo:
 
 - origem oficial por HTTPS;
 - tamanho esperado;
 - SHA-256 válido;
 - bundle Sigstore válido;
-- certificado Sigstore emitido pelo OIDC do GitHub Actions;
-- identidade exatamente vinculada ao workflow oficial `release-bridge.yml@refs/heads/main`;
-- transparency log e verificações da biblioteca Sigstore.
-
-A partir da v0.1.31, o health check é vinculado à versão preparada. Depois do swap, o instalador exige simultaneamente:
-
-- HTTP 2xx em `http://127.0.0.1:17345/api/bootstrap`;
-- JSON válido com objeto na raiz;
-- `appVersion` como string escalar;
-- igualdade ordinal exata entre `appVersion` e a versão preparada.
-
-Resposta malformada, campo ausente, tipo incorreto, outra versão respondendo na porta ou ausência de resposta em até 20 segundos provocam rollback para a instalação anterior.
-
-Não existe chave privada permanente de assinatura de release. O fluxo oficial usa **Sigstore keyless**.
+- identidade vinculada ao workflow oficial;
+- health check do aplicativo reiniciado;
+- rollback se a versão nova não responder corretamente.
 
 Veja [Inicialização e atualização](docs/ATUALIZACAO-E-INICIALIZACAO.md).
 
@@ -337,7 +300,7 @@ Veja [Inicialização e atualização](docs/ATUALIZACAO-E-INICIALIZACAO.md).
 
 Requer SDK **.NET 10**.
 
-A fonte única dos gates comuns é:
+Gate oficial do repositório:
 
 ```powershell
 ./scripts/verify.ps1 -Restore
@@ -345,123 +308,43 @@ A fonte única dos gates comuns é:
 
 O script executa:
 
-- restore quando solicitado;
-- auditoria NuGet, incluindo dependências transitivas;
+- restore;
+- auditoria NuGet;
 - testes .NET em Release;
 - regressões JavaScript;
 - build Release.
 
-A cobertura automatizada inclui, entre outros:
+A cobertura relevante para a arquitetura atual inclui:
 
-- eleição de um único líder e takeover;
-- fencing imediatamente antes da SEFAZ;
-- tratamento conservador de resultado fiscal ambíguo;
-- cache compartilhado;
-- bootstrap recuperável;
-- migração sem reflection;
-- pareamento one-shot;
-- staging e promoção recuperável da rotação;
-- revogação e cadeia RSA assinada para candidatos offline;
-- bloqueio de trabalho fiscal durante rotação pendente;
-- gerenciamento de PCs sem exposição de segredo;
-- health check de atualização com versão exata;
-- Actions fixadas por SHA;
-- tratamento estreito do ciclo de vida do WebView2.
+- lock fiscal compartilhado entre duas instâncias;
+- fail-safe quando a pasta compartilhada está indisponível;
+- cooldown `656` compartilhado entre instâncias sem chave de grupo;
+- cache XML local criptografado;
+- ausência de Central/pareamento na composição de produção;
+- ausência de endpoints e controles de pareamento;
+- segurança de caminhos/reparse points;
+- comportamento conservador para falhas fiscais ambíguas;
+- segurança de loopback/Host/Origin/CSRF;
+- Portal/WebView2;
+- DANFE;
+- atualização e rollback.
 
-## GitHub Actions
+## Teste em múltiplos PCs
 
-O projeto mantém três workflows operacionais:
+Antes de considerar a próxima release pronta para uso geral, valide em pelo menos dois PCs reais:
 
-```text
-.github/workflows/ci.yml
-.github/workflows/codeql.yml
-.github/workflows/release-bridge.yml
-```
+1. ambos apontando para a mesma pasta compartilhada;
+2. certificado A1 configurado nos dois;
+3. consulta individual funcionando nos dois;
+4. tentativa simultânea confirmando serialização pelo lock;
+5. indisponibilidade temporária da pasta impedindo nova chamada fiscal;
+6. cooldown `656` sendo observado por ambos;
+7. lote em pelo menos um PC;
+8. Portal fallback em pelo menos um PC;
+9. atualização/rollback.
 
-Todas as Actions externas usadas por esses workflows estão fixadas por commit SHA; comentários mantêm a versão humana legível. O Dependabot monitora NuGet e GitHub Actions.
+Veja também [Teste multi-PC](docs/TESTE-MULTI-PC.md).
 
-### CI
+## Regra operacional importante
 
-Executa em push para `main` e em pull request. Usa `./scripts/verify.ps1 -Restore`, publica um pacote de teste Windows e mantém retenção curta do artifact.
-
-### CodeQL
-
-Analisa C# em push/PR para `main` e semanalmente.
-
-### Release Bridge
-
-É o único caminho oficial de publicação. A solicitação fica em:
-
-```text
-.github/release-request.json
-```
-
-Versão atual:
-
-```json
-{
-  "version": "0.1.31"
-}
-```
-
-O Release Bridge:
-
-1. exige que `<Version>` do projeto e request sejam iguais;
-2. rejeita tag existente e versão não crescente;
-3. executa `./scripts/verify.ps1 -Restore`;
-4. publica Windows x64 autocontido;
-5. assina o ZIP com Sigstore keyless;
-6. verifica a assinatura antes de publicar;
-7. cria a tag/release apontando exatamente para o SHA testado;
-8. gera release notes das mudanças reais.
-
-`workflow_dispatch` permanece disponível como fallback e passa pelos mesmos gates.
-
-## Checklist automatizado
-
-Antes da release oficial, os gates cobrem:
-
-- testes .NET;
-- regressões JS de produto, feedback fiscal, Portal, bootstrap, lote e release;
-- auditoria de dependências NuGet transitivas;
-- build Release;
-- publish Windows x64 autocontido;
-- versão coerente entre request, projeto e README;
-- tag nova e semanticamente superior;
-- vínculo ao SHA imutável;
-- assinatura e verificação Sigstore;
-- ausência de credenciais fiscais reais nos workflows;
-- ausência de certificado A1 empacotado no repositório.
-
-## Validação física ainda necessária
-
-A implementação automatizada está fechada, mas a aceitação operacional completa exige máquinas reais. O roteiro está em [docs/TESTE-MULTI-PC.md](docs/TESTE-MULTI-PC.md) e cobre:
-
-- eleição simultânea e failover em 2–3 PCs;
-- consulta pelo standby e deduplicação entre máquinas;
-- perda e recuperação do SMB sem Offline Files;
-- A1 real em cada candidato;
-- pareamento one-shot e revogação real;
-- candidato offline durante rotação;
-- recuperação de rotação interrompida;
-- Portal/WebView2/A1/hCaptcha reais;
-- atualização real, health check e rollback.
-
-Esses itens permanecem marcados como manuais porque não podem ser comprovados honestamente por CI. Não provoque `cStat=656` real apenas para teste.
-
-## Release atual
-
-A release **v0.1.31** reúne o hardening pós-auditoria e mantém a arquitetura simples: interface local em loopback, coordenação pela pasta compartilhada e exatamente um líder fiscal por vez.
-
-## Documentação técnica
-
-- [Guia operacional da fila](docs/CENTRAL-LAN.md)
-- [Inicialização e atualização](docs/ATUALIZACAO-E-INICIALIZACAO.md)
-- [Teste multi-PC](docs/TESTE-MULTI-PC.md)
-- [Hardening pós-auditoria v0.1.30 — design](docs/superpowers/specs/2026-09-04-post-audit-hardening-design.md)
-- [Hardening pós-auditoria v0.1.30 — plano](docs/superpowers/plans/2026-09-04-post-audit-hardening.md)
-- [Liderança automática — design](docs/superpowers/specs/2026-09-03-automatic-shared-queue-leader-design.md)
-- [Contingência pelo Portal — design](docs/superpowers/specs/2026-09-03-portal-nfe-fallback-design.md)
-- [Sigstore keyless — design](docs/superpowers/specs/2026-09-04-keyless-release-signing-design.md)
-- [Simplificação operacional do GitHub — design](docs/superpowers/specs/2026-09-04-github-operations-simplification-design.md)
-- [Simplificação operacional do GitHub — plano](docs/superpowers/plans/2026-09-04-github-operations-simplification.md)
+Durante a migração para esta arquitetura, **atualize todos os PCs que usam a mesma pasta compartilhada antes de voltar a fazer consultas simultâneas**. Não misture por longos períodos versões antigas baseadas em líder/pareamento com a versão nova baseada em `fiscal.lock`.
