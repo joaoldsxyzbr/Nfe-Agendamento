@@ -13,23 +13,17 @@ public sealed class FiscalOperationGate
     private int _pendingOperations;
 
     public FiscalOperationGate(int maxPendingOperations = DefaultMaxPendingOperations)
-        : this(null, maxPendingOperations)
     {
+        ValidateCapacity(maxPendingOperations);
+        _maxPendingOperations = maxPendingOperations;
     }
 
     public FiscalOperationGate(
         SharedQueuePaths paths,
         int maxPendingOperations = DefaultMaxPendingOperations)
-        : this(paths ?? throw new ArgumentNullException(nameof(paths)), maxPendingOperations)
     {
-    }
-
-    private FiscalOperationGate(SharedQueuePaths? paths, int maxPendingOperations)
-    {
-        if (maxPendingOperations < 1)
-            throw new ArgumentOutOfRangeException(nameof(maxPendingOperations));
-
-        _sharedPaths = paths;
+        _sharedPaths = paths ?? throw new ArgumentNullException(nameof(paths));
+        ValidateCapacity(maxPendingOperations);
         _maxPendingOperations = maxPendingOperations;
     }
 
@@ -102,6 +96,12 @@ public sealed class FiscalOperationGate
                 throw new FiscalQueueUnavailableException(paths.Root, ex);
             }
         }
+    }
+
+    private static void ValidateCapacity(int maxPendingOperations)
+    {
+        if (maxPendingOperations < 1)
+            throw new ArgumentOutOfRangeException(nameof(maxPendingOperations));
     }
 
     private bool TryReserve()
