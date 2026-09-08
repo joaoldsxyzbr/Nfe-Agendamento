@@ -8,7 +8,7 @@ public sealed class CentralFormThemeIntegrationTests
         File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "CentralForm.cs"));
 
     [Fact]
-    public void Central_form_keeps_brand_theme_and_shows_shared_queue_status()
+    public void Status_form_keeps_brand_theme_and_shows_shared_lock_mode()
     {
         var source = CentralFormSource();
 
@@ -17,15 +17,18 @@ public sealed class CentralFormThemeIntegrationTests
         Assert.Contains("BackColor = CentralTheme.BrandYellow", source, StringComparison.Ordinal);
         Assert.Contains("FlatStyle = FlatStyle.Flat", source, StringComparison.Ordinal);
         Assert.Contains("Text = \"Fila NFe Agendamento\"", source, StringComparison.Ordinal);
-        Assert.Contains("Líder automático", source, StringComparison.Ordinal);
-        Assert.Contains("Candidato em espera", source, StringComparison.Ordinal);
+        Assert.Contains("Coordenação por pasta compartilhada", source, StringComparison.Ordinal);
+        Assert.Contains("Lock fiscal", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Líder automático", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Candidato em espera", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Heartbeat", source, StringComparison.Ordinal);
         Assert.DoesNotContain("Text = \"Iniciar Central\"", source, StringComparison.Ordinal);
         Assert.DoesNotContain("Text = \"Parar Central\"", source, StringComparison.Ordinal);
         Assert.Contains("Text = \"Abrir sistema\"", source, StringComparison.Ordinal);
-        Assert.Contains("Papel deste PC", source, StringComparison.Ordinal);
         Assert.Contains("Pasta compartilhada", source, StringComparison.Ordinal);
-        Assert.Contains("SharedQueuePaths.DefaultRoot", source, StringComparison.Ordinal);
+        Assert.Contains("Environment.MachineName", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("SharedQueueCentralService", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("SharedQueueClient", source, StringComparison.Ordinal);
         Assert.DoesNotContain("Configurar firewall", source, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("WindowsFirewallService", source, StringComparison.Ordinal);
     }
 }
