@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Net;
 using System.Net.Http;
-using NfeAgendamento.App.SharedQueue;
 using NfeAgendamento.App.Storage;
 
 namespace NfeAgendamento.App.Fiscal;
@@ -42,7 +41,6 @@ public sealed class NfeLookupService
     private readonly FiscalOperationGate _gate;
     private readonly FiscalRequestCoordinator _coordinator;
     private readonly FiscalAuditLog? _audit;
-    private readonly IFiscalLeadershipGuard? _leadershipGuard;
 
     public NfeLookupService(
         INfeDistributionTransport transport,
@@ -51,8 +49,7 @@ public sealed class NfeLookupService
         Func<TimeSpan, CancellationToken, Task>? delay = null,
         FiscalOperationGate? gate = null,
         FiscalRequestCoordinator? coordinator = null,
-        FiscalAuditLog? audit = null,
-        SharedQueueCentralService? centralService = null)
+        FiscalAuditLog? audit = null)
     {
         _transport = transport ?? throw new ArgumentNullException(nameof(transport));
         _cache = cache ?? throw new ArgumentNullException(nameof(cache));
@@ -61,7 +58,6 @@ public sealed class NfeLookupService
         _gate = gate ?? new FiscalOperationGate();
         _coordinator = coordinator ?? new FiscalRequestCoordinator();
         _audit = audit;
-        _leadershipGuard = centralService is null ? null : new SharedQueueFiscalLeadershipGuard(centralService);
     }
 
     public async Task<NfeLookupResult> LookupAsync(
@@ -105,6 +101,10 @@ public sealed class NfeLookupService
         {
             return new NfeLookupResult(NfeLookupStatus.Busy, null, null, ex.Message, false);
         }
+        catch (FiscalQueueUnavailableException ex)
+        {
+            return new NfeLookupResult(NfeLookupStatus.Failed, null, null, ex.Message, false);
+        }
 
         using (lease)
         {
@@ -128,17 +128,7 @@ public sealed class NfeLookupService
             NfeDistributionResponse response;
             try
             {
-                _leadershipGuard?.EnsureCanStartFiscalOperation();
                 response = await _transport.QueryByAccessKeyAsync(accessKey, cancellationToken);
-            }
-            catch (FiscalLeadershipLostException)
-            {
-                return new NfeLookupResult(
-                    NfeLookupStatus.Failed,
-                    null,
-                    null,
-                    "A liderança da fila mudou antes do envio à SEFAZ. Nenhuma consulta fiscal foi iniciada. Refaça a consulta explicitamente.",
-                    false);
             }
             catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.TooManyRequests)
             {
@@ -214,6 +204,6 @@ public sealed class NfeLookupService
             NfeLookupStatus.Failed,
             null,
             null,
-            "O estado fiscal local não pôde ser validado. Nenhuma nova consulta foi enviada à SEFAZ.",
+            "O estado fiscal compartilhado não pôde ser validado. Nenhuma nova consulta foi enviada à SEFAZ.",
             false);
 }
