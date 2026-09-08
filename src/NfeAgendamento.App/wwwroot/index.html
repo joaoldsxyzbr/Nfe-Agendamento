@@ -43,7 +43,7 @@
             <button id="newLookup" class="secondary new-lookup-button" type="button">Nova consulta</button>
             <button id="lookup" class="primary" type="button"><span>Consultar NF-e</span></button>
           </div>
-          <div class="input-hint">O pedido usa a fila segura; o líder atual processa a consulta automaticamente.</div>
+          <div class="input-hint">A consulta usa o certificado deste PC e é serializada pela pasta compartilhada.</div>
         </div>
 
         <p id="status" class="status" aria-live="polite"></p>
@@ -63,7 +63,7 @@
       <div class="work-surface batch-panel" aria-labelledby="batchTitle">
         <div class="section-heading">
           <h2 id="batchTitle">Consulta em lote</h2>
-          <p>Cole uma chave por linha. O processamento continua serializado pela fila segura.</p>
+          <p>Cole uma chave por linha. As consultas continuam serializadas entre todos os PCs pela pasta compartilhada.</p>
         </div>
 
         <div class="field">
@@ -95,8 +95,8 @@
       <div class="config-layout">
         <section id="centralConfigPanel" class="work-surface certificate-panel">
           <div class="section-heading">
-            <h2>Certificado e fila</h2>
-            <p>O certificado A1 é configurado localmente. A liderança da fila é automática.</p>
+            <h2>Certificado deste PC</h2>
+            <p>Cada computador usa seu próprio certificado A1. Não existe Central nem pareamento.</p>
           </div>
 
           <div class="field">
@@ -119,45 +119,10 @@
 
           <div class="pairing-block">
             <div class="field">
-              <label>Autorizar outro PC</label>
-              <p class="muted pairing-help">O PC que estiver processando a fila pode gerar um código temporário para autorizar outro computador.</p>
+              <label>Pasta compartilhada</label>
+              <p class="muted pairing-help">Todos os PCs usam a mesma pasta somente para coordenar o lock fiscal e o cooldown da SEFAZ.</p>
             </div>
-            <button id="generatePairingCode" class="secondary pairing-button" type="button">Gerar código de autorização</button>
-            <div id="centralPairingResult" class="pairing-code-box" hidden>
-              <span class="pairing-code-label">Código temporário</span>
-              <strong id="centralPairingCode" class="pairing-code"></strong>
-              <span id="centralPairingExpiry" class="muted"></span>
-            </div>
-            <p id="centralPairingStatus" class="muted pairing-status" aria-live="polite"></p>
-
-            <div id="authorizedClientsPanel" class="authorized-clients-panel" hidden>
-              <div class="authorized-clients-heading">
-                <div>
-                  <strong>PCs autorizados</strong>
-                  <p class="muted">Somente o líder atual pode remover um computador. A remoção rotaciona as chaves do grupo.</p>
-                </div>
-                <button id="refreshAuthorizedClients" class="secondary compact-button" type="button">Atualizar</button>
-              </div>
-              <div id="authorizedClientsList" class="authorized-clients-list"></div>
-              <p id="authorizedClientsStatus" class="muted pairing-status" aria-live="polite"></p>
-            </div>
-          </div>
-        </section>
-
-        <section id="clientPairingPanel" class="work-surface client-pairing-panel" hidden>
-          <div class="section-heading">
-            <h2>Autorizar este PC</h2>
-            <p>Esta autorização é necessária somente na primeira configuração deste computador.</p>
-          </div>
-
-          <p id="clientPairingStatus" class="status" aria-live="polite"></p>
-          <div id="clientPairingForm">
-            <div class="field">
-              <label for="pairingCode">Código exibido pelo líder atual</label>
-              <input id="pairingCode" maxlength="29" autocomplete="off" spellcheck="false" placeholder="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX">
-              <div class="input-hint">Gere o código no PC que estiver processando a fila e informe-o aqui.</div>
-            </div>
-            <button id="pairClient" class="primary pairing-button" type="button">Autorizar este PC</button>
+            <p id="sharedFolderStatus" class="status" aria-live="polite">Verificando pasta compartilhada...</p>
           </div>
         </section>
       </div>
@@ -170,7 +135,7 @@
   <script src="/portal-fallback.js" defer></script>
   <script src="/app.js" defer></script>
   <script src="/batch.js" defer></script>
-  <script src="/pairing.js" defer></script>
+  <script src="/shared-status.js" defer></script>
   <script src="/tabs.js" defer></script>
   <script src="/product-mapping.js" defer></script>
   <script src="/danfe-compact.js" defer></script>
