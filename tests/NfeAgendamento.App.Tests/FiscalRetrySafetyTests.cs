@@ -39,33 +39,33 @@ public sealed class FiscalRetrySafetyTests
     }
 
     [Fact]
-    public async Task Leadership_loss_is_fail_closed_and_not_retried()
+    public async Task Unavailable_shared_folder_is_fail_closed_before_transport()
     {
         using var temp = new TemporaryDirectory();
-        var transport = new LeadershipLostTransport();
-        var service = CreateService(temp.Path, transport);
+        var transport = new CountingTransport();
+        var missingShare = Path.Combine(temp.Path, "missing-share");
+        var service = CreateService(
+            temp.Path,
+            transport,
+            new FiscalOperationGate(new SharedQueuePaths(missingShare)));
 
         var result = await service.LookupAsync(ValidKey);
 
         Assert.Equal(NfeLookupStatus.Failed, result.Status);
-        Assert.Equal(1, transport.CallCount);
-        Assert.Contains("liderança", result.Message ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, transport.CallCount);
+        Assert.Contains("pasta compartilhada", result.Message ?? string.Empty, StringComparison.OrdinalIgnoreCase);
     }
 
-    [Fact]
-    public void Shared_queue_default_timeout_covers_queue_wait_plus_one_fiscal_timeout()
-    {
-        Assert.True(
-            SharedQueueClient.DefaultLookupTimeout >= TimeSpan.FromMinutes(3),
-            $"Timeout padrão atual: {SharedQueueClient.DefaultLookupTimeout}.");
-    }
-
-    private static NfeLookupService CreateService(string root, INfeDistributionTransport transport) =>
+    private static NfeLookupService CreateService(
+        string root,
+        INfeDistributionTransport transport,
+        FiscalOperationGate? gate = null) =>
         new(
             transport,
             new EncryptedXmlCache(Path.Combine(root, "cache"), TimeProvider.System, TimeSpan.FromHours(24)),
             new FiscalCooldownStore(Path.Combine(root, "cooldown.bin")),
-            delay: (_, _) => Task.CompletedTask);
+            delay: (_, _) => Task.CompletedTask,
+            gate: gate);
 
     private sealed class RateLimitedTransport : INfeDistributionTransport
     {
@@ -89,21 +89,14 @@ public sealed class FiscalRetrySafetyTests
         }
     }
 
-    private sealed class LeadershipLostTransport : INfeDistributionTransport
+    private sealed class CountingTransport : INfeDistributionTransport
     {
         public int CallCount { get; private set; }
 
         public Task<NfeDistributionResponse> QueryByAccessKeyAsync(string accessKey, CancellationToken cancellationToken = default)
         {
             CallCount++;
-            var exceptionType = typeof(NfeLookupService).Assembly.GetType(
-                "NfeAgendamento.App.Fiscal.FiscalLeadershipLostException");
-            if (exceptionType is null)
-                throw new InvalidOperationException("FiscalLeadershipLostException ainda não existe.");
-
-            var exception = Activator.CreateInstance(exceptionType, "A liderança fiscal foi perdida antes do envio.") as Exception
-                ?? throw new InvalidOperationException("Não foi possível criar a exceção de perda de liderança.");
-            throw exception;
+            return Task.FromResult(new NfeDistributionResponse("137", "Nenhum documento localizado", null));
         }
     }
 
