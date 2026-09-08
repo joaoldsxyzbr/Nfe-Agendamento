@@ -12,7 +12,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4191.47" />
-    <PackageReference Include="Sigstore" Version="0.5.0" />
+    <PackageReference Include="Sigstore" Version="1.0.1" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="nfe-agendamento.ico" CopyToOutputDirectory="PreserveNewest" />
