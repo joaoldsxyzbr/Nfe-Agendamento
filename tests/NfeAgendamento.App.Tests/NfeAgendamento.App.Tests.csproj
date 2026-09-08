@@ -31,7 +31,7 @@
     <Content Include="..\..\src\NfeAgendamento.App\wwwroot\app.js" Link="Fixtures\app.js" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\src\NfeAgendamento.App\wwwroot\reset-lookup.js" Link="Fixtures\reset-lookup.js" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\src\NfeAgendamento.App\wwwroot\portal-fallback.js" Link="Fixtures\portal-fallback.js" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="..\..\src\NfeAgendamento.App\wwwroot\pairing.js" Link="Fixtures\pairing.js" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\src\NfeAgendamento.App\wwwroot\shared-status.js" Link="Fixtures\shared-status.js" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\src\NfeAgendamento.App\wwwroot\product-mapping.js" Link="Fixtures\product-mapping.js" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\src\NfeAgendamento.App\wwwroot\danfe-compact.js" Link="Fixtures\danfe-compact.js" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\src\NfeAgendamento.App\wwwroot\index.html" Link="Fixtures\index.html" CopyToOutputDirectory="PreserveNewest" />
