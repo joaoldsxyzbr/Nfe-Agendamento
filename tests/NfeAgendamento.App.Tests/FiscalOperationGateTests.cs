@@ -40,9 +40,8 @@ public sealed class FiscalOperationGateTests
     public async Task Shared_gate_serializes_different_process_coordinators_using_same_folder()
     {
         using var temp = new TemporaryDirectory();
-        Directory.CreateDirectory(temp.Path);
         var paths = new SharedQueuePaths(temp.Path);
-        paths.InitializeAsCentral();
+        paths.InitializeForSharedUse();
 
         var firstGate = new FiscalOperationGate(paths);
         var secondGate = new FiscalOperationGate(paths);
@@ -66,5 +65,24 @@ public sealed class FiscalOperationGateTests
 
         await Assert.ThrowsAsync<FiscalQueueUnavailableException>(() => gate.EnterAsync());
         Assert.Equal(0, gate.PendingOperations);
+    }
+
+    private sealed class TemporaryDirectory : IDisposable
+    {
+        public TemporaryDirectory()
+        {
+            Path = System.IO.Path.Combine(
+                System.IO.Path.GetTempPath(),
+                "nfe-fiscal-gate-tests",
+                Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(Path);
+        }
+
+        public string Path { get; }
+
+        public void Dispose()
+        {
+            try { Directory.Delete(Path, recursive: true); } catch { }
+        }
     }
 }
