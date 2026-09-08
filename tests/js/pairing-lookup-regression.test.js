@@ -18,5 +18,7 @@ assert.ok(!html.includes('id="pairingCode"'), 'A interface não deve solicitar c
 assert.ok(!html.includes('id="generatePairingCode"'), 'A interface não deve permitir gerar código de pareamento.');
 assert.ok(!html.includes('id="authorizedClientsPanel"'), 'A interface não deve gerenciar PCs autorizados.');
 assert.ok(html.includes('Pasta compartilhada'), 'A configuração deve explicar a coordenação pela pasta compartilhada.');
+assert.ok(html.includes('id="sharedFolderStatus"'), 'A configuração deve mostrar o estado da pasta compartilhada.');
+assert.ok(html.includes('/shared-status.js'), 'A interface deve carregar o status simples da pasta compartilhada.');
 
 console.log('OK: produção sem Central, sem pareamento e com coordenação por pasta compartilhada.');
