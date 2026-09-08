@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using NfeAgendamento.App.SharedQueue;
 
 namespace NfeAgendamento.App;
 
@@ -11,16 +12,11 @@ public sealed class TrayApplicationContext : ApplicationContext
     private readonly CentralForm _centralForm;
     private bool _allowClose;
 
-    public TrayApplicationContext(
-        CentralStateService centralState,
-        SharedQueue.SharedQueueCentralService centralRuntime,
-        SharedQueue.SharedQueueClient queueClient)
+    public TrayApplicationContext(SharedQueuePaths paths)
     {
-        ArgumentNullException.ThrowIfNull(centralState);
-        ArgumentNullException.ThrowIfNull(centralRuntime);
-        ArgumentNullException.ThrowIfNull(queueClient);
+        ArgumentNullException.ThrowIfNull(paths);
 
-        _centralForm = new CentralForm(centralState, centralRuntime, queueClient);
+        _centralForm = new CentralForm(paths);
         _centralForm.FormClosing += CentralFormClosing;
 
         var menu = new ContextMenuStrip();
